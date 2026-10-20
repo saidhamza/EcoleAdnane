@@ -10,7 +10,12 @@ import re
 from typing import Any, Dict, List, Optional
 
 from models.database import get_setting, set_setting
-from services.config_manager import get_gemini_api_key, get_openai_api_key
+from services.config_manager import (
+    get_gemini_api_key,
+    get_openai_api_key,
+    get_user_gemini_api_key,
+    get_user_openai_api_key,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -24,17 +29,19 @@ def call_llm(
     system_instruction: Optional[str] = None,
     json_mode: bool = False,
     temperature: float = 0.4,
+    user_id: Optional[int] = None,
+    api_key: Optional[str] = None,
 ) -> str:
     """
     Exécute un appel au LLM configuré (Google Gemini d'abord, puis OpenAI).
-    Gère les exceptions et fournit des messages clairs.
+    Utilise en priorité la clé individuelle de l'utilisateur actif.
     """
-    gemini_key = get_gemini_api_key()
-    openai_key = get_openai_api_key()
+    gemini_key = api_key or get_user_gemini_api_key(user_id)
+    openai_key = get_user_openai_api_key(user_id)
 
     if not gemini_key and not openai_key:
         raise ValueError(
-            "Aucune clé API configurée. Veuillez ajouter votre clé Gemini gratuite dans l'onglet '⚙️ Configuration'."
+            "Aucune clé API configurée pour votre compte. Veuillez ajouter votre clé Google Gemini gratuite dans vos Paramètres."
         )
 
     # 1. Priorité Google Gemini
@@ -133,6 +140,7 @@ def classify_and_extract_metadata(
     detected_lang: str,
     fallback_title: str,
     fallback_subject: str,
+    user_id: Optional[int] = None,
 ) -> Dict[str, Any]:
     """
     Affine le titre du cours, la matière 3AC exacte, les notions clés et le niveau estimé.
@@ -182,7 +190,7 @@ Renvoie uniquement un objet JSON respectant exactement cette structure :
 """
 
     try:
-        raw_res = call_llm(user_prompt, system_instruction=sys_prompt, json_mode=True, temperature=0.2)
+        raw_res = call_llm(user_prompt, system_instruction=sys_prompt, json_mode=True, temperature=0.2, user_id=user_id)
         cleaned = clean_json_output(raw_res)
         data = json.loads(cleaned)
         return {
@@ -205,7 +213,12 @@ Renvoie uniquement un objet JSON respectant exactement cette structure :
 # 2. Génération de Fiche Express (Bilinguisme strict)
 # ---------------------------------------------------------------------------
 
-def generate_revision_sheet(raw_text: str, subject: str, language: str) -> str:
+def generate_revision_sheet(
+    raw_text: str,
+    subject: str,
+    language: str,
+    user_id: Optional[int] = None,
+) -> str:
     """
     Génère une 'Fiche Express' adaptée à un élève de 14 ans (3AC Maroc).
     Structure : Définitions incontournables, Formules/Dates, Pièges d'examen normalisé, Astuce de rédaction.
@@ -268,14 +281,20 @@ Structure la fiche en Markdown clair et aéré en utilisant ces sections précis
 (Le conseil méthodologique ultime pour soigner sa copie et obtenir la note maximale)
 """
 
-    return call_llm(user_prompt, system_instruction=sys_prompt, temperature=0.3)
+    return call_llm(user_prompt, system_instruction=sys_prompt, temperature=0.3, user_id=user_id)
 
 
 # ---------------------------------------------------------------------------
 # 3. Génération de Quiz d'Entraînement Examen (QCM Interactif)
 # ---------------------------------------------------------------------------
 
-def generate_quiz(raw_text: str, subject: str, language: str, num_questions: int = 5) -> List[Dict[str, Any]]:
+def generate_quiz(
+    raw_text: str,
+    subject: str,
+    language: str,
+    num_questions: int = 5,
+    user_id: Optional[int] = None,
+) -> List[Dict[str, Any]]:
     """
     Génère un quiz interactif au format JSON strict.
     Questions adaptées au format d'examen normalisé 3AC Maroc.
@@ -345,7 +364,7 @@ Renvoie UNIQUEMENT un tableau JSON valide contenant cette structure exacte :
 ]
 """
 
-    raw_res = call_llm(user_prompt, system_instruction=sys_prompt, json_mode=True, temperature=0.3)
+    raw_res = call_llm(user_prompt, system_instruction=sys_prompt, json_mode=True, temperature=0.3, user_id=user_id)
     cleaned = clean_json_output(raw_res)
 
     try:
@@ -391,6 +410,7 @@ def socratic_tutor_response(
     course_context: str,
     subject: str,
     language: str,
+    user_id: Optional[int] = None,
 ) -> str:
     """
     Répond à l'élève en adoptant la méthode socratique :
@@ -440,4 +460,4 @@ Tes règles d'or pédagogiques :
 
     prompt = f"Historique de l'échange :\n{conv_history}\n\nRéponds maintenant à l'élève en tant que tuteur socratique :"
 
-    return call_llm(prompt, system_instruction=system_instruction, temperature=0.6)
+    return call_llm(prompt, system_instruction=system_instruction, temperature=0.6, user_id=user_id)

@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 from dotenv import dotenv_values, set_key
 
-from models.database import get_setting, set_setting
+from models.database import get_setting, get_user_setting, set_setting, set_user_setting
 
 logger = logging.getLogger(__name__)
 ENV_FILE_PATH = Path(__file__).parent.parent / ".env"
@@ -68,13 +68,51 @@ def save_config_value(key: str, value: str) -> None:
 
 
 def get_gemini_api_key() -> Optional[str]:
-    """Récupère la clé API Gemini."""
+    """Récupère la clé API Gemini globale."""
     return get_config_value("GEMINI_API_KEY")
 
 
+def get_user_gemini_api_key(user_id: Optional[int] = None) -> Optional[str]:
+    """
+    Récupère la clé API Gemini de l'utilisateur actif.
+    Si user_id est fourni, cherche d'abord dans user_settings.
+    Repli sur la clé système globale si non trouvée.
+    """
+    if user_id is not None:
+        user_key = get_user_setting(user_id, "GEMINI_API_KEY")
+        if user_key and user_key.strip():
+            return user_key.strip()
+    return get_gemini_api_key()
+
+
+def save_user_gemini_api_key(user_id: int, api_key: str) -> None:
+    """Enregistre la clé API Gemini individuelle d'un utilisateur."""
+    set_user_setting(user_id, "GEMINI_API_KEY", api_key.strip())
+
+
 def get_openai_api_key() -> Optional[str]:
-    """Récupère la clé API OpenAI facultative."""
+    """Récupère la clé API OpenAI globale facultative."""
     return get_config_value("OPENAI_API_KEY")
+
+
+def get_user_openai_api_key(user_id: Optional[int] = None) -> Optional[str]:
+    """Récupère la clé API OpenAI de l'utilisateur actif ou fallback système."""
+    if user_id is not None:
+        user_key = get_user_setting(user_id, "OPENAI_API_KEY")
+        if user_key and user_key.strip():
+            return user_key.strip()
+    return get_openai_api_key()
+
+
+def save_user_openai_api_key(user_id: int, api_key: str) -> None:
+    """Enregistre la clé API OpenAI individuelle d'un utilisateur."""
+    set_user_setting(user_id, "OPENAI_API_KEY", api_key.strip())
+
+
+def test_user_gemini_connection(user_id: Optional[int] = None, api_key: Optional[str] = None) -> Dict[str, Any]:
+    """Teste la connexion avec la clé API Gemini spécifique d'un utilisateur."""
+    key = api_key or get_user_gemini_api_key(user_id)
+    return test_gemini_connection(key)
 
 
 def discover_gemini_model(client: Any) -> str:

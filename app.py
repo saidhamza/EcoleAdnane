@@ -1,10 +1,13 @@
 """
-Ecole Adnane - Application Web de Révision & Préparation aux Examens 3AC (Maroc)
+Ecole Adnane - Application Web Multi-Utilisateurs de Révision & Préparation aux Examens 3AC (Maroc)
 100% Python propulsée par Streamlit, SQLite et Google Gemini.
+Supporte Google OAuth, premier connecté = Admin, cloisonnement strict par élève,
+sauvegardes étanches et intégration Google Classroom.
 """
 
 import base64
 import os
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -16,10 +19,15 @@ from models.database import (
     delete_course,
     get_chat_history,
     get_course_by_id,
+    get_global_admin_kpis,
     get_latest_quiz,
     get_quiz_stats,
+    get_user_by_id,
+    get_user_count,
     init_db,
     list_courses,
+    list_users,
+    save_course,
     save_quiz,
     save_quiz_attempt,
     update_course_metadata,
@@ -31,29 +39,39 @@ from services.ai_engine import (
     generate_revision_sheet,
     socratic_tutor_response,
 )
-from services.config_manager import (
-    get_gemini_api_key,
-    get_openai_api_key,
-    save_config_value,
-    test_active_connection,
-    test_gemini_connection,
+from services.auth_manager import (
+    dev_mode_login,
+    exchange_code_for_user,
+    get_google_auth_url,
+    init_session_state,
+    is_oauth_configured,
+    logout_user,
+    set_session_user,
 )
 from services.backup_manager import (
-    export_backup_zip,
-    export_database_file,
+    export_global_backup,
+    export_student_backup,
     get_backup_summary,
-    restore_backup,
+    get_student_backup_summary,
+    restore_global_backup,
+    restore_student_backup,
+)
+from services.config_manager import (
+    get_user_gemini_api_key,
+    get_user_openai_api_key,
+    save_user_gemini_api_key,
+    save_user_openai_api_key,
+    test_user_gemini_connection,
 )
 from services.downloader import (
-    CREDENTIALS_PATH,
     ingest_pdf_bytes,
     is_classroom_configured,
+    save_user_credentials,
     sync_google_classroom,
 )
 from services.pdf_parser import SUBJECTS_AR, SUBJECTS_FR
-from datetime import datetime
 
-# Initialisation de la base SQLite
+# Initialisation de la base SQLite et migrations
 init_db()
 
 # Configuration de la page Streamlit
@@ -112,10 +130,8 @@ def get_custom_css() -> str:
 <style>
 {font_faces}
 
-/* Import polices calligraphiques complémentaires si réseau actif */
 @import url('https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=Cairo:wght@500;600;700&family=Tajawal:wght@500;700&display=swap');
 
-/* Règle globale pour tous les conteneurs Streamlit */
 body, .stApp,
 [data-testid="stMarkdownContainer"],
 [data-testid="stMarkdownContainer"] p,
@@ -128,7 +144,6 @@ button, input, select, textarea, label,
     font-family: 'AdnaneNaskh', 'AdnaneSans', 'Noto Naskh Arabic', 'Noto Sans Arabic', 'Amiri', 'Cairo', 'Tajawal', serif !important;
 }}
 
-/* Titres, onglets et boutons en Arabe */
 h1, h2, h3, h4, h5, h6,
 .rtl-section-title,
 button[kind="primary"],
@@ -149,7 +164,6 @@ div[role="tablist"] button p {{
     line-height: 1.6 !important;
 }}
 
-/* Badges de matières */
 .badge-subject {{
     display: inline-block;
     padding: 4px 12px;
@@ -169,7 +183,6 @@ div[role="tablist"] button p {{
 .badge-anglais {{ background-color: #0284c7 !important; }}
 .badge-default {{ background-color: #64748b !important; }}
 
-/* Badge de langue adaptatif */
 .badge-lang {{
     display: inline-block;
     padding: 3px 10px;
@@ -181,7 +194,6 @@ div[role="tablist"] button p {{
     border: 1px solid rgba(128, 128, 128, 0.3) !important;
 }}
 
-/* En-tête de cours adaptatif - Contraste parfait en Mode Sombre & Clair */
 .course-header-box {{
     background-color: var(--secondary-background-color, #1a2233) !important;
     color: var(--text-color, #ffffff) !important;
@@ -208,7 +220,6 @@ div[role="tablist"] button p {{
     opacity: 0.85;
 }}
 
-/* RTL Container pour l'Arabe - Naskh fluide, clair et aéré */
 .rtl-box {{
     direction: rtl !important;
     text-align: right !important;
@@ -243,25 +254,9 @@ div[role="tablist"] button p {{
     color: #38bdf8 !important;
 }}
 
-.rtl-question {{
-    direction: rtl !important;
-    text-align: right !important;
-    font-family: 'AdnaneSans', 'Noto Sans Arabic', serif !important;
-    font-size: 1.25rem !important;
-    font-weight: 700 !important;
-    color: var(--text-color, #ffffff) !important;
-    line-height: 1.9 !important;
-    margin-top: 18px;
-    margin-bottom: 8px;
-}}
-
-/* Boîte piège examen - Lisible en clair comme en sombre */
 .trap-card {{
     background-color: rgba(245, 158, 11, 0.12) !important;
     border-left: 5px solid #f59e0b !important;
-    border-top: 1px solid rgba(245, 158, 11, 0.3) !important;
-    border-right: 1px solid rgba(245, 158, 11, 0.3) !important;
-    border-bottom: 1px solid rgba(245, 158, 11, 0.3) !important;
     color: var(--text-color, #fef3c7) !important;
     padding: 14px 18px;
     border-radius: 8px;
@@ -271,9 +266,6 @@ div[role="tablist"] button p {{
 .trap-card-rtl {{
     background-color: rgba(245, 158, 11, 0.12) !important;
     border-right: 5px solid #f59e0b !important;
-    border-top: 1px solid rgba(245, 158, 11, 0.3) !important;
-    border-left: 1px solid rgba(245, 158, 11, 0.3) !important;
-    border-bottom: 1px solid rgba(245, 158, 11, 0.3) !important;
     color: var(--text-color, #fef3c7) !important;
     padding: 14px 18px;
     border-radius: 8px;
@@ -285,17 +277,9 @@ div[role="tablist"] button p {{
     line-height: 2.1 !important;
 }}
 
-.trap-card strong, .trap-card-rtl strong {{
-    color: #f59e0b !important;
-}}
-
-/* Boîte explication - Lisible en clair comme en sombre */
 .explanation-card {{
     background-color: rgba(34, 197, 94, 0.12) !important;
     border-left: 5px solid #22c55e !important;
-    border-top: 1px solid rgba(34, 197, 94, 0.3) !important;
-    border-right: 1px solid rgba(34, 197, 94, 0.3) !important;
-    border-bottom: 1px solid rgba(34, 197, 94, 0.3) !important;
     color: var(--text-color, #dcfce7) !important;
     padding: 14px 18px;
     border-radius: 8px;
@@ -305,9 +289,6 @@ div[role="tablist"] button p {{
 .explanation-card-rtl {{
     background-color: rgba(34, 197, 94, 0.12) !important;
     border-right: 5px solid #22c55e !important;
-    border-top: 1px solid rgba(34, 197, 94, 0.3) !important;
-    border-left: 1px solid rgba(34, 197, 94, 0.3) !important;
-    border-bottom: 1px solid rgba(34, 197, 94, 0.3) !important;
     color: var(--text-color, #dcfce7) !important;
     padding: 14px 18px;
     border-radius: 8px;
@@ -319,43 +300,15 @@ div[role="tablist"] button p {{
     line-height: 2.1 !important;
 }}
 
-.explanation-card strong, .explanation-card-rtl strong {{
-    color: #22c55e !important;
-}}
-
-/* Puces de notions clés */
 .concept-tag {{
     display: inline-block;
-    background-color: rgba(14, 165, 233, 0.2) !important;
-    color: #38bdf8 !important;
-    border: 1px solid rgba(14, 165, 233, 0.45) !important;
-    padding: 4px 12px;
-    border-radius: 6px;
-    font-size: 0.95rem;
-    font-weight: 600;
-    margin-right: 6px;
-    margin-bottom: 6px;
-    font-family: 'AdnaneSans', 'Noto Sans Arabic', serif !important;
-}}
-
-/* Onglets Streamlit */
-div[role="tablist"] button p {{
-    font-family: 'AdnaneSans', 'Noto Sans Arabic', serif !important;
-    font-size: 1.05rem !important;
-    font-weight: 600 !important;
-}}
-
-/* Boutons principaux */
-button[kind="primary"], button[kind="secondary"] {{
-    font-family: 'AdnaneSans', 'Noto Sans Arabic', serif !important;
-    font-size: 1.05rem !important;
-}}
-
-/* Choix QCM radio */
-[data-testid="stRadio"] label {{
-    font-family: 'AdnaneNaskh', 'Noto Naskh Arabic', serif !important;
-    font-size: 1.12rem !important;
-    line-height: 1.8 !important;
+    background-color: rgba(56, 189, 248, 0.15);
+    color: var(--text-color, #38bdf8);
+    border: 1px solid rgba(56, 189, 248, 0.3);
+    padding: 2px 10px;
+    border-radius: 12px;
+    font-size: 0.85rem;
+    margin: 3px 4px;
 }}
 </style>
 """
@@ -377,929 +330,863 @@ def get_subject_badge_class(subject: str) -> str:
     return mapping.get(subject, "badge-default")
 
 
-# ---------------------------------------------------------------------------
-# Barre Latérale & Navigation Principale
-# ---------------------------------------------------------------------------
-
-st.sidebar.markdown("## 🎓 **Ecole Adnane**")
-st.sidebar.markdown(
-    "<span style='font-size:0.9rem; color:var(--text-color, inherit); opacity:0.8;'>Préparation Brevet 3AC Maroc (Local & Régional)</span>",
-    unsafe_allow_html=True,
-)
-st.sidebar.divider()
-
-menu = st.sidebar.radio(
-    "Navigation",
-    ["📚 Mes Cours (Révisions)", "➕ Ajouter un Cours", "📊 Mes Progrès", "⚙️ Configuration & Guide"],
-    index=0,
-)
-
-# Indication visuelle du statut IA dans la sidebar
-api_key = get_gemini_api_key() or get_openai_api_key()
-if api_key:
-    st.sidebar.success("🟢 IA active & prête", icon="✅")
-else:
-    st.sidebar.warning("⚠️ Clé IA non configurée", icon="🔑")
-    st.sidebar.caption("Rendez-vous dans ⚙️ Configuration pour activer l'IA gratuitement.")
-
-st.sidebar.divider()
-st.sidebar.caption("🇲🇦 Conçu spécialement pour un collégien de 14 ans (3AC Biof / Général).")
-
-
 # ===========================================================================
-# 1. ÉCRAN : MES COURS & ESPACE DE RÉVISION (4 ONGLETS PAR COURS)
+# 0. GESTION DE L'AUTHENTIFICATION & SESSIONS GOOGLE OAUTH
 # ===========================================================================
 
-if menu == "📚 Mes Cours (Révisions)":
-    st.title("📚 Mon Espace de Révision 3AC")
+init_session_state()
 
-    # Filtres
-    col_f1, col_f2, col_f3 = st.columns([2, 2, 2])
-    with col_f1:
-        all_subjects = ["Toutes"] + SUBJECTS_FR + SUBJECTS_AR
-        selected_subject = st.selectbox("Filtrer par matière :", all_subjects)
-    with col_f2:
-        selected_lang = st.selectbox("Langue :", ["Toutes", "Français", "العربية"])
-        lang_filter = "fr" if selected_lang == "Français" else ("ar" if selected_lang == "العربية" else None)
-    with col_f3:
-        courses_list = list_courses(
-            subject=selected_subject if selected_subject != "Toutes" else None,
-            language=lang_filter,
+# Vérification du retour de code Google OAuth via query params
+if "code" in st.query_params:
+    oauth_code = st.query_params["code"]
+    try:
+        authenticated_user = exchange_code_for_user(oauth_code)
+        set_session_user(authenticated_user)
+        st.query_params.clear()
+        st.success(f"🎉 Bienvenue, {authenticated_user['name']} !")
+        st.rerun()
+    except Exception as e:
+        st.error(f"❌ Échec de connexion Google : {str(e)}")
+        st.query_params.clear()
+
+# Écran de verrouillage si l'utilisateur n'est pas encore connecté
+if not st.session_state.get("is_authenticated"):
+    total_users = get_user_count()
+
+    col_login_c1, col_login_c2, col_login_c3 = st.columns([1, 2, 1])
+    with col_login_c2:
+        st.write("")
+        st.write("")
+        st.markdown("<h1 style='text-align:center;'>🎓 Ecole Adnane</h1>", unsafe_allow_html=True)
+        st.markdown(
+            "<p style='text-align:center; color:var(--text-color, #94a3b8); font-size:1.1rem;'>"
+            "Plateforme Multi-Utilisateurs de Révision & Préparation au Brevet 3AC Maroc"
+            "</p>",
+            unsafe_allow_html=True,
         )
-        st.write(f"**{len(courses_list)} cours disponible(s)**")
 
-    if not courses_list:
-        st.info(
-            "👋 Aucun cours enregistré pour le moment. Allez dans l'onglet **➕ Ajouter un Cours** pour glisser vos premiers documents PDF !"
-        )
-        st.stop()
+        st.divider()
 
-    # Sélection du cours actif
-    course_options = {c["id"]: f"{'🇲🇦 [AR]' if c['language'] == 'ar' else '🇫🇷 [FR]'} {c['subject']} - {c['title']}" for c in courses_list}
-    selected_course_id = st.selectbox(
-        "Sélectionnez le cours à réviser :",
-        options=list(course_options.keys()),
-        format_func=lambda x: course_options[x],
-    )
-
-    current_course = get_course_by_id(selected_course_id)
-    if not current_course:
-        st.error("Cours introuvable.")
-        st.stop()
-
-    is_ar = current_course["language"] == "ar"
-    badge_cls = get_subject_badge_class(current_course["subject"])
-
-    # En-tête du cours actif (adaptatif mode sombre et clair)
-    level_label = "المستوى : السنة الثالثة إعدادي (3AC)" if is_ar else "Niveau : 3AC Collège"
-    lang_badge_text = "العربية (AR)" if is_ar else "Français (FR)"
-
-    header_html = f"""
-    <div class="course-header-box {'rtl-box' if is_ar else ''}">
-        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
-            <div>
-                <span class="badge-subject {badge_cls}">{current_course['subject']}</span>
-                <span class="badge-lang">{lang_badge_text}</span>
-                <span class="course-header-subtitle" style="margin-left:8px; margin-right:8px;">{level_label}</span>
-            </div>
-            <div class="course-header-subtitle">
-                📄 {current_course['file_name']}
-            </div>
-        </div>
-        <h2>{current_course['title']}</h2>
-    </div>
-    """
-    st.markdown(header_html, unsafe_allow_html=True)
-
-    # Affichage des notions clés si présentes
-    if current_course.get("key_concepts"):
-        if is_ar:
-            chips = " ".join([f"<span class='concept-tag'>{c}</span>" for c in current_course["key_concepts"]])
-            st.markdown(f"<div dir='rtl' style='text-align:right; margin-top:8px; margin-bottom:12px;'><strong>المفاهيم الأساسية :</strong> {chips}</div>", unsafe_allow_html=True)
+        # Règle : Initialisation administrateur si table vide
+        if total_users == 0:
+            st.info(
+                "📢 **Initialisation du système : Veuillez vous connecter avec le compte Google Administrateur**\n\n"
+                "Le tout premier compte Google qui se connecte recevra **automatiquement et définitivement le rôle Administrateur** de la plateforme.",
+                icon="👑",
+            )
         else:
-            chips = " ".join([f"<span class='concept-tag'>#{c}</span>" for c in current_course["key_concepts"]])
-            st.markdown(f"**Notions clés :** {chips}", unsafe_allow_html=True)
+            st.markdown(
+                "### 🔐 Connexion à votre espace personnel\n"
+                "Connectez-vous pour accéder à vos cours, vos quiz d'entraînement et votre tuteur virtuel Sanad."
+            )
 
-    # Volet de modification rapide de la matière / titre / langue
-    edit_header_label = "✏️ تصحيح مادة الدرس أو العنوان أو اللغة" if is_ar else "✏️ Modifier la matière, le titre ou la langue de ce cours"
-    with st.expander(edit_header_label):
-        st.caption(
-            "إذا تم تصنيف هذا الدرس في مادة غير صحيحة عند الاستيراد، يمكنك تصحيحها هنا فوراً وسيتكيف التطبيق بالكامل."
-            if is_ar else
-            "Si la matière ou la langue de ce cours a été mal détectée lors de l'import PDF, vous pouvez la rectifier ici. Tous les onglets s'adapteront immédiatement."
+        # Bouton Google OAuth officiel
+        auth_url = get_google_auth_url()
+        if auth_url:
+            st.link_button(
+                "🔑 Se connecter avec Google",
+                url=auth_url,
+                type="primary",
+                use_container_width=True,
+            )
+        else:
+            st.warning("⚠️ Les identifiants Google OAuth ne sont pas encore configurés dans `credentials.json`.")
+
+        st.write("")
+
+        # Mode Local / Démonstration repliable pour le développement
+        with st.expander("🧪 Mode Local / Démonstration (Développement & Hors-ligne)", expanded=(not is_oauth_configured())):
+            st.caption(
+                "Permet de se connecter directement sans passer par Google Cloud. "
+                "Si la base est vide, le premier utilisateur créé sera nommé Administrateur."
+            )
+            col_d1, col_d2 = st.columns([2, 1])
+            with col_d1:
+                dev_email = st.text_input("Adresse email :", value="admin@ecole-adnane.ma" if total_users == 0 else "eleve@ecole-adnane.ma", key="dev_email_input")
+                dev_name = st.text_input("Nom complet :", value="Admin Adnane" if total_users == 0 else "Adnane Élève", key="dev_name_input")
+            with col_d2:
+                st.write("")
+                st.write("")
+                if st.button("🚀 Connexion Locale", type="secondary", use_container_width=True):
+                    if dev_email and dev_name:
+                        u = dev_mode_login(email=dev_email, name=dev_name)
+                        st.success(f"Connecté en tant que {u['name']} ({u['role'].upper()})")
+                        st.rerun()
+                    else:
+                        st.error("Veuillez renseigner un email et un nom.")
+
+        st.stop()
+
+
+# ===========================================================================
+# APPLICATION AUTHENTIFIÉE
+# ===========================================================================
+
+def render_authenticated_app(current_user: Dict[str, Any]) -> None:
+    logged_in_user_id = current_user["id"]
+    user_role = current_user.get("role", "student")
+    is_admin = user_role == "admin"
+
+    # Barre Latérale : Profil et Navigation
+    st.sidebar.markdown("## 🎓 **Ecole Adnane**")
+    role_badge = "👑 Administrateur" if is_admin else "🎒 Élève (3AC)"
+    st.sidebar.markdown(f"**{current_user['name']}**  \n`{current_user['email']}`  \n`{role_badge}`")
+
+    st.sidebar.divider()
+
+    # Sélecteur d'espace pour l'administrateur
+    is_global_admin_view = False
+    active_user_id = logged_in_user_id
+    active_student_info = None
+
+    if is_admin:
+        all_students = list_users(role="student")
+        student_options: Dict[str, str] = {"global": "📊 Vue Globale (Supervision)"}
+        for s in all_students:
+            student_options[str(s["id"])] = f"🎒 {s['name']} ({s['email']})"
+
+        chosen_space = st.sidebar.selectbox(
+            "Espace de travail :",
+            options=list(student_options.keys()),
+            format_func=lambda x: student_options[x],
+            key="admin_space_selector",
         )
-        col_ed1, col_ed2, col_ed3 = st.columns([3, 2, 2])
-        with col_ed1:
-            new_title = st.text_input(
-                "عنوان الدرس" if is_ar else "Titre du cours",
-                value=current_course["title"],
-                key=f"edit_top_title_{current_course['id']}",
-            )
 
-        with col_ed2:
-            all_subjects_display = [
-                "🇲🇦 التربية الإسلامية",
-                "🇲🇦 الاجتماعيات",
-                "🇲🇦 اللغة العربية",
-                "🇫🇷 Mathématiques",
-                "🇫🇷 Physique-Chimie",
-                "🇫🇷 SVT",
-                "🇫🇷 Français",
-                "🇫🇷 Anglais",
-            ]
-            current_prefix = "🇲🇦 " if is_ar else "🇫🇷 "
-            current_match = current_prefix + current_course["subject"]
-            default_idx = (
-                all_subjects_display.index(current_match)
-                if current_match in all_subjects_display
-                else (all_subjects_display.index(f"🇲🇦 {current_course['subject']}") if f"🇲🇦 {current_course['subject']}" in all_subjects_display else 0)
-            )
-            chosen_subject_labeled = st.selectbox(
-                "المادة" if is_ar else "Matière",
-                all_subjects_display,
-                index=default_idx,
-                key=f"edit_top_subj_{current_course['id']}",
-            )
-            cleaned_subj = chosen_subject_labeled.replace("🇲🇦 ", "").replace("🇫🇷 ", "")
-            is_ar_choice = "🇲🇦" in chosen_subject_labeled or cleaned_subj in SUBJECTS_AR
+        if chosen_space == "global":
+            is_global_admin_view = True
+            active_user_id = logged_in_user_id
+        else:
+            is_global_admin_view = False
+            active_user_id = int(chosen_space)
+            active_student_info = get_user_by_id(active_user_id)
 
-        with col_ed3:
-            lang_options = ["🇲🇦 العربية (ar)", "🇫🇷 Français (fr)"]
-            lang_default_idx = 0 if is_ar_choice else 1
-            chosen_lang_label = st.selectbox(
-                "اللغة" if is_ar else "Langue du cours",
-                lang_options,
-                index=lang_default_idx,
-                key=f"edit_top_lang_{current_course['id']}",
-            )
-            final_lang = "ar" if "العربية" in chosen_lang_label else "fr"
-
-        btn_save_col1, _ = st.columns([2, 5])
-        with btn_save_col1:
-            btn_save_txt = "💾 حفظ التعديل" if is_ar else "💾 Enregistrer les modifications"
-            if st.button(btn_save_txt, type="primary", use_container_width=True, key=f"btn_save_top_{current_course['id']}"):
-                update_course_metadata(current_course["id"], new_title, cleaned_subj, final_lang)
-                st.success("تم تحديث المادة بنجاح !" if is_ar else "Matière mise à jour avec succès !")
-                st.rerun()
-
-    st.write("")
-
-    # Les 4 Onglets Pédagogiques (bilingues et adaptés à la langue du cours, sans bidi conflict)
-    if is_ar:
-        tab_doc, tab_fiche, tab_quiz, tab_tuteur = st.tabs([
-            "📄 وثيقة الدرس",
-            "⚡ بطاقة المراجعة",
-            "🎯 تدريب الامتحان",
-            "🤖 الأستاذ سند",
-        ])
+    # Choix de la navigation selon la vue
+    if is_global_admin_view:
+        menu = st.sidebar.radio(
+            "Supervision",
+            ["📊 Supervision Globale", "⚙️ Configuration Système & Sauvegardes"],
+            index=0,
+        )
     else:
-        tab_doc, tab_fiche, tab_quiz, tab_tuteur = st.tabs([
-            "📄 Le Document",
-            "⚡ Fiche Express",
-            "🎯 Entraînement Examen",
-            "🤖 Tuteur Virtuel (Sanad)",
-        ])
+        menu = st.sidebar.radio(
+            "Navigation",
+            ["📚 Mes Cours (Révisions)", "➕ Ajouter un Cours", "📊 Mes Progrès", "⚙️ Paramètres & Sauvegardes"],
+            index=0,
+        )
+
+    # Indicateur IA pour l'utilisateur actif
+    user_api_key = get_user_gemini_api_key(active_user_id)
+    if user_api_key:
+        st.sidebar.success("🟢 IA active & prête", icon="✅")
+    else:
+        st.sidebar.warning("⚠️ Clé IA personnelle requise", icon="🔑")
+        st.sidebar.caption("Rendez-vous dans ⚙️ Paramètres pour activer votre clé Gemini gratuite.")
+
+    st.sidebar.divider()
+    if st.sidebar.button("🚪 Déconnexion", use_container_width=True):
+        logout_user()
+        st.rerun()
 
     # -----------------------------------------------------------------------
-    # ONGLET 1 : LE DOCUMENT ORIGINAL / TEXTE EXTRAIT
+    # VUE ADMIN 1 : TABLEAU DE BORD DE SUPERVISION GLOBALE
     # -----------------------------------------------------------------------
-    with tab_doc:
-        if is_ar:
-            st.markdown("<div class='rtl-section-title'>📄 وثيقة الدرس الأصلية</div>", unsafe_allow_html=True)
+    if is_global_admin_view and menu == "📊 Supervision Globale":
+        st.title("📊 Tableau de Bord de Supervision Administrateur")
+        st.markdown("Supervision complète de l'activité, des cours téléversés et des scores de tous les élèves.")
+
+        kpis = get_global_admin_kpis()
+
+        k_col1, k_col2, k_col3, k_col4, k_col5 = st.columns(5)
+        with k_col1:
+            st.metric("Élèves Inscrits", kpis["total_students"])
+        with k_col2:
+            st.metric("Total Cours", kpis["total_courses"])
+        with k_col3:
+            st.metric("Quiz Générés", kpis["total_quizzes"])
+        with k_col4:
+            st.metric("Entraînements Passés", kpis["total_attempts"])
+        with k_col5:
+            st.metric("Taux de Réussite Moyen", f"{kpis['average_success_rate']}%")
+
+        st.divider()
+
+        st.markdown("### 🎒 Liste des Élèves & Assiduité")
+        students_summary = kpis.get("students_summary", [])
+        if students_summary:
+            st.dataframe(
+                [
+                    {
+                        "ID": s["user_id"],
+                        "Nom": s["name"],
+                        "Email": s["email"],
+                        "Cours ajoutés": s["course_count"],
+                        "Quiz terminés": s["attempt_count"],
+                        "Moyenne Quiz": f"{s['average_rate']}%",
+                        "Date d'inscription": str(s.get("created_at", ""))[:16],
+                    }
+                    for s in students_summary
+                ],
+                use_container_width=True,
+                hide_index=True,
+            )
+            st.caption("💡 *Sélectionnez un élève dans la barre latérale pour naviguer directement dans ses cours et ses devoirs.*")
         else:
-            st.markdown("### 📄 Support de cours original")
-        doc_col1, doc_col2 = st.columns([1, 1])
+            st.info("Aucun élève inscrit pour l'instant. Les nouveaux utilisateurs connectés via Google OAuth apparaîtront ici.")
 
-        file_path = current_course.get("file_path")
-        if file_path and os.path.exists(file_path):
-            with open(file_path, "rb") as f:
-                pdf_data = f.read()
+        return
 
-            with doc_col1:
+    # -----------------------------------------------------------------------
+    # VUE ADMIN 2 : CONFIGURATION SYSTÈME & SAUVEGARDE GLOBALE
+    # -----------------------------------------------------------------------
+    elif is_global_admin_view and menu == "⚙️ Configuration Système & Sauvegardes":
+        st.title("⚙️ Configuration Système & Sauvegarde Globale")
+        st.markdown("Gestion des accès API de secours, sauvegarde intégrale de la plateforme et maintenance.")
+
+        st.markdown("### 🔑 Clé API Google Gemini (Administrateur)")
+        current_admin_key = get_user_gemini_api_key(logged_in_user_id) or ""
+        col_ak1, col_ak2 = st.columns([3, 1])
+        with col_ak1:
+            new_admin_key = st.text_input(
+                "Clé API Google Gemini personnelle :",
+                value=current_admin_key,
+                type="password",
+                placeholder="AIzaSy...",
+                help="Clé gratuite issue de https://aistudio.google.com/",
+            )
+        with col_ak2:
+            st.write("")
+            st.write("")
+            if st.button("💾 Enregistrer la clé", type="primary", use_container_width=True, key="save_admin_gemini_btn"):
+                if new_admin_key:
+                    save_user_gemini_api_key(logged_in_user_id, new_admin_key)
+                    st.success("Clé API enregistrée !")
+                    st.rerun()
+
+        if st.button("🔍 Tester la connectivité Gemini (Admin)", key="test_admin_gemini_btn"):
+            with st.spinner("Test en cours..."):
+                res = test_user_gemini_connection(logged_in_user_id)
+                if res["success"]:
+                    st.success(f"✅ {res['message']}")
+                else:
+                    st.error(f"❌ {res['error']}")
+
+        st.divider()
+
+        st.markdown("### 📦 Sauvegarde Complète du Système")
+        sys_stats = get_backup_summary()
+        st.info(
+            f"📊 **Statistiques globales :** {sys_stats['users']} utilisateurs | "
+            f"{sys_stats['courses']} cours | {sys_stats['messages']} discussions Sanad | {sys_stats['attempts']} entraînements."
+        )
+
+        col_gb1, col_gb2 = st.columns(2)
+        with col_gb1:
+            st.markdown("#### 📥 Téléchargement global")
+            global_zip = export_global_backup()
+            timestamp_str = datetime.now().strftime("%Y%m%d_%H%M")
+            st.download_button(
+                label="📦 Sauvegarde complète du système (.zip)",
+                data=global_zip,
+                file_name=f"sauvegarde_globale_ecole_adnane_{timestamp_str}.zip",
+                mime="application/zip",
+                type="primary",
+                use_container_width=True,
+            )
+
+        with col_gb2:
+            st.markdown("#### 📤 Restauration globale")
+            uploaded_global = st.file_uploader("Fichier de sauvegarde globale (.zip) :", type=["zip"], key="global_restore_upload")
+            if uploaded_global:
+                st.warning("⚠️ **Attention :** La restauration globale réécrira l'ensemble de la base et des dossiers d'utilisateurs.")
+                confirm = st.checkbox("Je confirme vouloir restaurer l'intégralité du système", key="confirm_global_restore")
+                if confirm and st.button("🚀 Lancer la restauration globale", type="primary", use_container_width=True):
+                    with st.spinner("Restauration globale du système en cours..."):
+                        res = restore_global_backup(uploaded_global.read())
+                        if res["success"]:
+                            st.success(f"✅ {res['message']}")
+                            st.balloons()
+                            st.rerun()
+                        else:
+                            st.error(f"❌ {res['error']}")
+
+        st.divider()
+
+        st.markdown("### 🎯 Sauvegarde & Restauration Ciblée d'un Élève")
+        target_student_id = st.selectbox(
+            "Sélectionnez l'élève cible :",
+            options=[s["id"] for s in all_students] if all_students else [],
+            format_func=lambda x: next((f"{s['name']} ({s['email']})" for s in all_students if s["id"] == x), str(x)),
+            key="target_student_backup_select",
+        )
+
+        if target_student_id:
+            target_student = get_user_by_id(target_student_id)
+            st_stats = get_student_backup_summary(target_student_id)
+            st.caption(f"Données de {target_student['name']} : {st_stats['courses']} cours, {st_stats['messages']} messages IA.")
+
+            col_st1, col_st2 = st.columns(2)
+            with col_st1:
+                student_zip = export_student_backup(target_student_id)
+                st.download_button(
+                    label=f"💾 Exporter l'espace de {target_student['name']} (.zip)",
+                    data=student_zip,
+                    file_name=f"revisions_{target_student['name']}_{timestamp_str}.zip",
+                    mime="application/zip",
+                    use_container_width=True,
+                )
+            with col_st2:
+                st_upload = st.file_uploader(f"Restaurer dans l'espace de {target_student['name']} :", type=["zip"], key="target_student_restore_upload")
+                if st_upload and st.button(f"🚀 Restaurer pour {target_student['name']}", type="primary"):
+                    with st.spinner("Restauration ciblée en cours..."):
+                        res_cib = restore_student_backup(st_upload.read(), target_student_id)
+                        if res_cib["success"]:
+                            st.success(f"✅ {res_cib['message']}")
+                            st.rerun()
+                        else:
+                            st.error(f"❌ {res_cib['error']}")
+
+        return
+
+    # -----------------------------------------------------------------------
+    # VUE ÉLÈVE : MES COURS (RÉVISIONS PAR ÉLÈVE)
+    # -----------------------------------------------------------------------
+    if menu == "📚 Mes Cours (Révisions)":
+        if is_admin and active_student_info:
+            st.info(f"👀 **Espace de supervision :** Vous consultez les cours de l'élève **{active_student_info['name']}** (`{active_student_info['email']}`).")
+
+        st.title("📚 Espace de Révision 3AC")
+
+        col_f1, col_f2, col_f3 = st.columns([2, 2, 2])
+        with col_f1:
+            all_subjects = ["Toutes"] + SUBJECTS_FR + SUBJECTS_AR
+            selected_subject = st.selectbox("Filtrer par matière :", all_subjects)
+        with col_f2:
+            selected_lang = st.selectbox("Langue :", ["Toutes", "Français", "العربية"])
+            lang_filter = "fr" if selected_lang == "Français" else ("ar" if selected_lang == "العربية" else None)
+        with col_f3:
+            courses_list = list_courses(
+                user_id=active_user_id,
+                subject=selected_subject if selected_subject != "Toutes" else None,
+                language=lang_filter,
+            )
+            st.write(f"**{len(courses_list)} cours disponible(s)**")
+
+        if not courses_list:
+            st.info(
+                "👋 Aucun cours enregistré pour cet espace. Allez dans l'onglet **➕ Ajouter un Cours** pour déposer vos premiers documents PDF !"
+            )
+            return
+
+        course_options = {c["id"]: f"{'🇲🇦 [AR]' if c['language'] == 'ar' else '🇫🇷 [FR]'} {c['subject']} - {c['title']}" for c in courses_list}
+        selected_course_id = st.selectbox(
+            "Sélectionnez le cours à réviser :",
+            options=list(course_options.keys()),
+            format_func=lambda x: course_options[x],
+        )
+
+        current_course = get_course_by_id(selected_course_id, user_id=active_user_id)
+        if not current_course:
+            st.error("Cours introuvable ou accès non autorisé.")
+            return
+
+        is_ar = current_course["language"] == "ar"
+        badge_cls = get_subject_badge_class(current_course["subject"])
+
+        level_label = "المستوى : السنة الثالثة إعدادي (3AC)" if is_ar else "Niveau : 3AC Collège"
+        lang_badge_text = "العربية (AR)" if is_ar else "Français (FR)"
+
+        header_html = f"""
+        <div class="course-header-box {'rtl-box' if is_ar else ''}">
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+                <div>
+                    <span class="badge-subject {badge_cls}">{current_course['subject']}</span>
+                    <span class="badge-lang">{lang_badge_text}</span>
+                    <span class="course-header-subtitle" style="margin-left:8px; margin-right:8px;">{level_label}</span>
+                </div>
+                <div class="course-header-subtitle">
+                    📄 {current_course['file_name']}
+                </div>
+            </div>
+            <h2>{current_course['title']}</h2>
+        </div>
+        """
+        st.markdown(header_html, unsafe_allow_html=True)
+
+        if current_course.get("key_concepts"):
+            if is_ar:
+                chips = " ".join([f"<span class='concept-tag'>{c}</span>" for c in current_course["key_concepts"]])
+                st.markdown(f"<div dir='rtl' style='text-align:right; margin-top:8px; margin-bottom:12px;'><strong>المفاهيم الأساسية :</strong> {chips}</div>", unsafe_allow_html=True)
+            else:
+                chips = " ".join([f"<span class='concept-tag'>#{c}</span>" for c in current_course["key_concepts"]])
+                st.markdown(f"**Notions clés :** {chips}", unsafe_allow_html=True)
+
+        edit_header_label = "✏️ تصحيح مادة الدرس أو العنوان أو اللغة" if is_ar else "✏️ Modifier la matière, le titre ou la langue de ce cours"
+        with st.expander(edit_header_label):
+            col_ed1, col_ed2, col_ed3 = st.columns([3, 2, 2])
+            with col_ed1:
+                new_title = st.text_input(
+                    "عنوان الدرس" if is_ar else "Titre du cours",
+                    value=current_course["title"],
+                    key=f"edit_title_{current_course['id']}",
+                )
+
+            with col_ed2:
+                all_subjects_display = [
+                    "🇲🇦 التربية الإسلامية",
+                    "🇲🇦 الاجتماعيات",
+                    "🇲🇦 اللغة العربية",
+                    "🇫🇷 Mathématiques",
+                    "🇫🇷 Physique-Chimie",
+                    "🇫🇷 SVT",
+                    "🇫🇷 Français",
+                    "🇫🇷 Anglais",
+                ]
+                current_prefix = "🇲🇦 " if is_ar else "🇫🇷 "
+                current_match = current_prefix + current_course["subject"]
+                default_idx = (
+                    all_subjects_display.index(current_match)
+                    if current_match in all_subjects_display
+                    else 0
+                )
+                chosen_subject_labeled = st.selectbox(
+                    "المادة" if is_ar else "Matière",
+                    all_subjects_display,
+                    index=default_idx,
+                    key=f"edit_subj_{current_course['id']}",
+                )
+                cleaned_subj = chosen_subject_labeled.replace("🇲🇦 ", "").replace("🇫🇷 ", "")
+                is_ar_choice = "🇲🇦" in chosen_subject_labeled or cleaned_subj in SUBJECTS_AR
+
+            with col_ed3:
+                lang_options = ["🇲🇦 العربية (ar)", "🇫🇷 Français (fr)"]
+                lang_default_idx = 0 if is_ar_choice else 1
+                chosen_lang_label = st.selectbox(
+                    "اللغة" if is_ar else "Langue du cours",
+                    lang_options,
+                    index=lang_default_idx,
+                    key=f"edit_lang_{current_course['id']}",
+                )
+                final_lang = "ar" if "العربية" in chosen_lang_label else "fr"
+
+            btn_save_col1, _ = st.columns([2, 5])
+            with btn_save_col1:
+                btn_save_txt = "💾 حفظ التعديل" if is_ar else "💾 Enregistrer les modifications"
+                if st.button(btn_save_txt, type="primary", use_container_width=True, key=f"btn_save_m_{current_course['id']}"):
+                    update_course_metadata(current_course["id"], new_title, cleaned_subj, final_lang, user_id=active_user_id)
+                    st.success("Modifications enregistrées !")
+                    st.rerun()
+
+        st.write("")
+
+        if is_ar:
+            tab_doc, tab_fiche, tab_quiz, tab_tuteur = st.tabs([
+                "📄 وثيقة الدرس",
+                "⚡ بطاقة المراجعة",
+                "🎯 تدريب الامتحان",
+                "🤖 الأستاذ سند",
+            ])
+        else:
+            tab_doc, tab_fiche, tab_quiz, tab_tuteur = st.tabs([
+                "📄 Le Document",
+                "⚡ Fiche Express",
+                "🎯 Entraînement Examen",
+                "🤖 Tuteur Virtuel (Sanad)",
+            ])
+
+        with tab_doc:
+            file_path = current_course.get("file_path")
+            if file_path and os.path.exists(file_path):
+                with open(file_path, "rb") as f:
+                    pdf_data = f.read()
+
                 st.download_button(
                     label="📥 تحميل ملف PDF الأصلي" if is_ar else "📥 Télécharger le PDF original",
                     data=pdf_data,
-                    file_name=current_course["file_name"],
+                    file_name=current_course.get("file_name", "cours.pdf"),
                     mime="application/pdf",
-                    use_container_width=True,
                 )
+            else:
+                st.warning("Fichier PDF non trouvé sur le disque.")
 
-                # Option pour affiner le titre ou la matière
-                edit_exp_label = "✏️ تعديل عنوان الدرس أو المادة أو اللغة" if is_ar else "✏️ Modifier le titre, la matière ou la langue"
-                with st.expander(edit_exp_label):
-                    new_tab_title = st.text_input("عنوان الدرس" if is_ar else "Titre du cours", value=current_course["title"], key=f"tab_title_{current_course['id']}")
-                    all_subjects_display = [
-                        "🇲🇦 التربية الإسلامية",
-                        "🇲🇦 الاجتماعيات",
-                        "🇲🇦 اللغة العربية",
-                        "🇫🇷 Mathématiques",
-                        "🇫🇷 Physique-Chimie",
-                        "🇫🇷 SVT",
-                        "🇫🇷 Français",
-                        "🇫🇷 Anglais",
-                    ]
-                    current_prefix = "🇲🇦 " if is_ar else "🇫🇷 "
-                    current_match = current_prefix + current_course["subject"]
-                    default_idx = (
-                        all_subjects_display.index(current_match)
-                        if current_match in all_subjects_display
-                        else (all_subjects_display.index(f"🇲🇦 {current_course['subject']}") if f"🇲🇦 {current_course['subject']}" in all_subjects_display else 0)
-                    )
-                    chosen_tab_subj = st.selectbox("المادة" if is_ar else "Matière", all_subjects_display, index=default_idx, key=f"tab_subj_{current_course['id']}")
-                    cleaned_tab_subj = chosen_tab_subj.replace("🇲🇦 ", "").replace("🇫🇷 ", "")
-                    is_tab_ar = "🇲🇦" in chosen_tab_subj or cleaned_tab_subj in SUBJECTS_AR
+            st.write("---")
+            with st.expander("📝 عرض النص المستخرج من الوثيقة" if is_ar else "📝 Voir le texte extrait du document"):
+                raw = current_course.get("raw_text") or "Aucun texte."
+                if is_ar:
+                    st.markdown(f"<div class='rtl-box'>{raw[:4000]}...</div>", unsafe_allow_html=True)
+                else:
+                    st.text(raw[:4000] + ("..." if len(raw) > 4000 else ""))
 
-                    lang_tab_options = ["🇲🇦 العربية (ar)", "🇫🇷 Français (fr)"]
-                    lang_tab_default = 0 if is_tab_ar else 1
-                    chosen_tab_lang = st.selectbox("اللغة" if is_ar else "Langue", lang_tab_options, index=lang_tab_default, key=f"tab_lang_{current_course['id']}")
-                    final_tab_lang = "ar" if "العربية" in chosen_tab_lang else "fr"
-
-                    if st.button("حفظ التعديلات" if is_ar else "Enregistrer les modifications", key=f"save_tab_meta_btn_{current_course['id']}"):
-                        update_course_metadata(current_course["id"], new_tab_title, cleaned_tab_subj, final_tab_lang)
-                        st.success("تم حفظ التعديلات بنجاح !" if is_ar else "Modifications enregistrées !")
-                        st.rerun()
-
-                # Option de suppression définitive du cours
-                del_exp_label = "🗑️ حذف هذا الدرس من التطبيق" if is_ar else "🗑️ Supprimer ce cours"
-                with st.expander(del_exp_label):
-                    if is_ar:
-                        st.warning("⚠️ تنبيه : هذا الإجراء نهائي وسيؤدي إلى حذف هذا الدرس وبطاقة مراجعته واختباراته ومحادثات الأستاذ المساعد سند.")
-                        confirm_del = st.checkbox("أؤكد رغبتي في حذف هذا الدرس نهائياً", key=f"del_chk_{current_course['id']}")
-                        if st.button("🗑️ تأكيد الحذف الآن", type="primary", disabled=not confirm_del, key=f"del_btn_{current_course['id']}", use_container_width=True):
-                            delete_course(current_course["id"])
-                            st.session_state.pop("selected_course_id", None)
-                            st.success("تم حذف الدرس بنجاح !")
-                            st.rerun()
+        with tab_fiche:
+            fiche_md = current_course.get("summary_markdown")
+            if not fiche_md:
+                btn_gen_fiche = "⚡ توليد بطاقة المراجعة المركزة بالذكاء الاصطناعي" if is_ar else "⚡ Générer la Fiche Express avec l'IA"
+                if st.button(btn_gen_fiche, type="primary"):
+                    if not user_api_key:
+                        st.error("Veuillez d'abord configurer votre clé API Gemini dans l'onglet Paramètres.")
                     else:
-                        st.warning("⚠️ Attention : La suppression est définitive et effacera ce document, sa fiche express, ses quiz et l'historique du tuteur.")
-                        confirm_del = st.checkbox("Je confirme vouloir supprimer définitivement ce cours", key=f"del_chk_{current_course['id']}")
-                        if st.button("🗑️ Confirmer la suppression", type="primary", disabled=not confirm_del, key=f"del_btn_{current_course['id']}", use_container_width=True):
-                            delete_course(current_course["id"])
-                            st.session_state.pop("selected_course_id", None)
-                            st.success("Le cours a été supprimé avec succès !")
+                        with st.spinner("Génération de la fiche express..."):
+                            generated_summary = generate_revision_sheet(
+                                raw_text=current_course.get("raw_text") or "",
+                                subject=current_course["subject"],
+                                language=current_course["language"],
+                                user_id=active_user_id,
+                            )
+                            update_course_summary(current_course["id"], generated_summary, user_id=active_user_id)
+                            st.rerun()
+            else:
+                if is_ar:
+                    st.markdown(f"<div class='rtl-box'>{fiche_md}</div>", unsafe_allow_html=True)
+                else:
+                    st.markdown(fiche_md)
+
+                st.write("---")
+                if st.button("🔄 Régénérer la Fiche Express"):
+                    if not user_api_key:
+                        st.error("Veuillez d'abord configurer votre clé API Gemini.")
+                    else:
+                        with st.spinner("Régénération..."):
+                            generated_summary = generate_revision_sheet(
+                                raw_text=current_course.get("raw_text") or "",
+                                subject=current_course["subject"],
+                                language=current_course["language"],
+                                user_id=active_user_id,
+                            )
+                            update_course_summary(current_course["id"], generated_summary, user_id=active_user_id)
                             st.rerun()
 
-            # Aperçu du texte extrait
-            st.divider()
-            if is_ar:
-                st.markdown("<div class='rtl-section-title' style='font-size:1.3rem;'>📖 النص المستخرج من الدرس</div>", unsafe_allow_html=True)
-            else:
-                st.markdown("#### 📖 Texte extrait du cours")
-            raw_text = current_course.get("raw_text") or ""
-            if raw_text.strip():
-                if is_ar:
-                    st.markdown(f"<div class='rtl-box'>{raw_text}</div>", unsafe_allow_html=True)
+        with tab_quiz:
+            latest_quiz = get_latest_quiz(current_course["id"], user_id=active_user_id)
+
+            btn_new_quiz = "🎯 توليد اختبار تدريبي جديد (5 أسئلة)" if is_ar else "🎯 Générer un nouveau quiz d'examen (5 questions)"
+            if st.button(btn_new_quiz, type="secondary"):
+                if not user_api_key:
+                    st.error("Veuillez d'abord configurer votre clé API Gemini dans l'onglet Paramètres.")
                 else:
-                    st.text_area("Contenu textuel du cours", value=raw_text, height=350, disabled=True)
-            else:
-                st.warning("لم يتم استخراج أي نص (قد يحتوي الملف على صور ممسوحة ضوئياً فقط)." if is_ar else "Aucun texte brut extrait (le PDF contient peut-être uniquement des images numérisées).")
-        else:
-            st.error("ملف PDF الأصلي غير موجود على القرص." if is_ar else "Le fichier PDF source n'a pas été trouvé sur le disque local.")
-            if st.button("🗑️ حذف هذا السجل من القاعدة" if is_ar else "🗑️ Supprimer cette entrée de la base", type="primary"):
-                delete_course(current_course["id"])
-                st.success("تم حذف السجل بنجاح !" if is_ar else "Entrée supprimée avec succès !")
-                st.rerun()
-
-    # -----------------------------------------------------------------------
-    # ONGLET 2 : FICHE EXPRESS (RÉSUMÉ EXAMEN & PIÈGES FRÉQUENTS)
-    # -----------------------------------------------------------------------
-    with tab_fiche:
-        if is_ar:
-            st.markdown(f"<div class='rtl-section-title'>⚡ بطاقة المراجعة المركزة وفخاخ الامتحان ({current_course['subject']})</div>", unsafe_allow_html=True)
-        else:
-            st.markdown(f"### ⚡ Fiche Express & Pièges d'Examen ({current_course['subject']})")
-
-        existing_summary = current_course.get("summary_markdown")
-        col_btn, col_info = st.columns([2, 3])
-
-        with col_btn:
-            if is_ar:
-                btn_label = "🔄 إعادة توليد بطاقة المراجعة" if existing_summary else "✨ توليد بطاقة المراجعة بالذكاء الاصطناعي"
-            else:
-                btn_label = "🔄 Régénérer la Fiche Express" if existing_summary else "✨ Générer la Fiche Express avec l'IA"
-
-            if st.button(btn_label, type="primary", use_container_width=True):
-                if not api_key:
-                    st.error("يرجى أولاً ضبط مفتاح Gemini في خانة الإعدادات." if is_ar else "Veuillez d'abord configurer votre clé API Gemini dans l'onglet ⚙️ Configuration.")
-                else:
-                    spinner_msg = "جاري إعداد بطاقة المراجعة المركزة باللغة العربية..." if is_ar else "Génération de votre fiche ultra-visuelle en cours..."
-                    with st.spinner(spinner_msg):
-                        try:
-                            # 1. Générer le résumé
-                            summary = generate_revision_sheet(
-                                current_course.get("raw_text") or "",
-                                current_course["subject"],
-                                current_course["language"],
-                            )
-                            # 2. Classifier / extraire concepts clés si manquants
-                            meta = classify_and_extract_metadata(
-                                current_course.get("raw_text") or "",
-                                current_course["language"],
-                                current_course["title"],
-                                current_course["subject"],
-                            )
-                            update_course_summary(current_course["id"], summary, meta.get("key_concepts"))
-                            st.success("تم إعداد بطاقة المراجعة بنجاح !" if is_ar else "Fiche Express générée avec succès !")
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"خطأ أثناء التوليد : {str(e)}" if is_ar else f"Erreur lors de la génération : {str(e)}")
-
-        if existing_summary:
-            st.divider()
-            if is_ar:
-                st.markdown(f"<div class='rtl-box'>{existing_summary}</div>", unsafe_allow_html=True)
-            else:
-                st.markdown(existing_summary)
-        else:
-            if is_ar:
-                st.info("💡 انقر على الزر أعلاه لتوليد ملخص مركز يتضمن المفاهيم الأساسية وفخاخ الامتحان الموحد لهذا الدرس.")
-            else:
-                st.info("💡 Cliquez sur le bouton ci-dessus pour synthétiser les points clés et pièges de ce cours.")
-
-    # -----------------------------------------------------------------------
-    # ONGLET 3 : ENTRAÎNEMENT EXAMEN (QUIZ INTERACTIF & SCORE INSTANTANÉ)
-    # -----------------------------------------------------------------------
-    with tab_quiz:
-        if is_ar:
-            st.markdown(f"<div class='rtl-section-title'>🎯 تدريب على أسئلة الامتحان الموحد ({current_course['subject']})</div>", unsafe_allow_html=True)
-        else:
-            st.markdown(f"### 🎯 Entraînement Examen Normalisé ({current_course['subject']})")
-
-        latest_quiz = get_latest_quiz(current_course["id"])
-        q_col1, q_col2 = st.columns([2, 3])
-
-        with q_col1:
-            if is_ar:
-                q_btn_label = "🔄 إعداد اختبار تدريبي جديد" if latest_quiz else "🚀 بدء اختبار تدريبي موحد (5 أسئلة)"
-            else:
-                q_btn_label = "🔄 Générer un Nouveau Quiz" if latest_quiz else "🚀 Créer un Quiz Examen (5 questions)"
-
-            if st.button(q_btn_label, type="primary", use_container_width=True):
-                if not api_key:
-                    st.error("يرجى ضبط مفتاح الذكاء الاصطناعي في خانة الإعدادات." if is_ar else "Veuillez d'abord configurer votre clé API Gemini dans l'onglet ⚙️ Configuration.")
-                else:
-                    spinner_quiz = "جاري صياغة أسئلة مطابقة للامتحان الموحد..." if is_ar else "Conception de questions types examen normalisé..."
-                    with st.spinner(spinner_quiz):
-                        try:
-                            new_quiz_questions = generate_quiz(
-                                current_course.get("raw_text") or "",
-                                current_course["subject"],
-                                current_course["language"],
-                                num_questions=5,
-                            )
-                            quiz_id = save_quiz(current_course["id"], new_quiz_questions)
-                            # Réinitialiser la session de réponse pour ce cours
-                            st.session_state[f"quiz_submitted_{current_course['id']}_{quiz_id}"] = False
-                            st.success("الاختبار جاهز بالكامل ! انطلق يا بطل." if is_ar else "Nouveau quiz prêt ! À vous de jouer.")
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"خطأ أثناء إعداد الاختبار : {str(e)}" if is_ar else f"Erreur lors de la création du quiz : {str(e)}")
-
-        if latest_quiz and latest_quiz.get("questions"):
-            questions = latest_quiz["questions"]
-            quiz_id = latest_quiz["id"]
-            st.divider()
-
-            # Formulaire de réponse au Quiz
-            submission_key = f"quiz_submitted_{current_course['id']}_{quiz_id}"
-            is_submitted = st.session_state.get(submission_key, False)
-
-            answers_chosen: Dict[int, int] = {}
-
-            for idx, q in enumerate(questions):
-                q_num = idx + 1
-                q_title = q.get("question", "")
-                options = q.get("options", [])
-                ans_idx = q.get("answer_index", 0)
-                explanation = q.get("explanation", "")
-                trap_alert = q.get("trap_alert", "")
-
-                if is_ar:
-                    st.markdown(
-                        f"<div class='rtl-question'>السؤال {q_num} : {q_title}</div>",
-                        unsafe_allow_html=True,
-                    )
-                else:
-                    st.markdown(
-                        f"<div style='margin-top:15px; font-weight:700; font-size:1.1rem;'>Question {q_num} : {q_title}</div>",
-                        unsafe_allow_html=True,
-                    )
-
-                selected_opt = st.radio(
-                    f"خيارات السؤال {q_num}" if is_ar else f"Options pour Q{q_num}",
-                    options=range(len(options)),
-                    format_func=lambda i: options[i] if i < len(options) else "",
-                    key=f"q_{quiz_id}_{idx}",
-                    disabled=is_submitted,
-                    label_visibility="collapsed",
-                )
-                answers_chosen[idx] = selected_opt
-
-                # Affichage des résultats après soumission
-                if is_submitted:
-                    user_ans = answers_chosen[idx]
-                    if user_ans == ans_idx:
-                        if is_ar:
-                            st.success(f"✅ إجابة صحيحة وممتازة ! ({options[ans_idx]})")
-                        else:
-                            st.success(f"✅ Excellente réponse ! ({options[ans_idx]})")
-                    else:
-                        if is_ar:
-                            st.error(f"❌ إجابة غير موفقة ! اختيارك: '{options[user_ans]}'. الإجابة الصحيحة هي: **{options[ans_idx]}**")
-                        else:
-                            st.error(f"❌ Oups ! Votre choix : '{options[user_ans]}'. La bonne réponse était : **{options[ans_idx]}**")
-
-                    # Carte Explication
-                    if is_ar:
-                        st.markdown(
-                            f"<div class='explanation-card-rtl'><strong>💡 الشرح والتوضيح خطوة بخطوة :</strong><br>{explanation}</div>",
-                            unsafe_allow_html=True,
-                        )
-                    else:
-                        st.markdown(
-                            f"<div class='explanation-card'><strong>💡 Explication pas à pas :</strong><br>{explanation}</div>",
-                            unsafe_allow_html=True,
-                        )
-
-                    # Carte Piège d'examen
-                    if trap_alert:
-                        if is_ar:
-                            st.markdown(
-                                f"<div class='trap-card-rtl'><strong>⚠️ فخ شائع في الامتحان الموحد :</strong><br>{trap_alert}</div>",
-                                unsafe_allow_html=True,
-                            )
-                        else:
-                            st.markdown(
-                                f"<div class='trap-card'><strong>⚠️ Piège fréquent à l'examen :</strong><br>{trap_alert}</div>",
-                                unsafe_allow_html=True,
-                            )
-
-                st.write("")
-
-            # Bouton de validation
-            if not is_submitted:
-                btn_validate = "🏆 تأكيد الإجابات واحتساب النقطة" if is_ar else "🏆 Valider mes réponses & voir mon score"
-                if st.button(btn_validate, type="primary", use_container_width=True):
-                    score = sum(1 for idx, q in enumerate(questions) if answers_chosen.get(idx) == q.get("answer_index", 0))
-                    total = len(questions)
-
-                    # Sauvegarde en SQLite
-                    save_quiz_attempt(
-                        course_id=current_course["id"],
-                        quiz_id=quiz_id,
-                        score=score,
-                        total_questions=total,
-                        answers=answers_chosen,
-                    )
-                    st.session_state[submission_key] = True
-
-                    # Célébration si bon score
-                    if score >= total * 0.8:
-                        st.balloons()
-                    st.rerun()
-            else:
-                score = sum(1 for idx, q in enumerate(questions) if answers_chosen.get(idx) == q.get("answer_index", 0))
-                total = len(questions)
-                rate = round((score / total) * 100)
-
-                if is_ar:
-                    st.markdown(f"<div class='rtl-section-title' style='font-size:1.35rem;'>📊 النتيجة المحصل عليها : {score} / {total} ({rate}%)</div>", unsafe_allow_html=True)
-                    if rate >= 80:
-                        st.success("🌟 هنيئاً لك يا بطل ! لقد أتقنت مهارات هذا الدرس وتجنبت كل الفخاخ بنجاح !")
-                    elif rate >= 50:
-                        st.info("👍 عمل جيد ! راجع الشروحات للأسئلة المتبقية لضمان النقطة الكاملة 20/20.")
-                    else:
-                        st.warning("💪 لا تستسلم ! أعد قراءة بطاقة المراجعة المركزة ثم أعد المحاولة.")
-                else:
-                    st.markdown(f"### 📊 Résultat : **{score} / {total}** ({rate}%)")
-                    if rate >= 80:
-                        st.success("🌟 Félicitations ! Tu maîtrises parfaitement les pièges de cette leçon !")
-                    elif rate >= 50:
-                        st.info("👍 Bon travail ! Relis les explications des questions manquées pour viser le 20/20.")
-                    else:
-                        st.warning("💪 Ne te décourage pas ! Relis la Fiche Express et réessaie le quiz.")
-
-                btn_retry = "🔁 إعادة هذا الاختبار" if is_ar else "🔁 Recommencer ce quiz"
-                if st.button(btn_retry):
-                    st.session_state[submission_key] = False
-                    st.rerun()
-
-        else:
-            if is_ar:
-                st.info("لا يوجد اختبار منشأ بعد لهذا الدرس. انقر على الزر أعلاه لتوليد 5 أسئلة تدريبية للامتحان الموحد !")
-            else:
-                st.info("Aucun quiz n'a encore été créé pour ce cours. Cliquez sur le bouton ci-dessus pour vous tester !")
-
-    # -----------------------------------------------------------------------
-    # ONGLET 4 : TUTEUR VIRTUEL SOCRATIQUE (SANAD)
-    # -----------------------------------------------------------------------
-    with tab_tuteur:
-        if is_ar:
-            st.markdown("<div class='rtl-section-title'>🤖 الأستاذ المساعد : سَنَد</div>", unsafe_allow_html=True)
-            st.caption("مرافقك الذكي والأخ الأكبر لامتحانات الثالثة إعدادي — يرشدك خطوة بخطوة بالمنهج السقراطي دون إعطاء الحلول الجاهزة!")
-        else:
-            st.markdown("### 🤖 Tuteur Virtuel : Sanad")
-            st.caption("Ton Grand Frère & Mentor pour le Brevet 3AC — Méthode socratique : il te guide sans faire les exercices à ta place !")
-
-        # Boutons de questions rapides adaptés à la langue
-        st.write("**أسئلة سريعة بنقرة واحدة :**" if is_ar else "**Questions rapides en un clic :**")
-        sug_cols = st.columns(3)
-        suggested_prompt = None
-
-        if is_ar:
-            if sug_cols[0].button("💡 اشرح لي هذا الدرس ببساطة", use_container_width=True):
-                suggested_prompt = "اشرح لي فكرة هذا الدرس ببساطة كما لو كان عمري 12 سنة."
-            if sug_cols[1].button("⚠️ ما هي أهم فخاخ الامتحان هنا؟", use_container_width=True):
-                suggested_prompt = "ما هي الفخاخ والأسئلة المفخخة التي يضعها الأساتذة عادة في الامتحان الموحد لهذا الدرس؟"
-            if sug_cols[2].button("❓ اختبر فهمي بسؤال توجيهي", use_container_width=True):
-                suggested_prompt = "اطرح علي سؤالاً لاختبار فهمي وساعدني في الإجابة عليه خطوة بخطوة."
-        else:
-            if sug_cols[0].button("💡 Explique-moi simplement", use_container_width=True):
-                suggested_prompt = "Peux-tu m'expliquer l'idée générale de ce cours avec une analogie simple de la vie courante ?"
-            if sug_cols[1].button("⚠️ Quels pièges éviter au brevet ?", use_container_width=True):
-                suggested_prompt = "Quels sont les pièges classiques posés à l'examen normalisé sur ce sujet et comment les éviter ?"
-            if sug_cols[2].button("❓ Pose-moi une question", use_container_width=True):
-                suggested_prompt = "Pose-moi une petite question pour tester si j'ai bien compris, et guide-moi pour répondre."
-
-        # Historique des messages
-        history = get_chat_history(current_course["id"])
-
-        for msg in history:
-            role = msg["role"]
-            content = msg["content"]
-            with st.chat_message("user" if role == "user" else "assistant", avatar="🧑‍🎓" if role == "user" else "🤖"):
-                if is_ar:
-                    st.markdown(f"<div class='rtl-box'>{content}</div>", unsafe_allow_html=True)
-                else:
-                    st.markdown(content)
-
-        # Gestion de l'entrée du chat
-        input_placeholder = "اطرح سؤالك على الأستاذ المساعد سند..." if is_ar else "Pose ta question au tuteur..."
-        user_input = st.chat_input(input_placeholder)
-        prompt_to_send = user_input or suggested_prompt
-
-        if prompt_to_send:
-            if not api_key:
-                st.error("يرجى أولاً ضبط مفتاح Gemini في خانة الإعدادات." if is_ar else "Veuillez d'abord configurer votre clé API Gemini dans l'onglet ⚙️ Configuration.")
-            else:
-                # Ajouter message utilisateur
-                add_chat_message(current_course["id"], "user", prompt_to_send)
-                with st.chat_message("user", avatar="🧑‍🎓"):
-                    if is_ar:
-                        st.markdown(f"<div class='rtl-box'>{prompt_to_send}</div>", unsafe_allow_html=True)
-                    else:
-                        st.markdown(prompt_to_send)
-
-                # Réponse socratique
-                with st.chat_message("assistant", avatar="🤖"):
-                    spinner_chat = "الأستاذ سند يفكر في توجيهك بأفضل طريقة..." if is_ar else "Sanad réfléchit à la meilleure façon de te guider..."
-                    with st.spinner(spinner_chat):
-                        updated_history = get_chat_history(current_course["id"])
-                        reply = socratic_tutor_response(
-                            messages=updated_history,
-                            course_context=current_course.get("raw_text") or "",
+                    with st.spinner("Génération des questions d'examen..."):
+                        quiz_questions = generate_quiz(
+                            raw_text=current_course.get("raw_text") or "",
                             subject=current_course["subject"],
                             language=current_course["language"],
+                            num_questions=5,
+                            user_id=active_user_id,
                         )
-                        add_chat_message(current_course["id"], "assistant", reply)
-                        if is_ar:
-                            st.markdown(f"<div class='rtl-box'>{reply}</div>", unsafe_allow_html=True)
+                        save_quiz(current_course["id"], quiz_questions, user_id=active_user_id)
+                        st.rerun()
+
+            if latest_quiz and latest_quiz.get("questions"):
+                questions = latest_quiz["questions"]
+                quiz_id = latest_quiz["id"]
+                submission_key = f"quiz_submitted_{quiz_id}"
+                is_submitted = st.session_state.get(submission_key, False)
+
+                answers_chosen = {}
+                for idx, q in enumerate(questions):
+                    st.markdown(f"**Question {idx + 1} :** {q['question']}")
+                    options = q.get("options", [])
+                    ans_idx = q.get("answer_index", 0)
+                    explanation = q.get("explanation", "")
+                    trap_alert = q.get("trap_alert", "")
+
+                    selected_opt = st.radio(
+                        f"Choix pour Q{idx+1}:",
+                        options,
+                        key=f"q_{quiz_id}_{idx}",
+                        disabled=is_submitted,
+                        label_visibility="collapsed",
+                    )
+                    if selected_opt in options:
+                        answers_chosen[idx] = options.index(selected_opt)
+
+                    if is_submitted:
+                        user_ans = answers_chosen.get(idx)
+                        if user_ans == ans_idx:
+                            st.success(f"✅ Excellente réponse ! ({options[ans_idx]})")
                         else:
-                            st.markdown(reply)
-                st.rerun()
+                            st.error(f"❌ La bonne réponse était : **{options[ans_idx]}**")
 
-        # Bouton effacer l'historique
-        if history:
-            st.write("")
-            btn_clear_chat = "🗑️ مسح المحادثة والبدء من جديد" if is_ar else "🗑️ Effacer la conversation avec le tuteur"
-            if st.button(btn_clear_chat, key="clear_chat_btn"):
-                clear_chat_history(current_course["id"])
-                st.success("تم مسح المحادثة بنجاح." if is_ar else "Discussion réinitialisée.")
-                st.rerun()
+                        if explanation:
+                            st.markdown(f"<div class='explanation-card'><strong>💡 Explication :</strong> {explanation}</div>", unsafe_allow_html=True)
+                        if trap_alert:
+                            st.markdown(f"<div class='trap-card'><strong>⚠️ Piège classique :</strong> {trap_alert}</div>", unsafe_allow_html=True)
 
+                if not is_submitted:
+                    if st.button("🏆 Valider mes réponses", type="primary"):
+                        score = sum(1 for idx, q in enumerate(questions) if answers_chosen.get(idx) == q.get("answer_index", 0))
+                        save_quiz_attempt(
+                            course_id=current_course["id"],
+                            quiz_id=quiz_id,
+                            score=score,
+                            total_questions=len(questions),
+                            answers=answers_chosen,
+                            user_id=active_user_id,
+                        )
+                        st.session_state[submission_key] = True
+                        if score >= len(questions) * 0.8:
+                            st.balloons()
+                        st.rerun()
+                else:
+                    score = sum(1 for idx, q in enumerate(questions) if answers_chosen.get(idx) == q.get("answer_index", 0))
+                    st.markdown(f"### Score obtenu : **{score} / {len(questions)}**")
+                    if st.button("🔁 Recommencer ce quiz"):
+                        st.session_state[submission_key] = False
+                        st.rerun()
+            else:
+                st.info("Aucun quiz généré pour ce cours pour le moment.")
 
-# ===========================================================================
-# 2. ÉCRAN : AJOUTER UN COURS (IMPORT PDF & GOOGLE CLASSROOM)
-# ===========================================================================
+        with tab_tuteur:
+            st.markdown("### 🤖 Tuteur Virtuel : Sanad" if not is_ar else "<div class='rtl-section-title'>🤖 الأستاذ المساعد : سَنَد</div>", unsafe_allow_html=True)
 
-elif menu == "➕ Ajouter un Cours":
-    st.title("➕ Ajouter de Nouveaux Supports de Cours")
-    st.markdown("Importez vos cours en format PDF pour générer automatiquement les fiches de révision et les quiz.")
-
-    mode = st.radio(
-        "Mode d'importation :",
-        ["📁 Import Manuel (Glisser-Déposer de PDFs)", "🏫 Synchronisation Google Classroom"],
-        horizontal=True,
-    )
-
-    if mode == "📁 Import Manuel (Glisser-Déposer de PDFs)":
-        st.write("")
-        uploaded_files = st.file_uploader(
-            "Sélectionnez un ou plusieurs fichiers PDF :",
-            type=["pdf"],
-            accept_multiple_files=True,
-            help="Détection automatique de la langue (Français/Arabe) et de la matière selon le programme officiel 3AC.",
-        )
-
-        if uploaded_files:
-            st.info(f"📄 {len(uploaded_files)} fichier(s) sélectionné(s).")
-            with st.expander("⚙️ Spécifier manuellement la matière (Optionnel)"):
-                st.caption("Par défaut, l'application analyse le contenu du PDF pour détecter automatiquement la matière. Vous pouvez forcer une matière pour ce lot si nécessaire :")
-                manual_subj_upload = st.selectbox(
-                    "Matière spécifique :",
-                    [
-                        "🔍 Détection automatique (recommandé)",
-                        "🇲🇦 التربية الإسلامية",
-                        "🇲🇦 الاجتماعيات",
-                        "🇲🇦 اللغة العربية",
-                        "🇫🇷 Mathématiques",
-                        "🇫🇷 Physique-Chimie",
-                        "🇫🇷 SVT",
-                        "🇫🇷 Français",
-                        "🇫🇷 Anglais",
-                    ],
-                    key="manual_subj_upload",
-                )
-
-            if st.button("🚀 Lancer l'ingestion & l'analyse automatique", type="primary"):
-                progress_bar = st.progress(0)
-                status_text = st.empty()
-
-                forced_subj = None
-                if manual_subj_upload and not manual_subj_upload.startswith("🔍"):
-                    forced_subj = manual_subj_upload.replace("🇲🇦 ", "").replace("🇫🇷 ", "")
-
-                success_count = 0
-                duplicate_count = 0
-
-                for i, uploaded_file in enumerate(uploaded_files):
-                    status_text.text(f"Traitement de {uploaded_file.name}...")
-                    file_bytes = uploaded_file.read()
-
-                    res = ingest_pdf_bytes(file_bytes, uploaded_file.name, custom_subject=forced_subj)
-
-                    if res["status"] == "success":
-                        success_count += 1
-                        st.success(f"✅ **{uploaded_file.name}** : Enregistré en tant que **{res['subject']}** ({res['language'].upper()}) - {res['page_count']} pages.")
-                    elif res["status"] == "duplicate":
-                        duplicate_count += 1
-                        st.warning(f"ℹ️ **{uploaded_file.name}** : Déjà présent dans votre base (doublon ignoré).")
-
-                    progress_bar.progress((i + 1) / len(uploaded_files))
-
-                status_text.text("Ingestion terminée !")
-                st.write("---")
-                st.success(f"🎉 Bilan : {success_count} cours ajouté(s), {duplicate_count} doublon(s) évité(s).")
-                st.info("💡 *Si la matière d'un cours a été mal détectée, vous pouvez la changer en 1 clic dans l'onglet **Mes Cours**.*")
-
-    else:
-        st.markdown("### 🏫 Synchronisation Google Classroom")
-        st.write(
-            "Récupérez automatiquement les devoirs et supports PDF postés par vos professeurs sur Google Classroom."
-        )
-
-        has_creds = is_classroom_configured()
-        if not has_creds:
-            st.warning("⚠️ Le fichier `credentials.json` n'est pas encore téléversé.")
-            st.markdown(
-                "Pour activer Classroom, téléversez votre fichier d'identifiants client OAuth 2.0 ci-dessous "
-                "ou suivez le guide dans l'onglet **⚙️ Configuration & Guide**."
-            )
-            uploaded_cred = st.file_uploader("Téléverser `credentials.json` :", type=["json"])
-            if uploaded_cred:
-                with open(CREDENTIALS_PATH, "wb") as f:
-                    f.write(uploaded_cred.read())
-                st.success("Fichier credentials.json enregistré avec succès !")
-                st.rerun()
-        else:
-            st.success("🟢 Identifiants Google Classroom configurés !")
-            if st.button("🔄 Synchroniser mes cours Classroom maintenant", type="primary"):
-                with st.spinner("Connexion à Google Classroom et téléchargement des documents..."):
-                    sync_res = sync_google_classroom()
-                    if sync_res["success"]:
-                        st.success(sync_res["message"])
+            history = get_chat_history(current_course["id"], user_id=active_user_id)
+            for msg in history:
+                role = msg["role"]
+                content = msg["content"]
+                with st.chat_message("user" if role == "user" else "assistant", avatar="🧑‍🎓" if role == "user" else "🤖"):
+                    if is_ar:
+                        st.markdown(f"<div class='rtl-box'>{content}</div>", unsafe_allow_html=True)
                     else:
-                        st.error(sync_res["error"])
+                        st.markdown(content)
 
+            user_input = st.chat_input("Pose ta question à Sanad..." if not is_ar else "اطرح سؤالك على الأستاذ المساعد سند...")
+            if user_input:
+                if not user_api_key:
+                    st.error("Veuillez d'abord configurer votre clé API Gemini dans l'onglet Paramètres.")
+                else:
+                    add_chat_message(current_course["id"], "user", user_input, user_id=active_user_id)
+                    with st.chat_message("user", avatar="🧑‍🎓"):
+                        st.markdown(user_input)
 
-# ===========================================================================
-# 3. ÉCRAN : MES PROGRÈS & TABLEAU DE BORD EXAMEN
-# ===========================================================================
+                    with st.chat_message("assistant", avatar="🤖"):
+                        with st.spinner("Sanad prépare ses conseils..."):
+                            updated_history = get_chat_history(current_course["id"], user_id=active_user_id)
+                            reply = socratic_tutor_response(
+                                messages=updated_history,
+                                course_context=current_course.get("raw_text") or "",
+                                subject=current_course["subject"],
+                                language=current_course["language"],
+                                user_id=active_user_id,
+                            )
+                            add_chat_message(current_course["id"], "assistant", reply, user_id=active_user_id)
+                            if is_ar:
+                                st.markdown(f"<div class='rtl-box'>{reply}</div>", unsafe_allow_html=True)
+                            else:
+                                st.markdown(reply)
+                    st.rerun()
 
-elif menu == "📊 Mes Progrès":
-    st.title("📊 Tableau de Bord & Progression 3AC")
-    st.markdown("Suivez votre assiduité et vos taux de réussite par matière pour arriver serein(e) au brevet !")
-
-    stats = get_quiz_stats()
-
-    m_col1, m_col2, m_col3, m_col4 = st.columns(4)
-    with m_col1:
-        st.metric("Total Quiz passés", stats["total_attempts"])
-    with m_col2:
-        st.metric("Questions répondues", stats["total_questions"])
-    with m_col3:
-        st.metric("Bonnes réponses", stats["total_score"])
-    with m_col4:
-        st.metric("Moyenne générale", f"{stats['average_success_rate']}%")
-
-    st.divider()
-
-    col_sub, col_hist = st.columns([1, 1])
-
-    with col_sub:
-        st.markdown("### 🎯 Maîtrise par matière")
-        by_subj = stats.get("by_subject", [])
-        if by_subj:
-            for s in by_subj:
-                subj_name = s["subject"]
-                rate = s["success_rate"]
-                attempts = s["attempts"]
-                badge_cls = get_subject_badge_class(subj_name)
-
-                st.markdown(
-                    f"<div><span class='badge-subject {badge_cls}'>{subj_name}</span> "
-                    f"<strong>{rate}%</strong> ({attempts} session(s))</div>",
-                    unsafe_allow_html=True,
-                )
-                st.progress(rate / 100.0)
-                st.write("")
-        else:
-            st.info("Aucune tentative de quiz enregistrée. Faites un quiz dans un cours pour afficher vos statistiques !")
-
-    with col_hist:
-        st.markdown("### 🕒 Derniers entraînements")
-        recent = stats.get("recent_attempts", [])
-        if recent:
-            for a in recent:
-                date_str = str(a.get("completed_at", ""))[:16]
-                score_str = f"{a['score']}/{a['total_questions']}"
-                st.markdown(
-                    f"- **{a['course_title']}** ({a['subject']}) : `{score_str}` — <span style='color:var(--text-color, inherit); opacity:0.75; font-size:0.8rem;'>{date_str}</span>",
-                    unsafe_allow_html=True,
-                )
-        else:
-            st.caption("L'historique des 10 derniers quiz s'affichera ici.")
-
-
-# ===========================================================================
-# 4. ÉCRAN : CONFIGURATION SÉCURISÉE & GUIDE INTERACTIF 2 MINUTES
-# ===========================================================================
-
-elif menu == "⚙️ Configuration & Guide":
-    st.title("⚙️ Paramètres & Configuration")
-    st.markdown("Configurez vos clés d'accès sans toucher au terminal et profitez de l'IA gratuite.")
+            if history:
+                if st.button("🗑️ Effacer la conversation avec Sanad", key="clear_chat_active"):
+                    clear_chat_history(current_course["id"], user_id=active_user_id)
+                    st.rerun()
 
     # -----------------------------------------------------------------------
-    # Guide interactif pas à pas repliable
+    # VUE ÉLÈVE : AJOUTER UN COURS
     # -----------------------------------------------------------------------
-    with st.expander("📖 **Guide : Obtenir vos accès gratuits en 2 minutes (100% Sans Carte Bancaire)**", expanded=True):
-        st.markdown("""
-        ### 🚀 Pourquoi Google Gemini ?
-        Google propose un **palier gratuit très généreux (Free Tier)** pour ses modèles de pointe **Gemini 2.0 Flash / 1.5 Flash**. 
-        Vous n'avez **besoin d'aucune carte de crédit** pour l'utiliser.
+    elif menu == "➕ Ajouter un Cours":
+        if is_admin and active_student_info:
+            st.info(f"👀 **Espace de supervision :** Vous téléversez pour l'élève **{active_student_info['name']}**.")
 
-        #### ⚡ Étape par étape pour créer votre clé en 2 minutes :
-        1. Rendez-vous directement sur [**Google AI Studio (Lien direct)**](https://aistudio.google.com/).
-        2. Connectez-vous avec n'importe quel compte Google (Gmail standard).
-        3. Cliquez sur le bouton bleu **"Get API key"** (en haut à gauche).
-        4. Cliquez sur **"Create API key"** -> Sélectionnez ou créez un projet (1 clic).
-        5. Copiez la clé générée (elle commence par `AIzaSy...`).
-        6. Collez-la dans le formulaire ci-dessous et cliquez sur **"Enregistrer la clé"**, puis testez la connexion !
-        
-        ---
-        #### 🏫 Et pour Google Classroom ?
-        - **Option 1 (Recommandée & Simple) :** Utilisez le **glisser-déposer de PDF** dans l'onglet *➕ Ajouter un Cours*. Pas besoin de configurer Google Cloud !
-        - **Option 2 (Automatique) :** Si vous souhaitez synchroniser automatiquement votre Google Classroom, téléchargez votre fichier `credentials.json` depuis Google Cloud Console (API Classroom & Drive activées) et téléversez-le ci-dessous.
-        """)
+        st.title("➕ Ajouter des Cours (3AC)")
 
-    st.write("")
-
-    # Formulaire de configuration des clés API
-    st.markdown("### 🔑 Clés API de l'Intelligence Artificielle")
-
-    current_gemini = get_gemini_api_key() or ""
-    current_openai = get_openai_api_key() or ""
-
-    col_cfg1, col_cfg2 = st.columns([3, 1])
-
-    with col_cfg1:
-        new_gemini = st.text_input(
-            "Clé API Google Gemini (Prioritaire - Gratuite) :",
-            value=current_gemini,
-            type="password",
-            placeholder="Ex: AIzaSyD...",
-            help="Obtenue gratuitement sur https://aistudio.google.com/ sans carte bancaire.",
-        )
-        new_openai = st.text_input(
-            "Clé API OpenAI (Optionnelle - Fallback) :",
-            value=current_openai,
-            type="password",
-            placeholder="Ex: sk-proj-...",
-            help="Utilisée uniquement si vous le souhaitez en cas de secours.",
+        mode = st.radio(
+            "Mode d'importation :",
+            ["📁 Import Manuel (PDF)", "🏫 Synchronisation Google Classroom"],
+            horizontal=True,
         )
 
-    with col_cfg2:
-        st.write("")
-        st.write("")
-        if st.button("💾 Enregistrer la clé", type="primary", use_container_width=True):
-            if new_gemini:
-                save_config_value("GEMINI_API_KEY", new_gemini)
-            if new_openai:
-                save_config_value("OPENAI_API_KEY", new_openai)
-            st.success("Clé enregistrée avec succès !")
-            st.rerun()
+        if mode == "📁 Import Manuel (PDF)":
+            uploaded_files = st.file_uploader(
+                "Sélectionnez un ou plusieurs fichiers PDF :",
+                type=["pdf"],
+                accept_multiple_files=True,
+                help="Les fichiers seront stockés dans votre dossier personnel isolé.",
+            )
 
-        if st.button("🔍 Tester la connexion", use_container_width=True):
-            with st.spinner("Test de connectivité avec l'IA en cours..."):
-                key_to_test = new_gemini.strip() if new_gemini else None
-                res = test_gemini_connection(key_to_test)
+            if uploaded_files:
+                st.info(f"📄 {len(uploaded_files)} fichier(s) sélectionné(s).")
+                if st.button("🚀 Ingestion & Analyse Automatique", type="primary"):
+                    progress_bar = st.progress(0)
+                    success_count = 0
+                    dup_count = 0
+
+                    for i, f in enumerate(uploaded_files):
+                        file_bytes = f.read()
+                        res = ingest_pdf_bytes(file_bytes, f.name, user_id=active_user_id)
+                        if res["status"] == "success":
+                            success_count += 1
+                            st.success(f"✅ {f.name} ajouté ({res['subject']} - {res['language'].upper()})")
+                        else:
+                            dup_count += 1
+                            st.warning(f"ℹ️ {f.name} : Déjà présent dans votre espace.")
+                        progress_bar.progress((i + 1) / len(uploaded_files))
+
+                    st.success(f"Bilan : {success_count} cours ajouté(s), {dup_count} doublon(s).")
+
+        else:
+            st.markdown("### 🏫 Synchronisation Google Classroom Individuelle")
+            st.write("Récupérez vos cours et devoirs depuis votre propre compte Classroom.")
+
+            has_creds = is_classroom_configured(active_user_id)
+            if not has_creds:
+                st.warning("⚠️ Vos identifiants Google Classroom (`credentials.json`) ne sont pas encore téléversés.")
+                up_cred = st.file_uploader("Téléverser votre `credentials.json` :", type=["json"], key="up_cred_individual")
+                if up_cred:
+                    save_user_credentials(active_user_id, up_cred.read())
+                    st.success("Identifiants enregistrés dans votre espace !")
+                    st.rerun()
+            else:
+                st.success("🟢 Identifiants Classroom configurés pour votre compte.")
+                if st.button("🔄 Synchroniser mes devoirs Classroom", type="primary"):
+                    with st.spinner("Synchronisation Classroom en cours..."):
+                        sync_res = sync_google_classroom(user_id=active_user_id)
+                        if sync_res["success"]:
+                            st.success(sync_res["message"])
+                        else:
+                            st.error(sync_res["error"])
+
+    # -----------------------------------------------------------------------
+    # VUE ÉLÈVE : MES PROGRÈS
+    # -----------------------------------------------------------------------
+    elif menu == "📊 Mes Progrès":
+        if is_admin and active_student_info:
+            st.info(f"👀 **Espace de supervision :** Statistiques de l'élève **{active_student_info['name']}**.")
+
+        st.title("📊 Progression & Révisions 3AC")
+
+        stats = get_quiz_stats(user_id=active_user_id)
+
+        m1, m2, m3, m4 = st.columns(4)
+        with m1:
+            st.metric("Total Quiz passés", stats["total_attempts"])
+        with m2:
+            st.metric("Questions répondues", stats["total_questions"])
+        with m3:
+            st.metric("Bonnes réponses", stats["total_score"])
+        with m4:
+            st.metric("Moyenne générale", f"{stats['average_success_rate']}%")
+
+        st.divider()
+
+        col_sub, col_hist = st.columns([1, 1])
+        with col_sub:
+            st.markdown("### 🎯 Maîtrise par matière")
+            by_subj = stats.get("by_subject", [])
+            if by_subj:
+                for s in by_subj:
+                    rate = s["success_rate"]
+                    badge_cls = get_subject_badge_class(s["subject"])
+                    st.markdown(f"<div><span class='badge-subject {badge_cls}'>{s['subject']}</span> <strong>{rate}%</strong> ({s['attempts']} quiz)</div>", unsafe_allow_html=True)
+                    st.progress(rate / 100.0)
+                    st.write("")
+            else:
+                st.info("Aucun entraînement pour le moment.")
+
+        with col_hist:
+            st.markdown("### 🕒 Derniers entraînements")
+            recent = stats.get("recent_attempts", [])
+            if recent:
+                for a in recent:
+                    date_str = str(a.get("completed_at", ""))[:16]
+                    st.markdown(f"- **{a['course_title']}** ({a['subject']}) : `{a['score']}/{a['total_questions']}` — <small>{date_str}</small>", unsafe_allow_html=True)
+            else:
+                st.caption("L'historique des quiz récents apparaîtra ici.")
+
+    # -----------------------------------------------------------------------
+    # VUE ÉLÈVE : PARAMÈTRES INDIVIDUELS & SAUVEGARDE ÉLÈVE
+    # -----------------------------------------------------------------------
+    elif menu == "⚙️ Paramètres & Sauvegardes":
+        if is_admin and active_student_info:
+            st.info(f"👀 **Espace de supervision :** Paramètres et sauvegarde de **{active_student_info['name']}**.")
+
+        st.title("⚙️ Paramètres & Sauvegardes Personnelles")
+
+        st.markdown("### 🔑 Clé API Google Gemini Personnelle")
+        st.markdown(
+            "Chaque utilisateur renseigne sa propre clé API Google Gemini gratuite. "
+            "Elle est stockée de manière strictement privée dans votre profil."
+        )
+
+        current_user_gemini = get_user_gemini_api_key(active_user_id) or ""
+        col_k1, col_k2 = st.columns([3, 1])
+        with col_k1:
+            new_user_gemini = st.text_input(
+                "Votre clé API Gemini gratuite :",
+                value=current_user_gemini,
+                type="password",
+                placeholder="AIzaSy...",
+                help="Gratuite sur https://aistudio.google.com/ sans carte de crédit.",
+            )
+        with col_k2:
+            st.write("")
+            st.write("")
+            if st.button("💾 Enregistrer la clé", type="primary", use_container_width=True, key="save_student_gemini"):
+                if new_user_gemini:
+                    save_user_gemini_api_key(active_user_id, new_user_gemini)
+                    st.success("Clé enregistrée avec succès !")
+                    st.rerun()
+
+        if st.button("🔍 Tester ma connexion Gemini", key="test_student_gemini"):
+            with st.spinner("Test de la clé en cours..."):
+                res = test_user_gemini_connection(active_user_id)
                 if res["success"]:
-                    if key_to_test:
-                        save_config_value("GEMINI_API_KEY", key_to_test)
                     st.success(f"✅ {res['message']}")
-                    st.info("🎉 Clé validée et sauvegardée avec succès ! Vous pouvez réviser vos cours.")
                 else:
                     st.error(f"❌ {res['error']}")
-                    if "tip" in res:
-                        st.info(f"💡 {res['tip']}")
 
-    st.divider()
+        st.divider()
 
-    # Section Google Classroom
-    st.markdown("### 🏫 Identifiants Google Classroom")
-    cred_file = st.file_uploader("Fichier client OAuth2 (`credentials.json`) :", type=["json"])
-    if cred_file:
-        with open(CREDENTIALS_PATH, "wb") as f:
-            f.write(cred_file.read())
-        st.success("Fichier credentials.json mis à jour avec succès !")
+        st.markdown("### 🏫 Identifiants Google Classroom Personnels")
+        cred_file = st.file_uploader("Fichier client `credentials.json` personnel :", type=["json"], key="up_cred_settings")
+        if cred_file:
+            save_user_credentials(active_user_id, cred_file.read())
+            st.success("Fichier credentials.json enregistré dans votre espace personnel !")
 
-    st.divider()
+        st.divider()
 
-    # -----------------------------------------------------------------------
-    # Section Sauvegarde, Export & Restauration des Données & Chats IA
-    # -----------------------------------------------------------------------
-    st.markdown("### 💾 Sauvegarde & Restauration Complète des Données")
-    st.markdown(
-        "Exportez ou restaurez l'intégralité de vos cours, fiches express, quiz, scores "
-        "**et toutes vos discussions avec le tuteur IA Sanad** en 1 clic. "
-        "Idéal pour transférer vos données vers Streamlit Cloud ou faire une copie de sécurité sur clé USB."
-    )
-
-    backup_stats = get_backup_summary()
-    st.info(
-        f"📊 **État actuel de votre base de données :** "
-        f"**{backup_stats['courses']}** cours | "
-        f"**{backup_stats['messages']}** échanges avec l'IA Sanad | "
-        f"**{backup_stats['quizzes']}** quiz d'examen | "
-        f"**{backup_stats['attempts']}** entraînements terminés."
-    )
-
-    col_bk1, col_bk2 = st.columns([1, 1])
-
-    with col_bk1:
-        st.markdown("#### 📥 Exporter mes données")
-        st.caption("Téléchargez votre sauvegarde complète (Base de données SQLite + PDFs originaux).")
-
-        # Bouton d'export ZIP complet
-        zip_data = export_backup_zip()
-        timestamp_str = datetime.now().strftime("%Y%m%d_%H%M")
-        st.download_button(
-            label="📦 Télécharger l'archive complète (.zip)",
-            data=zip_data,
-            file_name=f"sauvegarde_ecole_adnane_{timestamp_str}.zip",
-            mime="application/zip",
-            type="primary",
-            use_container_width=True,
-            help="Archive contenant la base SQLite, les cours PDF et tout l'historique de chat de l'IA Sanad.",
+        st.markdown("### 💾 Sauvegarder & Restaurer mes Révisions")
+        st.markdown(
+            "Exportez l'intégralité de vos cours, vos fiches de révision, vos quiz et vos discussions avec Sanad "
+            "dans une archive ZIP personnelle sécurisée."
         )
 
-        # Bouton d'export base SQLite seule
-        db_raw_data = export_database_file()
-        st.download_button(
-            label="🗄️ Télécharger uniquement la base (.db)",
-            data=db_raw_data,
-            file_name="ecole_adnane.db",
-            mime="application/x-sqlite3",
-            use_container_width=True,
-            help="Fichier SQLite contenant tous les textes, cours, quiz et discussions IA.",
+        my_stats = get_student_backup_summary(active_user_id)
+        st.info(
+            f"📊 **Vos données actuelles :** {my_stats['courses']} cours | "
+            f"{my_stats['messages']} échanges avec l'IA Sanad | {my_stats['quizzes']} quiz | {my_stats['attempts']} entraînements."
         )
 
-    with col_bk2:
-        st.markdown("#### 📤 Restaurer une sauvegarde")
-        st.caption("Chargez un fichier (.zip ou .db) pour restaurer instantanément tous vos cours et échanges IA.")
+        col_sb1, col_sb2 = st.columns(2)
+        with col_sb1:
+            st.markdown("#### 📥 Sauvegarder mes révisions")
+            student_backup_zip = export_student_backup(active_user_id)
+            timestamp_str = datetime.now().strftime("%Y%m%d_%H%M")
+            target_name = active_student_info["name"] if active_student_info else current_user["name"]
+            st.download_button(
+                label="💾 Sauvegarder mes révisions (.zip)",
+                data=student_backup_zip,
+                file_name=f"mes_revisions_{target_name}_{timestamp_str}.zip",
+                mime="application/zip",
+                type="primary",
+                use_container_width=True,
+            )
 
-        uploaded_backup = st.file_uploader(
-            "Sélectionnez votre fichier de sauvegarde :",
-            type=["zip", "db", "sqlite"],
-            key="restore_uploader",
-        )
-        if uploaded_backup is not None:
-            if st.button("🚀 Restaurer cette sauvegarde maintenant", type="primary", use_container_width=True):
-                with st.spinner("Restauration des données en cours..."):
-                    res = restore_backup(uploaded_backup.read(), uploaded_backup.name)
+        with col_sb2:
+            st.markdown("#### 📤 Restaurer mes révisions")
+            uploaded_st_backup = st.file_uploader(
+                "Sélectionnez votre archive personnelle (.zip) :",
+                type=["zip"],
+                key="restore_student_backup_uploader",
+            )
+            if uploaded_st_backup and st.button("🚀 Restaurer mes révisions", type="primary", use_container_width=True):
+                with st.spinner("Restauration de votre espace en cours..."):
+                    res = restore_student_backup(uploaded_st_backup.read(), target_user_id=active_user_id)
                     if res["success"]:
                         st.success(f"✅ {res['message']}")
                         st.balloons()
                         st.rerun()
                     else:
                         st.error(f"❌ {res['error']}")
+
+
+# Lancement de l'interface authentifiée si un utilisateur est en session
+current_session_user = st.session_state.get("user")
+if current_session_user:
+    render_authenticated_app(current_session_user)

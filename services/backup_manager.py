@@ -1,7 +1,10 @@
 """
-Module de sauvegarde, export et restauration pour Ecole Adnane.
-Permet d'exporter l'intégralité des données (cours, fiches, quiz, discussions avec l'IA Sanad et PDFs)
-dans un fichier ZIP ou SQLite autonome pour garantir la persistance même sur le cloud.
+Module de sauvegarde, export et restauration étanche pour Ecole Adnane.
+Supporte :
+1. Sauvegarde / Restauration personnelle pour chaque élève (ZIP + data.json + PDFs isolés).
+2. Sauvegarde / Restauration globale pour l'administrateur (Base complète + storage/users/).
+3. Export / Restauration ciblée par élève pour l'administrateur.
+4. Protection stricte contre les attaques par traversée de répertoire (path traversal).
 """
 
 import io
@@ -13,26 +16,331 @@ import sqlite3
 import zipfile
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
-from models.database import get_connection, get_db_path, init_db
+from models.database import (
+    get_connection,
+    get_db_path,
+    get_user_by_id,
+    init_db,
+    save_course,
+    save_quiz,
+    save_quiz_attempt,
+    add_chat_message,
+    save_flashcard,
+)
+from services.downloader import get_user_storage_dir, USERS_DIR, STORAGE_DIR
 
 logger = logging.getLogger(__name__)
 
-STORAGE_DIR = Path(__file__).parent.parent / "storage"
-COURSES_DIR = STORAGE_DIR / "cours"
 SQLITE_HEADER = b"SQLite format 3\x00"
 
 
-def get_backup_summary() -> Dict[str, int]:
-    """Compte le nombre d'éléments actuellement présents dans la base."""
-    db_path = get_db_path()
-    if not db_path.exists():
-        return {"courses": 0, "quizzes": 0, "attempts": 0, "messages": 0}
+def is_safe_extract_path(dest_dir: Path, target_path: Path) -> bool:
+    """Vérifie qu'un chemin d'extraction ne sort pas du dossier de destination (anti-traversal)."""
+    try:
+        dest_resolved = dest_dir.resolve()
+        target_resolved = target_path.resolve()
+        return target_resolved.is_relative_to(dest_resolved)
+    except Exception:
+        return False
+
+
+# ===========================================================================
+# 1. SAUVEGARDE & RESTAURATION PERSONNELLE (ÉLÈVE)
+# ===========================================================================
+
+def get_student_backup_summary(user_id: int) -> Dict[str, int]:
+    """Compte les données associées à un élève spécifique."""
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT count(*) FROM courses WHERE user_id = ?", (user_id,))
+        courses = cur.fetchone()[0]
+
+        cur.execute("SELECT count(*) FROM quizzes WHERE user_id = ?", (user_id,))
+        quizzes = cur.fetchone()[0]
+
+        cur.execute("SELECT count(*) FROM quiz_attempts WHERE user_id = ?", (user_id,))
+        attempts = cur.fetchone()[0]
+
+        cur.execute("SELECT count(*) FROM chat_messages WHERE user_id = ?", (user_id,))
+        messages = cur.fetchone()[0]
+
+        cur.execute("SELECT count(*) FROM flashcards WHERE user_id = ?", (user_id,))
+        flashcards = cur.fetchone()[0]
+
+        return {
+            "courses": courses,
+            "quizzes": quizzes,
+            "attempts": attempts,
+            "messages": messages,
+            "flashcards": flashcards,
+        }
+    except Exception as e:
+        logger.error(f"Erreur résumé élève {user_id}: {e}")
+        return {"courses": 0, "quizzes": 0, "attempts": 0, "messages": 0, "flashcards": 0}
+    finally:
+        conn.close()
+
+
+def export_student_backup(user_id: int) -> bytes:
+    """
+    Exporte toutes les révisions d'un élève dans un fichier ZIP en mémoire :
+    - Les fichiers PDF originaux de l'élève (storage/users/<user_id>/cours/)
+    - data.json : cours, fiches, quiz, résultats et historique tuteur liés à son user_id
+    - manifest.json : métadonnées de l'élève et horodatage
+    """
+    user = get_user_by_id(user_id)
+    if not user:
+        raise ValueError(f"Utilisateur introuvable avec l'ID {user_id}")
 
     conn = get_connection()
     try:
         cur = conn.cursor()
+
+        # 1. Cours de l'élève
+        cur.execute("SELECT * FROM courses WHERE user_id = ?", (user_id,))
+        courses = [dict(r) for r in cur.fetchall()]
+
+        # 2. Quiz de l'élève
+        cur.execute("SELECT * FROM quizzes WHERE user_id = ?", (user_id,))
+        quizzes = [dict(r) for r in cur.fetchall()]
+
+        # 3. Tentatives / Résultats de l'élève
+        cur.execute("SELECT * FROM quiz_attempts WHERE user_id = ?", (user_id,))
+        attempts = [dict(r) for r in cur.fetchall()]
+
+        # 4. Historique de discussion avec Sanad
+        cur.execute("SELECT * FROM chat_messages WHERE user_id = ?", (user_id,))
+        messages = [dict(r) for r in cur.fetchall()]
+
+        # 5. Flashcards
+        cur.execute("SELECT * FROM flashcards WHERE user_id = ?", (user_id,))
+        flashcards = [dict(r) for r in cur.fetchall()]
+
+    finally:
+        conn.close()
+
+    data_payload = {
+        "user_email": user["email"],
+        "user_name": user["name"],
+        "courses": courses,
+        "quizzes": quizzes,
+        "quiz_attempts": attempts,
+        "chat_messages": messages,
+        "flashcards": flashcards,
+    }
+
+    stats = get_student_backup_summary(user_id)
+    manifest = {
+        "app": "Ecole Adnane",
+        "type": "student_backup",
+        "version": "2.0.0",
+        "exported_at": datetime.now().isoformat(),
+        "user": {"email": user["email"], "name": user["name"], "role": user["role"]},
+        "stats": stats,
+    }
+
+    user_storage_dir = get_user_storage_dir(user_id)
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        # Fichiers JSON
+        zf.writestr("manifest.json", json.dumps(manifest, indent=2, ensure_ascii=False))
+        zf.writestr("data.json", json.dumps(data_payload, indent=2, ensure_ascii=False))
+
+        # Fichiers PDF originaux de l'élève
+        if user_storage_dir.exists():
+            for pdf_file in user_storage_dir.glob("*.pdf"):
+                zf.write(pdf_file, arcname=f"cours/{pdf_file.name}")
+
+    buf.seek(0)
+    return buf.getvalue()
+
+
+def restore_student_backup(file_bytes: bytes, target_user_id: int) -> Dict[str, Any]:
+    """
+    Restaure les cours et l'historique d'un élève dans son espace personnel.
+    Garantit le cloisonnement : toutes les données insérées reçoivent strictement target_user_id.
+    Protège contre les attaques de traversée de répertoire.
+    """
+    if not file_bytes:
+        return {"success": False, "error": "Le fichier téléversé est vide."}
+
+    user = get_user_by_id(target_user_id)
+    if not user:
+        return {"success": False, "error": f"Utilisateur cible introuvable (ID: {target_user_id})."}
+
+    user_storage_dir = get_user_storage_dir(target_user_id)
+    user_storage_dir.mkdir(parents=True, exist_ok=True)
+
+    try:
+        buf = io.BytesIO(file_bytes)
+        with zipfile.ZipFile(buf, "r") as zf:
+            # Vérifier que ce n'est pas un zip malveillant
+            for member in zf.infolist():
+                filename = member.filename
+                if ".." in filename or filename.startswith("/") or filename.startswith("\\"):
+                    return {"success": False, "error": "Tentative de traversée de répertoire détectée."}
+
+            if "data.json" not in zf.namelist():
+                return {"success": False, "error": "Archive invalide : fichier data.json manquant."}
+
+            # 1. Extraire les PDFs de manière sécurisée
+            extracted_pdfs = 0
+            for member in zf.infolist():
+                if member.filename.lower().endswith(".pdf"):
+                    safe_name = Path(member.filename).name
+                    dest_file = user_storage_dir / safe_name
+                    if is_safe_extract_path(user_storage_dir, dest_file):
+                        with zf.open(member) as src, open(dest_file, "wb") as dst:
+                            shutil.copyfileobj(src, dst)
+                        extracted_pdfs += 1
+
+            # 2. Charger les données JSON
+            raw_data = zf.read("data.json").decode("utf-8")
+            data = json.loads(raw_data)
+
+        # 3. Transaction SQL sécurisée pour insérer les données sous target_user_id
+        conn = get_connection()
+        try:
+            with conn:
+                cur = conn.cursor()
+                course_id_map: Dict[int, int] = {}
+                restored_courses = 0
+                restored_quizzes = 0
+                restored_attempts = 0
+                restored_chats = 0
+                restored_cards = 0
+
+                # Ingestion des cours
+                for c in data.get("courses", []):
+                    old_id = c["id"]
+                    file_name = c["file_name"]
+                    file_hash = c["file_hash"]
+                    # Retrouver le PDF extrait correspondant
+                    matched_file = None
+                    for pdf_candidate in user_storage_dir.glob(f"*{file_hash[:8]}*"):
+                        matched_file = str(pdf_candidate)
+                        break
+                    if not matched_file:
+                        matched_file = str(user_storage_dir / file_name)
+
+                    try:
+                        key_concepts = json.loads(c.get("key_concepts_json") or "[]")
+                    except Exception:
+                        key_concepts = []
+
+                    new_cid = save_course(
+                        title=c["title"],
+                        subject=c["subject"],
+                        language=c["language"],
+                        file_path=matched_file,
+                        file_hash=file_hash,
+                        file_name=file_name,
+                        raw_text=c.get("raw_text") or "",
+                        summary_markdown=c.get("summary_markdown"),
+                        key_concepts=key_concepts,
+                        user_id=target_user_id,
+                    )
+                    course_id_map[old_id] = new_cid
+                    restored_courses += 1
+
+                # Ingestion des quiz
+                quiz_id_map: Dict[int, int] = {}
+                for q in data.get("quizzes", []):
+                    old_cid = q["course_id"]
+                    new_cid = course_id_map.get(old_cid)
+                    if new_cid:
+                        try:
+                            q_data = json.loads(q.get("quiz_data_json") or "[]")
+                        except Exception:
+                            q_data = []
+                        new_qid = save_quiz(course_id=new_cid, quiz_data=q_data, user_id=target_user_id)
+                        quiz_id_map[q["id"]] = new_qid
+                        restored_quizzes += 1
+
+                # Ingestion des tentatives de quiz
+                for a in data.get("quiz_attempts", []):
+                    new_cid = course_id_map.get(a["course_id"])
+                    new_qid = quiz_id_map.get(a["quiz_id"])
+                    if new_cid and new_qid:
+                        try:
+                            ans = json.loads(a.get("answers_json") or "{}")
+                        except Exception:
+                            ans = {}
+                        save_quiz_attempt(
+                            course_id=new_cid,
+                            quiz_id=new_qid,
+                            score=a["score"],
+                            total_questions=a["total_questions"],
+                            answers=ans,
+                            user_id=target_user_id,
+                        )
+                        restored_attempts += 1
+
+                # Ingestion de l'historique Sanad
+                for m in data.get("chat_messages", []):
+                    new_cid = course_id_map.get(m["course_id"])
+                    if new_cid:
+                        add_chat_message(
+                            course_id=new_cid,
+                            role=m["role"],
+                            content=m["content"],
+                            user_id=target_user_id,
+                        )
+                        restored_chats += 1
+
+                # Ingestion des flashcards
+                for f in data.get("flashcards", []):
+                    new_cid = course_id_map.get(f["course_id"])
+                    if new_cid:
+                        save_flashcard(
+                            user_id=target_user_id,
+                            course_id=new_cid,
+                            front=f["front"],
+                            back=f["back"],
+                        )
+                        restored_cards += 1
+
+        finally:
+            conn.close()
+
+        return {
+            "success": True,
+            "message": (
+                f"Restauration réussie pour {user['name']} ! {restored_courses} cours, "
+                f"{restored_quizzes} quiz, {restored_attempts} entraînements et "
+                f"{restored_chats} échanges avec l'IA Sanad restaurés."
+            ),
+            "stats": {
+                "courses": restored_courses,
+                "quizzes": restored_quizzes,
+                "attempts": restored_attempts,
+                "messages": restored_chats,
+                "flashcards": restored_cards,
+                "pdfs": extracted_pdfs,
+            },
+        }
+
+    except Exception as e:
+        logger.error(f"Erreur lors de la restauration élève: {e}", exc_info=True)
+        return {"success": False, "error": f"Erreur lors de la restauration : {str(e)}"}
+
+
+# ===========================================================================
+# 2. SAUVEGARDE & RESTAURATION GLOBALE (ADMINISTRATEUR)
+# ===========================================================================
+
+def get_backup_summary() -> Dict[str, int]:
+    """Compte global pour toute la base SQLite."""
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT count(*) FROM users")
+        users = cur.fetchone()[0]
+
         cur.execute("SELECT count(*) FROM courses")
         courses = cur.fetchone()[0]
 
@@ -46,44 +354,55 @@ def get_backup_summary() -> Dict[str, int]:
         messages = cur.fetchone()[0]
 
         return {
+            "users": users,
             "courses": courses,
             "quizzes": quizzes,
             "attempts": attempts,
             "messages": messages,
         }
     except Exception as e:
-        logger.error(f"Erreur lors du calcul du résumé de sauvegarde : {e}")
-        return {"courses": 0, "quizzes": 0, "attempts": 0, "messages": 0}
+        logger.error(f"Erreur résumé global: {e}")
+        return {"users": 0, "courses": 0, "quizzes": 0, "attempts": 0, "messages": 0}
     finally:
         conn.close()
 
 
-def export_backup_zip() -> bytes:
+def export_global_backup() -> bytes:
     """
-    Génère une archive ZIP complète contenant :
-    - La base SQLite ecole_adnane.db (cours, quiz, fiches, chats IA)
-    - Tous les documents PDF originaux dans cours/
-    - Un fichier manifest.json
+    Génère une archive ZIP complète intégrant :
+    - La base SQLite ecole_adnane.db complète (utilisateurs, cours, quiz, chats, paramètres)
+    - L'intégralité du dossier storage/users/ (tous les dossiers et PDFs de chaque élève)
+    - manifest.json
     """
     db_path = get_db_path()
     init_db(db_path)
 
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-        # 1. Base de données SQLite
+        # 1. Base SQLite complète
         if db_path.exists():
             zf.write(db_path, arcname="ecole_adnane.db")
 
-        # 2. Fichiers PDF de cours
-        if COURSES_DIR.exists():
-            for pdf_file in COURSES_DIR.glob("*.pdf"):
-                zf.write(pdf_file, arcname=f"cours/{pdf_file.name}")
+        # 2. Dossiers des utilisateurs (storage/users/)
+        if USERS_DIR.exists():
+            for root, _, files in os.walk(USERS_DIR):
+                for f in files:
+                    full_p = Path(root) / f
+                    rel_p = full_p.relative_to(STORAGE_DIR)
+                    zf.write(full_p, arcname=str(rel_p))
 
-        # 3. Manifeste
+        # 3. Dossier cours legacy si présent
+        legacy_dir = STORAGE_DIR / "cours"
+        if legacy_dir.exists():
+            for f in legacy_dir.glob("*.pdf"):
+                zf.write(f, arcname=f"cours/{f.name}")
+
+        # 4. Manifeste système
         stats = get_backup_summary()
         manifest = {
             "app": "Ecole Adnane",
-            "version": "1.0.0",
+            "type": "global_system_backup",
+            "version": "2.0.0",
             "exported_at": datetime.now().isoformat(),
             "stats": stats,
         }
@@ -91,6 +410,78 @@ def export_backup_zip() -> bytes:
 
     buf.seek(0)
     return buf.getvalue()
+
+
+def restore_global_backup(file_bytes: bytes) -> Dict[str, Any]:
+    """
+    Restaure l'intégralité du système à partir d'une sauvegarde globale ZIP.
+    Valide l'en-tête SQLite et applique la protection anti-traversal.
+    """
+    if not file_bytes:
+        return {"success": False, "error": "Le fichier téléversé est vide."}
+
+    db_path = get_db_path()
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    STORAGE_DIR.mkdir(parents=True, exist_ok=True)
+
+    try:
+        buf = io.BytesIO(file_bytes)
+        with zipfile.ZipFile(buf, "r") as zf:
+            # Vérifier la présence d'une base SQLite valide
+            db_entry = None
+            for name in zf.namelist():
+                if name == "ecole_adnane.db" or name.endswith(".db"):
+                    db_entry = name
+                    break
+
+            if not db_entry:
+                return {"success": False, "error": "L'archive ne contient aucune base de données SQLite valide."}
+
+            db_content = zf.read(db_entry)
+            if not db_content.startswith(SQLITE_HEADER):
+                return {"success": False, "error": "Le fichier de base n'est pas une base de données SQLite valide."}
+
+            # Restaurer la base
+            with open(db_path, "wb") as f:
+                f.write(db_content)
+
+            # Restaurer les fichiers utilisateurs
+            extracted_files = 0
+            for member in zf.infolist():
+                if member.filename in (db_entry, "manifest.json") or member.is_dir():
+                    continue
+
+                # Vérification anti-traversal
+                dest_file = STORAGE_DIR / member.filename
+                if is_safe_extract_path(STORAGE_DIR, dest_file):
+                    dest_file.parent.mkdir(parents=True, exist_ok=True)
+                    with zf.open(member) as src, open(dest_file, "wb") as dst:
+                        shutil.copyfileobj(src, dst)
+                    extracted_files += 1
+
+        init_db(db_path)
+        stats = get_backup_summary()
+        return {
+            "success": True,
+            "message": (
+                f"Restauration globale réussie ! {stats['users']} utilisateurs, {stats['courses']} cours, "
+                f"{stats['quizzes']} quiz et {stats['messages']} discussions IA restaurés."
+            ),
+            "stats": stats,
+        }
+
+    except Exception as e:
+        logger.error(f"Erreur restauration globale: {e}", exc_info=True)
+        return {"success": False, "error": f"Erreur lors de la restauration : {str(e)}"}
+
+
+# ===========================================================================
+# FONCTIONS DE COMPATIBILITÉ
+# ===========================================================================
+
+def export_backup_zip() -> bytes:
+    """Compatibilité : redirige vers export_global_backup()."""
+    return export_global_backup()
 
 
 def export_database_file() -> bytes:
@@ -102,89 +493,12 @@ def export_database_file() -> bytes:
 
 
 def restore_backup(file_bytes: bytes, filename: str) -> Dict[str, Any]:
-    """
-    Restaure une sauvegarde à partir d'un fichier ZIP ou SQLite (.db).
-    Garantit la sécurité contre le path traversal et vérifie l'intégrité SQLite.
-    """
-    if not file_bytes:
-        return {"success": False, "error": "Le fichier téléversé est vide."}
-
-    db_path = get_db_path()
-    db_path.parent.mkdir(parents=True, exist_ok=True)
-    COURSES_DIR.mkdir(parents=True, exist_ok=True)
-
-    filename_lower = filename.lower()
-
-    try:
-        # Cas 1 : Archive ZIP
-        if filename_lower.endswith(".zip") or file_bytes[:4] == b"PK\x03\x04":
-            buf = io.BytesIO(file_bytes)
-            with zipfile.ZipFile(buf, "r") as zf:
-                # Vérifier la présence de la base
-                names = zf.namelist()
-                db_name = None
-                for n in names:
-                    if n == "ecole_adnane.db" or n.endswith(".db") or n.endswith(".sqlite"):
-                        db_name = n
-                        break
-
-                if not db_name:
-                    return {"success": False, "error": "L'archive ZIP ne contient aucune base de données SQLite valide."}
-
-                # Extraire la base
-                db_content = zf.read(db_name)
-                if not db_content.startswith(SQLITE_HEADER):
-                    return {"success": False, "error": "Le fichier de base dans le ZIP n'est pas un fichier SQLite valide."}
-
-                # Écrire la base
-                with open(db_path, "wb") as f:
-                    f.write(db_content)
-
-                # Extraire les PDFs en évitant tout path traversal
-                extracted_pdfs = 0
-                for member in zf.infolist():
-                    if member.filename.lower().endswith(".pdf"):
-                        # Nom sécurisé sans sous-dossier malveillant
-                        safe_name = Path(member.filename).name
-                        if safe_name:
-                            dest_path = COURSES_DIR / safe_name
-                            with zf.open(member) as source, open(dest_path, "wb") as target:
-                                shutil.copyfileobj(source, target)
-                            extracted_pdfs += 1
-
-            init_db(db_path)
-            stats = get_backup_summary()
-            return {
-                "success": True,
-                "message": (
-                    f"Restauration réussie ! {stats['courses']} cours, {stats['messages']} messages de chat IA, "
-                    f"{stats['quizzes']} quiz et {extracted_pdfs} fichiers PDF restaurés."
-                ),
-                "stats": stats,
-            }
-
-        # Cas 2 : Fichier SQLite brut (.db ou .sqlite)
-        elif filename_lower.endswith((".db", ".sqlite")) or file_bytes.startswith(SQLITE_HEADER):
-            if not file_bytes.startswith(SQLITE_HEADER):
-                return {"success": False, "error": "Ce fichier n'est pas une base de données SQLite valide."}
-
-            with open(db_path, "wb") as f:
-                f.write(file_bytes)
-
-            init_db(db_path)
-            stats = get_backup_summary()
-            return {
-                "success": True,
-                "message": (
-                    f"Base de données restaurée avec succès ! {stats['courses']} cours, "
-                    f"{stats['messages']} échanges avec l'IA Sanad et {stats['quizzes']} quiz récupérés."
-                ),
-                "stats": stats,
-            }
-
-        else:
-            return {"success": False, "error": "Format non supporté. Veuillez téléverser un fichier .zip ou .db"}
-
-    except Exception as e:
-        logger.error(f"Erreur lors de la restauration de la sauvegarde : {e}", exc_info=True)
-        return {"success": False, "error": f"Erreur lors de la restauration : {str(e)}"}
+    """Compatibilité : restauration globale par défaut si appelé directement."""
+    if filename.lower().endswith((".db", ".sqlite")) or file_bytes.startswith(SQLITE_HEADER):
+        db_path = get_db_path()
+        with open(db_path, "wb") as f:
+            f.write(file_bytes)
+        init_db(db_path)
+        stats = get_backup_summary()
+        return {"success": True, "message": "Base SQLite restaurée avec succès !", "stats": stats}
+    return restore_global_backup(file_bytes)

@@ -16,6 +16,7 @@ import pypdf
 
 from models.database import (
     add_chat_message,
+    create_or_get_google_user,
     init_db,
     save_course,
     save_quiz,
@@ -43,6 +44,8 @@ def seed_data() -> None:
     COURSES_DIR.mkdir(parents=True, exist_ok=True)
 
     print("🚀 Initialisation des cours exemples 3AC Maroc...")
+    demo_user = create_or_get_google_user("adnane@ecole-adnane.ma", "Adnane (Élève 3AC)", role="student")
+    user_id = demo_user["id"]
 
     # -----------------------------------------------------------------------
     # 1. COURS MATHÉMATIQUES BIOF (FRANÇAIS)
@@ -106,6 +109,7 @@ Commence toujours ta rédaction par les 3 conditions :
         raw_text=math_raw_text,
         summary_markdown=math_summary,
         key_concepts=math_concepts,
+        user_id=user_id,
     )
 
     math_quiz_data = [
@@ -175,7 +179,7 @@ Commence toujours ta rédaction par les 3 conditions :
             "difficulty": "Avancé"
         }
     ]
-    math_qid = save_quiz(math_course_id, math_quiz_data)
+    math_qid = save_quiz(math_course_id, math_quiz_data, user_id=user_id)
 
     # Tentative d'exemple pour afficher les stats
     save_quiz_attempt(
@@ -184,12 +188,14 @@ Commence toujours ta rédaction par les 3 conditions :
         score=4,
         total_questions=5,
         answers={0: 0, 1: 0, 2: 0, 3: 0, 4: 1},
+        user_id=user_id,
     )
 
     add_chat_message(
         math_course_id,
         "assistant",
         "Bonjour ! Je suis Sanad, ton tuteur pour les maths de 3AC. As-tu une question sur le théorème de Thalès ou sur la méthode de rédaction pour l'examen normalisé ?",
+        user_id=user_id,
     )
 
     # -----------------------------------------------------------------------
@@ -249,6 +255,7 @@ Commence toujours ta rédaction par les 3 conditions :
         raw_text=islamic_raw_text,
         summary_markdown=islamic_summary,
         key_concepts=islamic_concepts,
+        user_id=user_id,
     )
 
     islamic_quiz_data = [
@@ -292,7 +299,7 @@ Commence toujours ta rédaction par les 3 conditions :
             "difficulty": "متوسط"
         },
         {
-            "question": "ما نوع الغيب الذي يستأثر الله عز وجل بعلمه وحده ولا يُطلع عليه أحداً من خلقه؟",
+            "question": "ما نوع الغيب الذي يستأثر الله عز وججل بعلمه وحده ولا يُطلع عليه أحداً من خلقه؟",
             "options": [
                 "الغيب المطلق (مثل وقت قيام الساعة)",
                 "الغيب النسبي",
@@ -318,7 +325,7 @@ Commence toujours ta rédaction par les 3 conditions :
             "difficulty": "متوسط"
         }
     ]
-    islamic_qid = save_quiz(islamic_course_id, islamic_quiz_data)
+    islamic_qid = save_quiz(islamic_course_id, islamic_quiz_data, user_id=user_id)
 
     save_quiz_attempt(
         course_id=islamic_course_id,
@@ -326,12 +333,14 @@ Commence toujours ta rédaction par les 3 conditions :
         score=5,
         total_questions=5,
         answers={0: 0, 1: 0, 2: 0, 3: 0, 4: 0},
+        user_id=user_id,
     )
 
     add_chat_message(
         islamic_course_id,
         "assistant",
         "أهلاً بك يا بطل! أنا 'سند' مرافقك في مراجعة التربية الإسلامية للسنة الثالثة إعدادي. هل لديك أي استفسار حول معاني سورة الحشر أو فقه الأسرة أو كيفية الإجابة على الوضعية التقويمية في الامتحان الموحد؟",
+        user_id=user_id,
     )
 
     print("✅ Cours exemples initialisés avec succès !")

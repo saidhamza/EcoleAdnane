@@ -1,10 +1,13 @@
 """
 Module d'ingestion et de téléchargement de documents pour Ecole Adnane.
-Gère le stockage local sécurisé, la déduplication par hachage SHA-256,
-l'import par glisser-déposer et la synchronisation Google Classroom.
+Gère le stockage local strictement isolé par utilisateur (storage/users/<user_id>/cours/),
+la déduplication par hachage SHA-256, l'import par glisser-déposer
+et la synchronisation Google Classroom individuelle avec scopes stricts.
 """
 
 import hashlib
+import io
+import logging
 import os
 import shutil
 from pathlib import Path
@@ -19,15 +22,69 @@ from services.pdf_parser import (
     extract_text_from_pdf,
 )
 
+logger = logging.getLogger(__name__)
+
 STORAGE_DIR = Path(__file__).parent.parent / "storage"
-COURSES_DIR = STORAGE_DIR / "cours"
-CREDENTIALS_PATH = Path(__file__).parent.parent / "credentials.json"
-TOKEN_PATH = STORAGE_DIR / "token.json"
+USERS_DIR = STORAGE_DIR / "users"
+LEGACY_COURSES_DIR = STORAGE_DIR / "cours"
+ROOT_CREDENTIALS_PATH = Path(__file__).parent.parent / "credentials.json"
+CREDENTIALS_PATH = ROOT_CREDENTIALS_PATH  # Compatibilité
 
 
-def ensure_storage_dirs() -> None:
-    """Crée les répertoires nécessaires au stockage."""
-    COURSES_DIR.mkdir(parents=True, exist_ok=True)
+def get_user_base_dir(user_id: Optional[int] = None) -> Path:
+    """Retourne le répertoire racine d'un utilisateur."""
+    if user_id is not None:
+        p = USERS_DIR / str(user_id)
+    else:
+        p = STORAGE_DIR
+    p.mkdir(parents=True, exist_ok=True)
+    return p
+
+
+def get_user_storage_dir(user_id: Optional[int] = None) -> Path:
+    """Retourne le dossier des PDF de cours de l'utilisateur."""
+    if user_id is not None:
+        p = USERS_DIR / str(user_id) / "cours"
+    else:
+        p = LEGACY_COURSES_DIR
+    p.mkdir(parents=True, exist_ok=True)
+    return p
+
+
+def get_user_credentials_path(user_id: Optional[int] = None) -> Path:
+    """Retourne le chemin vers le fichier credentials.json propre à l'utilisateur."""
+    if user_id is not None:
+        user_cred = USERS_DIR / str(user_id) / "credentials.json"
+        if user_cred.exists():
+            return user_cred
+    if ROOT_CREDENTIALS_PATH.exists():
+        return ROOT_CREDENTIALS_PATH
+    return USERS_DIR / str(user_id or 1) / "credentials.json"
+
+
+def get_user_token_path(user_id: Optional[int] = None) -> Path:
+    """Retourne le chemin vers le token.json de l'utilisateur."""
+    if user_id is not None:
+        return USERS_DIR / str(user_id) / "token.json"
+    return STORAGE_DIR / "token.json"
+
+
+def save_user_credentials(user_id: int, file_bytes: bytes) -> Path:
+    """Enregistre le credentials.json personnel d'un utilisateur dans son espace."""
+    base_dir = get_user_base_dir(user_id)
+    target_path = base_dir / "credentials.json"
+    with open(target_path, "wb") as f:
+        f.write(file_bytes)
+    return target_path
+
+
+def is_classroom_configured(user_id: Optional[int] = None) -> bool:
+    """Vérifie si credentials.json est présent pour cet utilisateur ou à la racine."""
+    if user_id is not None:
+        user_cred = USERS_DIR / str(user_id) / "credentials.json"
+        if user_cred.exists():
+            return True
+    return ROOT_CREDENTIALS_PATH.exists() or (STORAGE_DIR / "credentials.json").exists()
 
 
 def calculate_sha256(file_bytes: bytes) -> str:
@@ -47,23 +104,24 @@ def calculate_file_sha256(file_path: str) -> str:
 def ingest_pdf_bytes(
     file_bytes: bytes,
     original_filename: str,
+    user_id: Optional[int] = None,
     custom_title: Optional[str] = None,
     custom_subject: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
-    Ingère un document PDF à partir de ses octets :
+    Ingère un document PDF à partir de ses octets pour un utilisateur spécifique :
     1. Calcule le hash SHA-256.
-    2. Vérifie la présence d'un doublon en base.
-    3. Enregistre dans storage/cours/.
+    2. Vérifie la présence d'un doublon dans l'espace de cet utilisateur.
+    3. Enregistre dans storage/users/<user_id>/cours/.
     4. Extrait le texte et détecte la langue (FR / AR) et la matière 3AC.
-    5. Sauvegarde les métadonnées dans SQLite.
+    5. Sauvegarde les métadonnées dans SQLite avec user_id.
     """
-    ensure_storage_dirs()
+    target_dir = get_user_storage_dir(user_id)
 
     file_hash = calculate_sha256(file_bytes)
 
-    # 1. Vérification des doublons
-    existing_course = get_course_by_hash(file_hash)
+    # 1. Vérification des doublons dans l'espace de cet utilisateur
+    existing_course = get_course_by_hash(file_hash, user_id=user_id)
     if existing_course:
         return {
             "status": "duplicate",
@@ -72,12 +130,12 @@ def ingest_pdf_bytes(
             "course_id": existing_course["id"],
         }
 
-    # 2. Sauvegarde sur disque
+    # 2. Sauvegarde sur disque cloisonné
     safe_filename = "".join(c for c in original_filename if c.isalnum() or c in ("-", "_", ".", " ")).strip()
     if not safe_filename:
         safe_filename = f"cours_{file_hash[:8]}.pdf"
 
-    target_path = COURSES_DIR / f"{file_hash[:10]}_{safe_filename}"
+    target_path = target_dir / f"{file_hash[:10]}_{safe_filename}"
     with open(target_path, "wb") as f:
         f.write(file_bytes)
 
@@ -100,7 +158,7 @@ def ingest_pdf_bytes(
     # Titre lisible
     title = custom_title or extract_fallback_title(original_filename, raw_text, language)
 
-    # 5. Enregistrement en base de données
+    # 5. Enregistrement en base de données avec user_id
     course_id = save_course(
         title=title,
         subject=subject,
@@ -109,6 +167,7 @@ def ingest_pdf_bytes(
         file_hash=file_hash,
         file_name=original_filename,
         raw_text=raw_text,
+        user_id=user_id,
     )
 
     return {
@@ -123,7 +182,7 @@ def ingest_pdf_bytes(
     }
 
 
-def ingest_local_file(file_path: str) -> Dict[str, Any]:
+def ingest_local_file(file_path: str, user_id: Optional[int] = None) -> Dict[str, Any]:
     """Ingère un fichier PDF existant sur le disque local."""
     path = Path(file_path)
     if not path.exists():
@@ -132,38 +191,26 @@ def ingest_local_file(file_path: str) -> Dict[str, Any]:
     with open(path, "rb") as f:
         content = f.read()
 
-    return ingest_pdf_bytes(content, path.name)
+    return ingest_pdf_bytes(content, path.name, user_id=user_id)
 
 
 # ---------------------------------------------------------------------------
-# Module d'intégration Google Classroom
+# Module d'intégration Google Classroom Individuel
 # ---------------------------------------------------------------------------
 
-def is_classroom_configured() -> bool:
-    """Vérifie si les identifiants Google Classroom sont configurés."""
-    return CREDENTIALS_PATH.exists() or Path("credentials.json").exists()
-
-
-def get_classroom_credentials_path() -> Optional[Path]:
-    """Retourne le chemin vers credentials.json s'il existe."""
-    if CREDENTIALS_PATH.exists():
-        return CREDENTIALS_PATH
-    if Path("credentials.json").exists():
-        return Path("credentials.json")
-    return None
-
-
-def sync_google_classroom() -> Dict[str, Any]:
+def sync_google_classroom(user_id: Optional[int] = None) -> Dict[str, Any]:
     """
-    Synchronise les devoirs et supports PDF depuis Google Classroom.
-    Nécessite credentials.json configuré via Google Cloud Console.
+    Synchronise les devoirs et supports PDF depuis Google Classroom pour l'utilisateur.
+    Utilise strictement les scopes exacts prescrits.
     """
-    cred_path = get_classroom_credentials_path()
-    if not cred_path:
+    cred_path = get_user_credentials_path(user_id)
+    if not cred_path or not cred_path.exists():
         return {
             "success": False,
-            "error": "Fichier credentials.json introuvable. Veuillez le téléverser dans l'onglet Paramètres.",
+            "error": "Fichier credentials.json introuvable pour votre compte. Veuillez le téléverser dans vos Paramètres.",
         }
+
+    token_path = get_user_token_path(user_id)
 
     try:
         from google.auth.transport.requests import Request
@@ -171,8 +218,8 @@ def sync_google_classroom() -> Dict[str, Any]:
         from google_auth_oauthlib.flow import InstalledAppFlow
         from googleapiclient.discovery import build
         from googleapiclient.http import MediaIoBaseDownload
-        import io
 
+        # Nomenclature exacte des 4 scopes requis
         SCOPES = [
             "https://www.googleapis.com/auth/classroom.courses.readonly",
             "https://www.googleapis.com/auth/classroom.coursework.me.readonly",
@@ -181,8 +228,8 @@ def sync_google_classroom() -> Dict[str, Any]:
         ]
 
         creds = None
-        if TOKEN_PATH.exists():
-            creds = Credentials.from_authorized_user_file(str(TOKEN_PATH), SCOPES)
+        if token_path.exists():
+            creds = Credentials.from_authorized_user_file(str(token_path), SCOPES)
 
         if not creds or not creds.valid:
             if creds and creds.expired and creds.refresh_token:
@@ -190,14 +237,15 @@ def sync_google_classroom() -> Dict[str, Any]:
             else:
                 flow = InstalledAppFlow.from_client_secrets_file(str(cred_path), SCOPES)
                 creds = flow.run_local_server(port=0)
-            with open(TOKEN_PATH, "w") as token:
+            token_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(token_path, "w") as token:
                 token.write(creds.to_json())
 
         classroom_service = build("classroom", "v1", credentials=creds)
         drive_service = build("drive", "v3", credentials=creds)
 
-        # Récupérer les cours
-        results = classroom_service.courses().list(pageSize=10).execute()
+        # Récupérer les cours Classroom
+        results = classroom_service.courses().list(pageSize=15).execute()
         courses = results.get("courses", [])
 
         imported_count = 0
@@ -214,7 +262,6 @@ def sync_google_classroom() -> Dict[str, Any]:
                     file_id = drive_file.get("id")
 
                     if file_id and title.lower().endswith(".pdf"):
-                        # Télécharger le fichier
                         request = drive_service.files().get_media(fileId=file_id)
                         fh = io.BytesIO()
                         downloader = MediaIoBaseDownload(fh, request)
@@ -223,7 +270,7 @@ def sync_google_classroom() -> Dict[str, Any]:
                             _, done = downloader.next_chunk()
 
                         pdf_bytes = fh.getvalue()
-                        res = ingest_pdf_bytes(pdf_bytes, title)
+                        res = ingest_pdf_bytes(pdf_bytes, title, user_id=user_id)
                         if res["status"] == "success":
                             imported_count += 1
                         else:
@@ -237,6 +284,7 @@ def sync_google_classroom() -> Dict[str, Any]:
         }
 
     except Exception as e:
+        logger.error(f"Erreur de synchronisation Classroom: {e}")
         return {
             "success": False,
             "error": f"Erreur lors de la synchronisation Google Classroom : {str(e)}",

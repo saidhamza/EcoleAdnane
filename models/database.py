@@ -1,14 +1,18 @@
 """
 Module de persistance SQLite pour Ecole Adnane.
-Gère les cours, métadonnées, fiches de révision, quiz, tentatives et tuteur socratique.
+Gère les utilisateurs, rôles (Admin/Student), paramètres individuels,
+cours cloisonnés, fiches de révision, quiz, tentatives et tuteur socratique.
 """
 
 import json
+import logging
 import os
 import sqlite3
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_DB_DIR = Path(__file__).parent.parent / "storage"
 DEFAULT_DB_PATH = DEFAULT_DB_DIR / "ecole_adnane.db"
@@ -32,52 +36,92 @@ def get_connection(db_path: Optional[Path] = None) -> sqlite3.Connection:
 
 
 def init_db(db_path: Optional[Path] = None) -> None:
-    """Initialise le schéma de base de données SQLite."""
+    """
+    Initialise le schéma de base de données SQLite et applique les migrations
+    pour supporter l'architecture multi-utilisateurs et le cloisonnement strict.
+    """
     conn = get_connection(db_path)
     try:
         with conn:
+            # 1. Tables fondamentales
             conn.executescript("""
+                CREATE TABLE IF NOT EXISTS users (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    email TEXT UNIQUE NOT NULL,
+                    name TEXT NOT NULL,
+                    avatar_url TEXT,
+                    role TEXT NOT NULL CHECK(role IN ('admin', 'student')),
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+
+                CREATE TABLE IF NOT EXISTS user_settings (
+                    user_id INTEGER NOT NULL,
+                    key TEXT NOT NULL,
+                    value TEXT NOT NULL,
+                    PRIMARY KEY (user_id, key),
+                    FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+                );
+
                 CREATE TABLE IF NOT EXISTS courses (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER,
                     title TEXT NOT NULL,
                     subject TEXT NOT NULL,
                     language TEXT NOT NULL, -- 'fr' ou 'ar'
                     file_path TEXT NOT NULL,
-                    file_hash TEXT UNIQUE NOT NULL,
+                    file_hash TEXT NOT NULL,
                     file_name TEXT NOT NULL,
                     raw_text TEXT,
                     summary_markdown TEXT,
                     key_concepts_json TEXT,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
                 );
 
                 CREATE TABLE IF NOT EXISTS quizzes (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER,
                     course_id INTEGER NOT NULL,
                     quiz_data_json TEXT NOT NULL,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
                     FOREIGN KEY (course_id) REFERENCES courses (id) ON DELETE CASCADE
                 );
 
                 CREATE TABLE IF NOT EXISTS quiz_attempts (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER,
                     course_id INTEGER NOT NULL,
                     quiz_id INTEGER NOT NULL,
                     score INTEGER NOT NULL,
                     total_questions INTEGER NOT NULL,
                     answers_json TEXT,
                     completed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
                     FOREIGN KEY (course_id) REFERENCES courses (id) ON DELETE CASCADE,
                     FOREIGN KEY (quiz_id) REFERENCES quizzes (id) ON DELETE CASCADE
                 );
 
                 CREATE TABLE IF NOT EXISTS chat_messages (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER,
                     course_id INTEGER NOT NULL,
                     role TEXT NOT NULL, -- 'user' ou 'assistant'
                     content TEXT NOT NULL,
                     timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
+                    FOREIGN KEY (course_id) REFERENCES courses (id) ON DELETE CASCADE
+                );
+
+                CREATE TABLE IF NOT EXISTS flashcards (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    course_id INTEGER NOT NULL,
+                    front TEXT NOT NULL,
+                    back TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
                     FOREIGN KEY (course_id) REFERENCES courses (id) ON DELETE CASCADE
                 );
 
@@ -86,15 +130,265 @@ def init_db(db_path: Optional[Path] = None) -> None:
                     value TEXT NOT NULL
                 );
 
+                CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+                CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
                 CREATE INDEX IF NOT EXISTS idx_courses_hash ON courses(file_hash);
                 CREATE INDEX IF NOT EXISTS idx_courses_subject ON courses(subject);
                 CREATE INDEX IF NOT EXISTS idx_courses_lang ON courses(language);
                 CREATE INDEX IF NOT EXISTS idx_quizzes_course ON quizzes(course_id);
                 CREATE INDEX IF NOT EXISTS idx_chat_course ON chat_messages(course_id);
             """)
+
+            # 2. Migrations dynamiques pour bases existantes
+            cur = conn.cursor()
+            for tbl in ["courses", "quizzes", "quiz_attempts", "chat_messages"]:
+                cur.execute(f"PRAGMA table_info({tbl})")
+                cols = [row["name"] for row in cur.fetchall()]
+                if "user_id" not in cols:
+                    cur.execute(f"ALTER TABLE {tbl} ADD COLUMN user_id INTEGER REFERENCES users(id) ON DELETE CASCADE")
+
+            # 3. Index et vues dépendant de user_id
+            conn.executescript("""
+                CREATE INDEX IF NOT EXISTS idx_courses_user ON courses(user_id);
+                CREATE INDEX IF NOT EXISTS idx_quizzes_user ON quizzes(user_id);
+                CREATE INDEX IF NOT EXISTS idx_attempts_user ON quiz_attempts(user_id);
+                CREATE INDEX IF NOT EXISTS idx_chat_user ON chat_messages(user_id);
+
+                CREATE VIEW IF NOT EXISTS quiz_results AS SELECT * FROM quiz_attempts;
+                CREATE VIEW IF NOT EXISTS chat_history AS SELECT * FROM chat_messages;
+            """)
     finally:
         conn.close()
 
+
+# ===========================================================================
+# GESTION DES UTILISATEURS & RÔLES (PREMIER CONNECTÉ = ADMIN)
+# ===========================================================================
+
+def get_user_count() -> int:
+    """Retourne le nombre total d'utilisateurs enregistrés."""
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM users")
+        return cur.fetchone()[0]
+    finally:
+        conn.close()
+
+
+def get_user_by_id(user_id: int) -> Optional[Dict[str, Any]]:
+    """Récupère un utilisateur par son ID."""
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM users WHERE id = ?", (user_id,))
+        row = cur.fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def get_user_by_email(email: str) -> Optional[Dict[str, Any]]:
+    """Récupère un utilisateur par son adresse email."""
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM users WHERE email = ?", (email.strip().lower(),))
+        row = cur.fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def create_or_get_google_user(
+    email: str,
+    name: str,
+    avatar_url: Optional[str] = None,
+    role: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Connecte ou enregistre un utilisateur Google OAuth selon la règle stricte :
+    - Si aucun utilisateur n'existe en base : le tout premier reçoit le rôle 'admin'.
+    - Tous les utilisateurs suivants reçoivent automatiquement le rôle 'student'.
+    - Si l'utilisateur existe déjà : conserve son rôle existant et met à jour nom/avatar.
+    """
+    clean_email = email.strip().lower()
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
+            cur.execute("SELECT * FROM users WHERE email = ?", (clean_email,))
+            existing = cur.fetchone()
+
+            if existing:
+                user_dict = dict(existing)
+                # Mise à jour des informations si elles ont changé
+                if name or avatar_url:
+                    cur.execute(
+                        """
+                        UPDATE users 
+                        SET name = COALESCE(?, name), avatar_url = COALESCE(?, avatar_url)
+                        WHERE id = ?
+                        """,
+                        (name, avatar_url, user_dict["id"]),
+                    )
+                    user_dict["name"] = name or user_dict["name"]
+                    user_dict["avatar_url"] = avatar_url or user_dict.get("avatar_url")
+                return user_dict
+
+            # Détermination automatique du rôle si non spécifié
+            if not role:
+                cur.execute("SELECT COUNT(*) FROM users")
+                total_users = cur.fetchone()[0]
+                role = "admin" if total_users == 0 else "student"
+
+            cur.execute(
+                """
+                INSERT INTO users (email, name, avatar_url, role)
+                VALUES (?, ?, ?, ?)
+                """,
+                (clean_email, name, avatar_url, role),
+            )
+            new_id = cur.lastrowid
+
+            # Si c'est le premier administrateur et qu'il y a des données orphelines, les lui rattacher
+            if role == "admin":
+                cur.execute("UPDATE courses SET user_id = ? WHERE user_id IS NULL", (new_id,))
+                cur.execute("UPDATE quizzes SET user_id = ? WHERE user_id IS NULL", (new_id,))
+                cur.execute("UPDATE quiz_attempts SET user_id = ? WHERE user_id IS NULL", (new_id,))
+                cur.execute("UPDATE chat_messages SET user_id = ? WHERE user_id IS NULL", (new_id,))
+
+            return {
+                "id": new_id,
+                "email": clean_email,
+                "name": name,
+                "avatar_url": avatar_url,
+                "role": role,
+                "created_at": datetime.now().isoformat(),
+            }
+    finally:
+        conn.close()
+
+
+def list_users(role: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Liste les utilisateurs de la plateforme (filtrable par rôle)."""
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        query = "SELECT * FROM users"
+        params: List[Any] = []
+        if role:
+            query += " WHERE role = ?"
+            params.append(role)
+        query += " ORDER BY id ASC"
+        cur.execute(query, params)
+        return [dict(r) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def get_global_admin_kpis() -> Dict[str, Any]:
+    """Calcule les indicateurs globaux de supervision pour le tableau de bord administrateur."""
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM users WHERE role = 'student'")
+        total_students = cur.fetchone()[0]
+
+        cur.execute("SELECT COUNT(*) FROM courses")
+        total_courses = cur.fetchone()[0]
+
+        cur.execute("SELECT COUNT(*) FROM quizzes")
+        total_quizzes = cur.fetchone()[0]
+
+        cur.execute("""
+            SELECT 
+                COUNT(*) as total_attempts,
+                COALESCE(SUM(score), 0) as total_score,
+                COALESCE(SUM(total_questions), 0) as total_questions
+            FROM quiz_attempts
+        """)
+        row = cur.fetchone()
+        attempts = row["total_attempts"]
+        t_score = row["total_score"]
+        t_q = row["total_questions"]
+        avg_success = round((t_score / t_q * 100), 1) if t_q > 0 else 0.0
+
+        # Résumé par élève
+        cur.execute("""
+            SELECT 
+                u.id as user_id,
+                u.name,
+                u.email,
+                u.created_at,
+                COUNT(DISTINCT c.id) as course_count,
+                COUNT(DISTINCT qa.id) as attempt_count,
+                COALESCE(SUM(qa.score), 0) as student_score,
+                COALESCE(SUM(qa.total_questions), 0) as student_questions
+            FROM users u
+            LEFT JOIN courses c ON u.id = c.user_id
+            LEFT JOIN quiz_attempts qa ON u.id = qa.user_id
+            WHERE u.role = 'student'
+            GROUP BY u.id
+            ORDER BY u.created_at DESC
+        """)
+        students_summary = []
+        for r in cur.fetchall():
+            d = dict(r)
+            sq = d.get("student_questions", 0)
+            ss = d.get("student_score", 0)
+            d["average_rate"] = round((ss / sq * 100), 1) if sq > 0 else 0.0
+            students_summary.append(d)
+
+        return {
+            "total_students": total_students,
+            "total_courses": total_courses,
+            "total_quizzes": total_quizzes,
+            "total_attempts": attempts,
+            "average_success_rate": avg_success,
+            "students_summary": students_summary,
+        }
+    finally:
+        conn.close()
+
+
+# ===========================================================================
+# PARAMÈTRES INDIVIDUELS PAR UTILISATEUR (CLÉS API, ETC.)
+# ===========================================================================
+
+def get_user_setting(user_id: int, key: str, default: Optional[str] = None) -> Optional[str]:
+    """Récupère un paramètre isolé propre à un utilisateur."""
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT value FROM user_settings WHERE user_id = ? AND key = ?", (user_id, key))
+        row = cur.fetchone()
+        return row["value"] if row else default
+    finally:
+        conn.close()
+
+
+def set_user_setting(user_id: int, key: str, value: str) -> None:
+    """Enregistre un paramètre isolé propre à un utilisateur."""
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                INSERT INTO user_settings (user_id, key, value)
+                VALUES (?, ?, ?)
+                ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value
+                """,
+                (user_id, key, value),
+            )
+    finally:
+        conn.close()
+
+
+# ===========================================================================
+# OPÉRATIONS CRUD SUR LES COURS (CLOISONNÉES PAR USER_ID)
+# ===========================================================================
 
 def save_course(
     title: str,
@@ -106,16 +400,20 @@ def save_course(
     raw_text: str = "",
     summary_markdown: Optional[str] = None,
     key_concepts: Optional[List[str]] = None,
+    user_id: Optional[int] = None,
 ) -> int:
-    """Enregistre un nouveau cours ou met à jour un cours existant par son hash."""
+    """Enregistre ou met à jour un cours cloisonné par son hash et son user_id."""
     conn = get_connection()
     try:
         with conn:
             cur = conn.cursor()
-            cur.execute("SELECT id FROM courses WHERE file_hash = ?", (file_hash,))
-            existing = cur.fetchone()
-
             concepts_json = json.dumps(key_concepts or [], ensure_ascii=False)
+
+            if user_id is not None:
+                cur.execute("SELECT id FROM courses WHERE file_hash = ? AND user_id = ?", (file_hash, user_id))
+            else:
+                cur.execute("SELECT id FROM courses WHERE file_hash = ?", (file_hash,))
+            existing = cur.fetchone()
 
             if existing:
                 course_id = existing["id"]
@@ -143,10 +441,11 @@ def save_course(
             else:
                 cur.execute(
                     """
-                    INSERT INTO courses (title, subject, language, file_path, file_hash, file_name, raw_text, summary_markdown, key_concepts_json)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO courses (user_id, title, subject, language, file_path, file_hash, file_name, raw_text, summary_markdown, key_concepts_json)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
+                        user_id,
                         title,
                         subject,
                         language,
@@ -163,12 +462,15 @@ def save_course(
         conn.close()
 
 
-def get_course_by_id(course_id: int) -> Optional[Dict[str, Any]]:
-    """Récupère un cours par son ID."""
+def get_course_by_id(course_id: int, user_id: Optional[int] = None) -> Optional[Dict[str, Any]]:
+    """Récupère un cours par son ID, vérifiant l'isolation si user_id est fourni."""
     conn = get_connection()
     try:
         cur = conn.cursor()
-        cur.execute("SELECT * FROM courses WHERE id = ?", (course_id,))
+        if user_id is not None:
+            cur.execute("SELECT * FROM courses WHERE id = ? AND (user_id = ? OR user_id IS NULL)", (course_id, user_id))
+        else:
+            cur.execute("SELECT * FROM courses WHERE id = ?", (course_id,))
         row = cur.fetchone()
         if not row:
             return None
@@ -182,25 +484,36 @@ def get_course_by_id(course_id: int) -> Optional[Dict[str, Any]]:
         conn.close()
 
 
-def get_course_by_hash(file_hash: str) -> Optional[Dict[str, Any]]:
-    """Récupère un cours par son hash SHA-256."""
+def get_course_by_hash(file_hash: str, user_id: Optional[int] = None) -> Optional[Dict[str, Any]]:
+    """Récupère un cours par son hash SHA-256 (cloisonné par utilisateur)."""
     conn = get_connection()
     try:
         cur = conn.cursor()
-        cur.execute("SELECT * FROM courses WHERE file_hash = ?", (file_hash,))
+        if user_id is not None:
+            cur.execute("SELECT * FROM courses WHERE file_hash = ? AND (user_id = ? OR user_id IS NULL)", (file_hash, user_id))
+        else:
+            cur.execute("SELECT * FROM courses WHERE file_hash = ?", (file_hash,))
         row = cur.fetchone()
         return dict(row) if row else None
     finally:
         conn.close()
 
 
-def list_courses(subject: Optional[str] = None, language: Optional[str] = None) -> List[Dict[str, Any]]:
-    """Liste tous les cours avec filtrage facultatif par matière et/ou langue."""
+def list_courses(
+    user_id: Optional[int] = None,
+    subject: Optional[str] = None,
+    language: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    """Liste les cours cloisonnés par utilisateur avec filtres optionnels."""
     conn = get_connection()
     try:
         cur = conn.cursor()
         query = "SELECT * FROM courses WHERE 1=1"
         params: List[Any] = []
+
+        if user_id is not None:
+            query += " AND (user_id = ? OR user_id IS NULL)"
+            params.append(user_id)
 
         if subject and subject != "Toutes":
             query += " AND subject = ?"
@@ -227,95 +540,125 @@ def list_courses(subject: Optional[str] = None, language: Optional[str] = None) 
         conn.close()
 
 
-def update_course_summary(course_id: int, summary_markdown: str, key_concepts: Optional[List[str]] = None) -> None:
+def update_course_summary(
+    course_id: int,
+    summary_markdown: str,
+    key_concepts: Optional[List[str]] = None,
+    user_id: Optional[int] = None,
+) -> None:
     """Met à jour la fiche express d'un cours."""
     conn = get_connection()
     try:
         with conn:
             cur = conn.cursor()
+            where_clause = "WHERE id = ?"
+            params: List[Any] = []
+
             if key_concepts is not None:
-                cur.execute(
-                    """
-                    UPDATE courses
-                    SET summary_markdown = ?, key_concepts_json = ?, updated_at = CURRENT_TIMESTAMP
-                    WHERE id = ?
-                    """,
-                    (summary_markdown, json.dumps(key_concepts, ensure_ascii=False), course_id),
-                )
+                set_clause = "SET summary_markdown = ?, key_concepts_json = ?, updated_at = CURRENT_TIMESTAMP"
+                params.extend([summary_markdown, json.dumps(key_concepts, ensure_ascii=False)])
             else:
-                cur.execute(
-                    """
-                    UPDATE courses
-                    SET summary_markdown = ?, updated_at = CURRENT_TIMESTAMP
-                    WHERE id = ?
-                    """,
-                    (summary_markdown, course_id),
-                )
+                set_clause = "SET summary_markdown = ?, updated_at = CURRENT_TIMESTAMP"
+                params.append(summary_markdown)
+
+            params.append(course_id)
+            if user_id is not None:
+                where_clause += " AND user_id = ?"
+                params.append(user_id)
+
+            cur.execute(f"UPDATE courses {set_clause} {where_clause}", params)
     finally:
         conn.close()
 
 
-def update_course_metadata(course_id: int, title: str, subject: str, language: str) -> None:
+def update_course_metadata(
+    course_id: int,
+    title: str,
+    subject: str,
+    language: str,
+    user_id: Optional[int] = None,
+) -> None:
     """Met à jour les métadonnées d'un cours."""
     conn = get_connection()
     try:
         with conn:
             cur = conn.cursor()
-            cur.execute(
-                """
-                UPDATE courses
-                SET title = ?, subject = ?, language = ?, updated_at = CURRENT_TIMESTAMP
-                WHERE id = ?
-                """,
-                (title, subject, language, course_id),
-            )
+            query = "UPDATE courses SET title = ?, subject = ?, language = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+            params: List[Any] = [title, subject, language, course_id]
+            if user_id is not None:
+                query += " AND user_id = ?"
+                params.append(user_id)
+            cur.execute(query, params)
     finally:
         conn.close()
 
 
-def delete_course(course_id: int) -> bool:
-    """Supprime un cours et ses dépendances en cascade."""
+def delete_course(course_id: int, user_id: Optional[int] = None) -> bool:
+    """Supprime un cours et son fichier local de manière sécurisée."""
     conn = get_connection()
     try:
         with conn:
             cur = conn.cursor()
-            cur.execute("SELECT file_path FROM courses WHERE id = ?", (course_id,))
+            query_sel = "SELECT file_path FROM courses WHERE id = ?"
+            params_sel: List[Any] = [course_id]
+            if user_id is not None:
+                query_sel += " AND user_id = ?"
+                params_sel.append(user_id)
+
+            cur.execute(query_sel, params_sel)
             row = cur.fetchone()
-            if row and row["file_path"] and os.path.exists(row["file_path"]):
+            if not row:
+                return False
+
+            if row["file_path"] and os.path.exists(row["file_path"]):
                 try:
                     os.remove(row["file_path"])
-                except Exception:
-                    pass
-            cur.execute("DELETE FROM courses WHERE id = ?", (course_id,))
+                except Exception as e:
+                    logger.warning(f"Impossible de supprimer le fichier {row['file_path']} : {e}")
+
+            query_del = "DELETE FROM courses WHERE id = ?"
+            params_del: List[Any] = [course_id]
+            if user_id is not None:
+                query_del += " AND user_id = ?"
+                params_del.append(user_id)
+
+            cur.execute(query_del, params_del)
             return cur.rowcount > 0
     finally:
         conn.close()
 
 
-def save_quiz(course_id: int, quiz_data: List[Dict[str, Any]]) -> int:
-    """Enregistre un quiz associé à un cours."""
+# ===========================================================================
+# QUIZ, TENTATIVES ET STATISTIQUES (CLOISONNÉES)
+# ===========================================================================
+
+def save_quiz(course_id: int, quiz_data: List[Dict[str, Any]], user_id: Optional[int] = None) -> int:
+    """Enregistre un quiz associé à un cours et à l'utilisateur."""
     conn = get_connection()
     try:
         with conn:
             cur = conn.cursor()
             cur.execute(
-                "INSERT INTO quizzes (course_id, quiz_data_json) VALUES (?, ?)",
-                (course_id, json.dumps(quiz_data, ensure_ascii=False)),
+                "INSERT INTO quizzes (user_id, course_id, quiz_data_json) VALUES (?, ?, ?)",
+                (user_id, course_id, json.dumps(quiz_data, ensure_ascii=False)),
             )
             return cur.lastrowid
     finally:
         conn.close()
 
 
-def get_latest_quiz(course_id: int) -> Optional[Dict[str, Any]]:
+def get_latest_quiz(course_id: int, user_id: Optional[int] = None) -> Optional[Dict[str, Any]]:
     """Récupère le dernier quiz généré pour un cours."""
     conn = get_connection()
     try:
         cur = conn.cursor()
-        cur.execute(
-            "SELECT * FROM quizzes WHERE course_id = ? ORDER BY id DESC LIMIT 1",
-            (course_id,),
-        )
+        query = "SELECT * FROM quizzes WHERE course_id = ?"
+        params: List[Any] = [course_id]
+        if user_id is not None:
+            query += " AND (user_id = ? OR user_id IS NULL)"
+            params.append(user_id)
+        query += " ORDER BY id DESC LIMIT 1"
+        cur.execute(query, params)
         row = cur.fetchone()
         if not row:
             return None
@@ -335,44 +678,56 @@ def save_quiz_attempt(
     score: int,
     total_questions: int,
     answers: Dict[str, Any],
+    user_id: Optional[int] = None,
 ) -> int:
-    """Enregistre le résultat d'une tentative de quiz de l'élève."""
+    """Enregistre le résultat d'une tentative de quiz."""
     conn = get_connection()
     try:
         with conn:
             cur = conn.cursor()
             cur.execute(
                 """
-                INSERT INTO quiz_attempts (course_id, quiz_id, score, total_questions, answers_json)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO quiz_attempts (user_id, course_id, quiz_id, score, total_questions, answers_json)
+                VALUES (?, ?, ?, ?, ?, ?)
                 """,
-                (course_id, quiz_id, score, total_questions, json.dumps(answers, ensure_ascii=False)),
+                (user_id, course_id, quiz_id, score, total_questions, json.dumps(answers, ensure_ascii=False)),
             )
             return cur.lastrowid
     finally:
         conn.close()
 
 
-def get_quiz_stats() -> Dict[str, Any]:
-    """Calcule les statistiques globales de révision et progrès par matière."""
+def get_quiz_stats(user_id: Optional[int] = None) -> Dict[str, Any]:
+    """
+    Calcule les statistiques de révision et progrès par matière.
+    Si user_id est fourni, calcule pour cet élève exclusivement.
+    Si user_id est None, calcule pour la plateforme entière (supervision admin).
+    """
     conn = get_connection()
     try:
         cur = conn.cursor()
-        # Stats globales
-        cur.execute("""
+        where_user = "WHERE user_id = ?" if user_id is not None else ""
+        params_user = [user_id] if user_id is not None else []
+
+        # 1. Stats globales
+        cur.execute(
+            f"""
             SELECT 
                 COUNT(*) as total_attempts,
                 COALESCE(SUM(score), 0) as total_score,
                 COALESCE(SUM(total_questions), 0) as total_questions
             FROM quiz_attempts
-        """)
+            {where_user}
+            """,
+            params_user,
+        )
         global_row = dict(cur.fetchone() or {})
         total_questions = global_row.get("total_questions", 0)
         total_score = global_row.get("total_score", 0)
-        avg_rate = (total_score / total_questions * 100) if total_questions > 0 else 0
+        avg_rate = (total_score / total_questions * 100) if total_questions > 0 else 0.0
 
-        # Stats par matière
-        cur.execute("""
+        # 2. Stats par matière
+        subj_query = """
             SELECT 
                 c.subject,
                 c.language,
@@ -381,19 +736,22 @@ def get_quiz_stats() -> Dict[str, Any]:
                 COALESCE(SUM(qa.total_questions), 0) as subject_questions
             FROM courses c
             JOIN quiz_attempts qa ON c.id = qa.course_id
-            GROUP BY c.subject, c.language
-            ORDER BY attempts DESC
-        """)
+        """
+        if user_id is not None:
+            subj_query += " WHERE qa.user_id = ?"
+        subj_query += " GROUP BY c.subject, c.language ORDER BY attempts DESC"
+
+        cur.execute(subj_query, params_user)
         by_subject = []
         for r in cur.fetchall():
             d = dict(r)
             sq = d.get("subject_questions", 0)
             ss = d.get("subject_score", 0)
-            d["success_rate"] = round((ss / sq * 100), 1) if sq > 0 else 0
+            d["success_rate"] = round((ss / sq * 100), 1) if sq > 0 else 0.0
             by_subject.append(d)
 
-        # Dernières tentatives
-        cur.execute("""
+        # 3. Dernières tentatives
+        recent_query = """
             SELECT 
                 qa.id,
                 qa.score,
@@ -404,9 +762,12 @@ def get_quiz_stats() -> Dict[str, Any]:
                 c.language
             FROM quiz_attempts qa
             JOIN courses c ON qa.course_id = c.id
-            ORDER BY qa.completed_at DESC
-            LIMIT 10
-        """)
+        """
+        if user_id is not None:
+            recent_query += " WHERE qa.user_id = ?"
+        recent_query += " ORDER BY qa.completed_at DESC LIMIT 10"
+
+        cur.execute(recent_query, params_user)
         recent_attempts = [dict(r) for r in cur.fetchall()]
 
         return {
@@ -421,53 +782,110 @@ def get_quiz_stats() -> Dict[str, Any]:
         conn.close()
 
 
-def get_chat_history(course_id: int, limit: int = 50) -> List[Dict[str, str]]:
+# ===========================================================================
+# CHAT ET HISTORIQUE DU TUTEUR SANAD (CLOISONNÉ)
+# ===========================================================================
+
+def get_chat_history(
+    course_id: int,
+    limit: int = 50,
+    user_id: Optional[int] = None,
+) -> List[Dict[str, str]]:
     """Récupère l'historique de discussion avec le tuteur pour un cours."""
     conn = get_connection()
     try:
         cur = conn.cursor()
-        cur.execute(
-            """
-            SELECT role, content, timestamp
-            FROM chat_messages
-            WHERE course_id = ?
-            ORDER BY id ASC
-            LIMIT ?
-            """,
-            (course_id, limit),
-        )
+        query = "SELECT role, content, timestamp FROM chat_messages WHERE course_id = ?"
+        params: List[Any] = [course_id]
+        if user_id is not None:
+            query += " AND (user_id = ? OR user_id IS NULL)"
+            params.append(user_id)
+        query += " ORDER BY id ASC LIMIT ?"
+        params.append(limit)
+
+        cur.execute(query, params)
         return [{"role": r["role"], "content": r["content"], "timestamp": r["timestamp"]} for r in cur.fetchall()]
     finally:
         conn.close()
 
 
-def add_chat_message(course_id: int, role: str, content: str) -> None:
+def add_chat_message(
+    course_id: int,
+    role: str,
+    content: str,
+    user_id: Optional[int] = None,
+) -> None:
     """Ajoute un message dans l'historique du tuteur."""
     conn = get_connection()
     try:
         with conn:
             cur = conn.cursor()
             cur.execute(
-                "INSERT INTO chat_messages (course_id, role, content) VALUES (?, ?, ?)",
-                (course_id, role, content),
+                "INSERT INTO chat_messages (user_id, course_id, role, content) VALUES (?, ?, ?, ?)",
+                (user_id, course_id, role, content),
             )
     finally:
         conn.close()
 
 
-def clear_chat_history(course_id: int) -> None:
+def clear_chat_history(course_id: int, user_id: Optional[int] = None) -> None:
     """Efface l'historique de discussion d'un cours."""
     conn = get_connection()
     try:
         with conn:
             cur = conn.cursor()
-            cur.execute("DELETE FROM chat_messages WHERE course_id = ?", (course_id,))
+            query = "DELETE FROM chat_messages WHERE course_id = ?"
+            params: List[Any] = [course_id]
+            if user_id is not None:
+                query += " AND user_id = ?"
+                params.append(user_id)
+            cur.execute(query, params)
     finally:
         conn.close()
 
 
+# ===========================================================================
+# FLASHCARDS (FICHES DE RÉVISION INDIVIDUELLES)
+# ===========================================================================
+
+def save_flashcard(user_id: int, course_id: int, front: str, back: str) -> int:
+    """Enregistre une flashcard pour un élève."""
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
+            cur.execute(
+                "INSERT INTO flashcards (user_id, course_id, front, back) VALUES (?, ?, ?, ?)",
+                (user_id, course_id, front, back),
+            )
+            return cur.lastrowid
+    finally:
+        conn.close()
+
+
+def list_flashcards(user_id: int, course_id: Optional[int] = None) -> List[Dict[str, Any]]:
+    """Liste les flashcards d'un élève."""
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        query = "SELECT * FROM flashcards WHERE user_id = ?"
+        params: List[Any] = [user_id]
+        if course_id is not None:
+            query += " AND course_id = ?"
+            params.append(course_id)
+        query += " ORDER BY id DESC"
+        cur.execute(query, params)
+        return [dict(r) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+# ===========================================================================
+# PARAMÈTRES SYSTÈME GLOBAUX (RÉTRO-COMPATIBILITÉ)
+# ===========================================================================
+
 def get_setting(key: str, default: Optional[str] = None) -> Optional[str]:
-    """Lit un paramètre stocké dans la base."""
+    """Lit un paramètre global stocké dans la base."""
     conn = get_connection()
     try:
         cur = conn.cursor()
@@ -479,7 +897,7 @@ def get_setting(key: str, default: Optional[str] = None) -> Optional[str]:
 
 
 def set_setting(key: str, value: str) -> None:
-    """Enregistre ou met à jour un paramètre."""
+    """Enregistre ou met à jour un paramètre global."""
     conn = get_connection()
     try:
         with conn:

@@ -16,6 +16,8 @@ storage/*.db
 storage/*.db-journal
 storage/*.sqlite*
 storage/*.pdf
+storage/**/*.pdf
+storage/users/
 
 # Cache Python
 __pycache__/
