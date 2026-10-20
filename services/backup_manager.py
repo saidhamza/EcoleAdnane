@@ -13,6 +13,7 @@ import logging
 import os
 import shutil
 import sqlite3
+import tempfile
 import zipfile
 from datetime import datetime
 from pathlib import Path
@@ -22,6 +23,8 @@ from models.database import (
     get_connection,
     get_db_path,
     get_user_by_id,
+    get_user_count,
+    list_users,
     init_db,
     save_course,
     save_quiz,
@@ -163,7 +166,12 @@ def restore_student_backup(file_bytes: bytes, target_user_id: int) -> Dict[str, 
     """
     Restaure les cours et l'historique d'un élève dans son espace personnel.
     Garantit le cloisonnement : toutes les données insérées reçoivent strictement target_user_id.
-    Protège contre les attaques de traversée de répertoire.
+    Supporte :
+    1. Archives modernes v2.0 (ZIP avec data.json et PDFs).
+    2. Archives héritées v1.0 (ZIP avec ecole_adnane.db et PDFs).
+    3. Fichiers SQLite bruts (.db ou .sqlite).
+    Ne remplace jamais la base active ecole_adnane.db, préservant la session utilisateur.
+    Protège contre les attaques de traversée de répertoire (path traversal).
     """
     if not file_bytes:
         return {"success": False, "error": "Le fichier téléversé est vide."}
@@ -175,32 +183,95 @@ def restore_student_backup(file_bytes: bytes, target_user_id: int) -> Dict[str, 
     user_storage_dir = get_user_storage_dir(target_user_id)
     user_storage_dir.mkdir(parents=True, exist_ok=True)
 
+    extracted_pdfs = 0
+    data = None
+    temp_db_path: Optional[Path] = None
+
     try:
-        buf = io.BytesIO(file_bytes)
-        with zipfile.ZipFile(buf, "r") as zf:
-            # Vérifier que ce n'est pas un zip malveillant
-            for member in zf.infolist():
-                filename = member.filename
-                if ".." in filename or filename.startswith("/") or filename.startswith("\\"):
-                    return {"success": False, "error": "Tentative de traversée de répertoire détectée."}
+        # Cas 1 : Fichier SQLite brut
+        if file_bytes.startswith(SQLITE_HEADER):
+            with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
+                tmp.write(file_bytes)
+                temp_db_path = Path(tmp.name)
 
-            if "data.json" not in zf.namelist():
-                return {"success": False, "error": "Archive invalide : fichier data.json manquant."}
+        # Cas 2 : Archive ZIP (v2.0 ou v1.0 legacy)
+        else:
+            buf = io.BytesIO(file_bytes)
+            with zipfile.ZipFile(buf, "r") as zf:
+                # Vérifier que ce n'est pas un zip malveillant
+                for member in zf.infolist():
+                    filename = member.filename
+                    if ".." in filename or filename.startswith("/") or filename.startswith("\\"):
+                        return {"success": False, "error": "Tentative de traversée de répertoire détectée."}
 
-            # 1. Extraire les PDFs de manière sécurisée
-            extracted_pdfs = 0
-            for member in zf.infolist():
-                if member.filename.lower().endswith(".pdf"):
-                    safe_name = Path(member.filename).name
-                    dest_file = user_storage_dir / safe_name
-                    if is_safe_extract_path(user_storage_dir, dest_file):
-                        with zf.open(member) as src, open(dest_file, "wb") as dst:
-                            shutil.copyfileobj(src, dst)
-                        extracted_pdfs += 1
+                # 1. Extraire les PDFs de manière sécurisée
+                for member in zf.infolist():
+                    if member.filename.lower().endswith(".pdf"):
+                        safe_name = Path(member.filename).name
+                        if safe_name:
+                            dest_file = user_storage_dir / safe_name
+                            if is_safe_extract_path(user_storage_dir, dest_file):
+                                with zf.open(member) as src, open(dest_file, "wb") as dst:
+                                    shutil.copyfileobj(src, dst)
+                                extracted_pdfs += 1
 
-            # 2. Charger les données JSON
-            raw_data = zf.read("data.json").decode("utf-8")
-            data = json.loads(raw_data)
+                # 2a. Archive moderne v2.0 avec data.json
+                if "data.json" in zf.namelist():
+                    raw_data = zf.read("data.json").decode("utf-8")
+                    data = json.loads(raw_data)
+                else:
+                    # 2b. Archive legacy v1.0 avec base SQLite interne
+                    db_entry = None
+                    for name in zf.namelist():
+                        if name == "ecole_adnane.db" or name.lower().endswith((".db", ".sqlite")):
+                            db_entry = name
+                            break
+
+                    if not db_entry:
+                        return {
+                            "success": False,
+                            "error": "Archive non reconnue : ni data.json ni fichier de base SQLite (.db) détectés."
+                        }
+
+                    db_content = zf.read(db_entry)
+                    if not db_content.startswith(SQLITE_HEADER):
+                        return {"success": False, "error": "Le fichier de base dans l'archive n'est pas une base de données SQLite valide."}
+
+                    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
+                        tmp.write(db_content)
+                        temp_db_path = Path(tmp.name)
+
+        # Si on a extrait une base SQLite temporaire (cas 1 ou 2b) :
+        if temp_db_path is not None:
+            legacy_conn = sqlite3.connect(temp_db_path)
+            legacy_conn.row_factory = sqlite3.Row
+            try:
+                l_cur = legacy_conn.cursor()
+                l_cur.execute("SELECT name FROM sqlite_master WHERE type='table'")
+                tables = {row["name"] for row in l_cur.fetchall()}
+
+                courses = [dict(r) for r in l_cur.execute("SELECT * FROM courses").fetchall()] if "courses" in tables else []
+                quizzes = [dict(r) for r in l_cur.execute("SELECT * FROM quizzes").fetchall()] if "quizzes" in tables else []
+                attempts = [dict(r) for r in l_cur.execute("SELECT * FROM quiz_attempts").fetchall()] if "quiz_attempts" in tables else []
+                messages = [dict(r) for r in l_cur.execute("SELECT * FROM chat_messages").fetchall()] if "chat_messages" in tables else []
+                flashcards = [dict(r) for r in l_cur.execute("SELECT * FROM flashcards").fetchall()] if "flashcards" in tables else []
+
+                data = {
+                    "courses": courses,
+                    "quizzes": quizzes,
+                    "quiz_attempts": attempts,
+                    "chat_messages": messages,
+                    "flashcards": flashcards,
+                }
+            finally:
+                legacy_conn.close()
+                try:
+                    temp_db_path.unlink()
+                except Exception:
+                    pass
+
+        if not data:
+            return {"success": False, "error": "Aucune donnée exploitable trouvée dans la sauvegarde."}
 
         # 3. Transaction SQL sécurisée pour insérer les données sous target_user_id
         conn = get_connection()
@@ -416,6 +487,7 @@ def restore_global_backup(file_bytes: bytes) -> Dict[str, Any]:
     """
     Restaure l'intégralité du système à partir d'une sauvegarde globale ZIP.
     Valide l'en-tête SQLite et applique la protection anti-traversal.
+    Préserve les comptes utilisateurs existants pour ne jamais couper la session administrateur.
     """
     if not file_bytes:
         return {"success": False, "error": "Le fichier téléversé est vide."}
@@ -423,6 +495,25 @@ def restore_global_backup(file_bytes: bytes) -> Dict[str, Any]:
     db_path = get_db_path()
     db_path.parent.mkdir(parents=True, exist_ok=True)
     STORAGE_DIR.mkdir(parents=True, exist_ok=True)
+
+    # 1. Sauvegarder en mémoire les utilisateurs actuels au cas où la base restaurée n'a pas de table users
+    existing_users = []
+    existing_settings = []
+    if db_path.exists():
+        try:
+            conn_curr = get_connection()
+            cur_curr = conn_curr.cursor()
+            cur_curr.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")
+            if cur_curr.fetchone():
+                cur_curr.execute("SELECT * FROM users")
+                existing_users = [dict(r) for r in cur_curr.fetchall()]
+            cur_curr.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='user_settings'")
+            if cur_curr.fetchone():
+                cur_curr.execute("SELECT * FROM user_settings")
+                existing_settings = [dict(r) for r in cur_curr.fetchall()]
+            conn_curr.close()
+        except Exception as e_curr:
+            logger.warning(f"Impossible de lire les utilisateurs actuels avant restauration : {e_curr}")
 
     try:
         buf = io.BytesIO(file_bytes)
@@ -460,6 +551,26 @@ def restore_global_backup(file_bytes: bytes) -> Dict[str, Any]:
                     extracted_files += 1
 
         init_db(db_path)
+
+        # Si la base restaurée était une version legacy sans table users, réinsérer les comptes actifs
+        if get_user_count() == 0 and existing_users:
+            conn_re = get_connection()
+            try:
+                with conn_re:
+                    cur_re = conn_re.cursor()
+                    for u in existing_users:
+                        cur_re.execute(
+                            "INSERT OR REPLACE INTO users (id, email, name, avatar_url, role, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                            (u["id"], u["email"], u["name"], u.get("avatar_url"), u["role"], u.get("created_at")),
+                        )
+                    for s in existing_settings:
+                        cur_re.execute(
+                            "INSERT OR REPLACE INTO user_settings (user_id, key, value) VALUES (?, ?, ?)",
+                            (s["user_id"], s["key"], s["value"]),
+                        )
+            finally:
+                conn_re.close()
+
         stats = get_backup_summary()
         return {
             "success": True,

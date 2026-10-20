@@ -368,133 +368,134 @@ if not st.session_state.get("is_authenticated"):
         st.write("")
         st.markdown("<h1 style='text-align:center;'>🎓 Ecole Adnane</h1>", unsafe_allow_html=True)
         st.markdown(
-            "<p style='text-align:center; color:var(--text-color, #94a3b8); font-size:1.1rem;'>"
-            "Plateforme Multi-Utilisateurs de Révision & Préparation au Brevet 3AC Maroc"
+            "<p style='text-align:center; color:var(--text-color, #94a3b8); font-size:1.15rem;'>"
+            "Plateforme de Révision & Préparation au Brevet 3AC Maroc"
             "</p>",
             unsafe_allow_html=True,
         )
 
         st.divider()
 
-        # Règle : Initialisation administrateur si table vide
+        creds_info = get_oauth_credentials()
+        available_uris = creds_info.get("available_redirect_uris", [])
+        default_redirect = creds_info.get("redirect_uri") or "http://localhost"
+
+        # CAS 1 : PREMIER DÉMARRAGE = INITIALISATION ADMINISTRATEUR (total_users == 0)
         if total_users == 0:
             st.info(
                 "📢 **Initialisation du système : Veuillez vous connecter avec le compte Google Administrateur**\n\n"
                 "Le tout premier compte Google qui se connecte recevra **automatiquement et définitivement le rôle Administrateur** de la plateforme.",
                 icon="👑",
             )
-        else:
-            st.markdown(
-                "### 🔐 Connexion à votre espace personnel\n"
-                "Connectez-vous pour accéder à vos cours, vos quiz d'entraînement et votre tuteur virtuel Sanad."
-            )
 
-        # Configuration de l'URI de redirection
-        creds_info = get_oauth_credentials()
-        available_uris = creds_info.get("available_redirect_uris", [])
-        default_redirect = creds_info.get("redirect_uri") or "http://localhost"
+            # Construire les options avec les variantes de slash final
+            options = []
+            for u in available_uris:
+                if u not in options:
+                    options.append(u)
+                if u.startswith("https://"):
+                    alt = u[:-1] if u.endswith("/") else u + "/"
+                    if alt not in options:
+                        options.append(alt)
+            if default_redirect not in options:
+                options.append(default_redirect)
 
-        # Construire les options avec les variantes de slash final
-        options = []
-        for u in available_uris:
-            if u not in options:
-                options.append(u)
-            if u.startswith("https://"):
-                alt = u[:-1] if u.endswith("/") else u + "/"
-                if alt not in options:
-                    options.append(alt)
-        if default_redirect not in options:
-            options.append(default_redirect)
-
-        # Sélecteur d'URI si plusieurs variantes sont disponibles
-        if len(options) > 1:
-            try:
-                def_idx = options.index(default_redirect)
-            except ValueError:
-                def_idx = 0
-            target_redirect = st.selectbox(
-                "🎯 URI de redirection Google :",
-                options=options,
-                index=def_idx,
-                help="Sélectionnez l'adresse exacte (avec ou sans slash final) déclarée dans votre console Google Cloud."
-            )
-        else:
-            target_redirect = default_redirect
-
-        auth_url = get_google_auth_url(redirect_uri=target_redirect)
-
-        if auth_url:
-            st.link_button(
-                "🔑 Se connecter avec Google",
-                url=auth_url,
-                type="primary",
-                use_container_width=True,
-            )
-            if target_redirect.startswith("https://"):
-                st.success(f"✨ Redirection web 1-clic : `{target_redirect}`")
-                st.caption(
-                    "💡 *Si Google affiche `redirect_uri_mismatch`, vérifiez que cette adresse exacte est bien ajoutée dans la section 'URI de redirection autorisés' sur Google Cloud Console.*"
+            if len(options) > 1:
+                try:
+                    def_idx = options.index(default_redirect)
+                except ValueError:
+                    def_idx = 0
+                target_redirect = st.selectbox(
+                    "🎯 URI de redirection Google :",
+                    options=options,
+                    index=def_idx,
+                    help="Sélectionnez l'adresse exacte déclarée dans votre console Google Cloud."
                 )
             else:
-                st.caption(f"🎯 URI envoyée à Google : `{target_redirect}`")
-        else:
-            st.warning("⚠️ Les identifiants Google OAuth ne sont pas encore configurés.")
+                target_redirect = default_redirect
 
-        # Option de téléversement direct du fichier credentials.json
-        with st.expander("📂 Téléverser un fichier credentials.json (Application Web ou Bureau)", expanded=(not is_oauth_configured())):
-            st.markdown(
-                "Déposez votre fichier `client_secret_xxxx.json` téléchargé depuis Google Cloud. "
-                "L'application extraira automatiquement le client_id, le client_secret et vos adresses de redirection :"
-            )
-            uploaded_json = st.file_uploader(
-                "Fichier credentials.json :",
-                type=["json"],
-                key="oauth_credentials_uploader",
-                help="Prend en charge les formats 'web' et 'installed'."
-            )
-            if uploaded_json is not None:
-                try:
-                    cred_details = save_uploaded_oauth_credentials(uploaded_json.getvalue())
-                    st.success(f"✅ Fichier Google OAuth ({cred_details['type']}) enregistré avec succès !")
-                    if cred_details.get("redirect_uris"):
-                        st.info(f"🎯 URI détectées dans le fichier : {', '.join(cred_details['redirect_uris'])}")
-                    st.rerun()
-                except Exception as upload_err:
-                    st.error(f"❌ {upload_err}")
+            auth_url = get_google_auth_url(redirect_uri=target_redirect)
 
-        # Option de finalisation manuelle (uniquement utile en mode local / localhost si bloqué)
-        with st.expander("🔗 Finaliser manuellement la connexion (si redirection locale bloquée)", expanded=(not target_redirect.startswith("https://"))):
-            st.markdown(
-                "Si votre navigateur s'est arrêté sur une page d'erreur locale (ex: `http://localhost/?code=...`) :\n\n"
-                "1. **Copiez l'URL complète** affichée dans votre barre d'adresse de navigateur.\n"
-                "2. **Collez-la ci-dessous** et cliquez sur **Valider** :"
-            )
-            pasted_code_url = st.text_input(
-                "Collez l'URL complète ou le code ici :",
-                placeholder="Ex: http://localhost/?code=4/0A... ou 4/0A...",
-                key="pasted_code_input"
-            )
-            if st.button("✅ Valider et se connecter", type="primary", use_container_width=True, key="btn_validate_pasted_code"):
-                if pasted_code_url:
-                    clean_code = extract_auth_code(pasted_code_url)
+            if auth_url:
+                st.link_button(
+                    "🔑 Se connecter en tant qu'Administrateur",
+                    url=auth_url,
+                    type="primary",
+                    use_container_width=True,
+                )
+                if target_redirect.startswith("https://"):
+                    st.success(f"✨ Redirection configurée : `{target_redirect}`")
+            else:
+                st.warning("⚠️ Les identifiants Google OAuth ne sont pas encore configurés.")
+
+            # Option de téléversement direct du fichier credentials.json
+            with st.expander("📂 Téléverser un fichier credentials.json (Configuration Initiale)", expanded=(not is_oauth_configured())):
+                st.markdown(
+                    "Déposez votre fichier `client_secret_xxxx.json` téléchargé depuis Google Cloud. "
+                    "L'application extraira automatiquement le client_id, le client_secret et vos adresses de redirection :"
+                )
+                uploaded_json = st.file_uploader(
+                    "Fichier credentials.json :",
+                    type=["json"],
+                    key="oauth_credentials_uploader",
+                    help="Prend en charge les formats 'web' et 'installed'."
+                )
+                if uploaded_json is not None:
                     try:
-                        authenticated_user = exchange_code_for_user(clean_code, redirect_uri=target_redirect)
-                        set_session_user(authenticated_user)
-                        st.success(f"🎉 Bienvenue, {authenticated_user['name']} ({authenticated_user['role'].upper()}) !")
+                        cred_details = save_uploaded_oauth_credentials(uploaded_json.getvalue())
+                        st.success(f"✅ Fichier Google OAuth ({cred_details['type']}) enregistré avec succès !")
                         st.rerun()
-                    except Exception as err:
-                        st.error(f"❌ Erreur lors de la validation du code : {err}")
-                else:
-                    st.warning("Veuillez d'abord coller l'URL de votre navigateur.")
+                    except Exception as upload_err:
+                        st.error(f"❌ {upload_err}")
+
+            # Option de finalisation manuelle
+            with st.expander("🔗 Finaliser manuellement la connexion (si redirection locale bloquée)", expanded=False):
+                pasted_code_url = st.text_input(
+                    "Collez l'URL complète ou le code ici :",
+                    placeholder="Ex: http://localhost/?code=4/0A... ou 4/0A...",
+                    key="pasted_code_input"
+                )
+                if st.button("✅ Valider et se connecter", type="primary", use_container_width=True, key="btn_validate_pasted_code"):
+                    if pasted_code_url:
+                        clean_code = extract_auth_code(pasted_code_url)
+                        try:
+                            authenticated_user = exchange_code_for_user(clean_code, redirect_uri=target_redirect)
+                            set_session_user(authenticated_user)
+                            st.success(f"🎉 Bienvenue, {authenticated_user['name']} !")
+                            st.rerun()
+                        except Exception as err:
+                            st.error(f"❌ Erreur lors de la validation du code : {err}")
+
+        # CAS 2 : CONNEXION DES ÉLÈVES (total_users > 0) -> INTERFACE 100% SIMPLE
+        else:
+            st.markdown(
+                "<div style='text-align:center; margin-bottom: 25px;'>"
+                "<h3 style='margin-bottom:8px;'>🎒 Espace Élève</h3>"
+                "<p style='color:#64748b; font-size:1.05rem;'>"
+                "Connectez-vous avec votre compte Google pour accéder à vos cours, vos fiches de révision et vos entraînements avec l'IA Sanad."
+                "</p>"
+                "</div>",
+                unsafe_allow_html=True,
+            )
+
+            target_redirect = default_redirect
+            auth_url = get_google_auth_url(redirect_uri=target_redirect)
+
+            if auth_url:
+                st.link_button(
+                    "🔑 Se connecter avec Google",
+                    url=auth_url,
+                    type="primary",
+                    use_container_width=True,
+                )
+            else:
+                st.warning("⚠️ Le portail de connexion Google est en attente d'initialisation par l'administrateur.")
 
         st.write("")
 
-        # Mode Local / Démonstration repliable pour le développement
-        with st.expander("🧪 Mode Local / Démonstration (Développement & Hors-ligne)", expanded=(not is_oauth_configured())):
-            st.caption(
-                "Permet de se connecter directement sans passer par Google Cloud. "
-                "Si la base est vide, le premier utilisateur créé sera nommé Administrateur."
-            )
+        # Mode Local / Démonstration repliable pour le développement et fonctionnement hors-ligne
+        with st.expander("🧪 Connexion de secours (Mode local hors-ligne)", expanded=False):
+            st.caption("Permet de se connecter directement sans passer par Google Cloud pour tester hors-ligne.")
             col_d1, col_d2 = st.columns([2, 1])
             with col_d1:
                 dev_email = st.text_input("Adresse email :", value="admin@ecole-adnane.ma" if total_users == 0 else "eleve@ecole-adnane.ma", key="dev_email_input")
@@ -529,7 +530,7 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
 
     st.sidebar.divider()
 
-    # Sélecteur d'espace pour l'administrateur
+    # Configuration de la navigation selon le rôle
     is_global_admin_view = False
     active_user_id = logged_in_user_id
     active_student_info = None
@@ -550,22 +551,28 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
         if chosen_space == "global":
             is_global_admin_view = True
             active_user_id = logged_in_user_id
+            menu = st.sidebar.radio(
+                "Supervision Globale",
+                ["📊 Supervision Globale", "➕ Gestion & Ajout des Cours", "⚙️ Configuration Système & Sauvegardes"],
+                index=0,
+            )
         else:
             is_global_admin_view = False
             active_user_id = int(chosen_space)
             active_student_info = get_user_by_id(active_user_id)
-
-    # Choix de la navigation selon la vue
-    if is_global_admin_view:
-        menu = st.sidebar.radio(
-            "Supervision",
-            ["📊 Supervision Globale", "⚙️ Configuration Système & Sauvegardes"],
-            index=0,
-        )
+            menu = st.sidebar.radio(
+                f"Espace de {active_student_info['name']}",
+                ["📚 Mes Cours (Révisions)", "➕ Ajouter un Cours", "📊 Mes Progrès", "⚙️ Sauvegardes & Paramètres de l'élève"],
+                index=0,
+            )
     else:
+        # ÉLÈVE : Navigation strictement limitée aux 2 menus d'apprentissage
+        is_global_admin_view = False
+        active_user_id = logged_in_user_id
+        active_student_info = None
         menu = st.sidebar.radio(
             "Navigation",
-            ["📚 Mes Cours (Révisions)", "➕ Ajouter un Cours", "📊 Mes Progrès", "⚙️ Paramètres & Sauvegardes"],
+            ["📚 Mes Cours (Révisions)", "📊 Mes Progrès"],
             index=0,
         )
 
@@ -574,8 +581,51 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
     if user_api_key:
         st.sidebar.success("🟢 IA active & prête", icon="✅")
     else:
-        st.sidebar.warning("⚠️ Clé IA personnelle requise", icon="🔑")
-        st.sidebar.caption("Rendez-vous dans ⚙️ Paramètres pour activer votre clé Gemini gratuite.")
+        st.sidebar.warning("⚠️ Clé IA non configurée", icon="🔑")
+        if not is_admin:
+            with st.sidebar.expander("🔑 Saisir ma clé Gemini (Optionnel)", expanded=False):
+                st.caption("Optionnel : saisissez votre clé issue de https://aistudio.google.com/ si l'établissement ne fournit pas de quota.")
+                new_st_key = st.text_input("Clé Gemini :", type="password", key="sidebar_student_gemini_key")
+                if st.button("Enregistrer ma clé", key="sidebar_save_gemini_btn"):
+                    if new_st_key:
+                        save_user_gemini_api_key(active_user_id, new_st_key)
+                        st.success("Clé enregistrée !")
+                        st.rerun()
+
+    # Volet de Sauvegarde & Restauration personnelle pour les élèves (dans la barre latérale)
+    if not is_admin:
+        with st.sidebar.expander("💾 Mes Sauvegardes Personnelles", expanded=False):
+            st.caption("Sauvegardez ou restaurez vos cours, quiz et historiques.")
+            st_stats = get_student_backup_summary(active_user_id)
+            st.write(f"📊 **Données :** {st_stats['courses']} cours | {st_stats['attempts']} quiz.")
+
+            student_backup_zip = export_student_backup(active_user_id)
+            timestamp_str = datetime.now().strftime("%Y%m%d_%H%M")
+            st.download_button(
+                label="💾 Sauvegarder mes révisions (.zip)",
+                data=student_backup_zip,
+                file_name=f"mes_revisions_{current_user['name']}_{timestamp_str}.zip",
+                mime="application/zip",
+                use_container_width=True,
+                key="student_sidebar_download_backup",
+            )
+
+            st.write("---")
+            uploaded_st_backup = st.file_uploader(
+                "Restaurer une sauvegarde :",
+                type=["zip", "db", "sqlite"],
+                key="student_sidebar_restore_uploader",
+                help="Supporte les nouvelles archives (.zip) ainsi que les anciennes sauvegardes (v1.0 avec base .db ou fichier .db brut)",
+            )
+            if uploaded_st_backup and st.button("🚀 Restaurer mes données", type="primary", use_container_width=True, key="student_sidebar_restore_btn"):
+                with st.spinner("Restauration de votre espace personnel..."):
+                    res = restore_student_backup(uploaded_st_backup.read(), target_user_id=active_user_id)
+                    if res["success"]:
+                        st.success(f"✅ {res['message']}")
+                        st.balloons()
+                        st.rerun()
+                    else:
+                        st.error(f"❌ {res['error']}")
 
     st.sidebar.divider()
     if st.sidebar.button("🚪 Déconnexion", use_container_width=True):
@@ -730,7 +780,7 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                     use_container_width=True,
                 )
             with col_st2:
-                st_upload = st.file_uploader(f"Restaurer dans l'espace de {target_student['name']} :", type=["zip"], key="target_student_restore_upload")
+                st_upload = st.file_uploader(f"Restaurer dans l'espace de {target_student['name']} :", type=["zip", "db", "sqlite"], key="target_student_restore_upload")
                 if st_upload and st.button(f"🚀 Restaurer pour {target_student['name']}", type="primary"):
                     with st.spinner("Restauration ciblée en cours..."):
                         res_cib = restore_student_backup(st_upload.read(), target_student_id)
@@ -767,9 +817,14 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
             st.write(f"**{len(courses_list)} cours disponible(s)**")
 
         if not courses_list:
-            st.info(
-                "👋 Aucun cours enregistré pour cet espace. Allez dans l'onglet **➕ Ajouter un Cours** pour déposer vos premiers documents PDF !"
-            )
+            if is_admin:
+                st.info(
+                    "👋 Aucun cours enregistré pour cet espace. Utilisez le menu **➕ Gestion & Ajout des Cours** pour déposer vos documents PDF."
+                )
+            else:
+                st.info(
+                    "👋 Aucun cours n'est encore disponible dans votre espace. Votre professeur ou administrateur ajoutera prochainement vos supports de cours."
+                )
             return
 
         course_options = {c["id"]: f"{'🇲🇦 [AR]' if c['language'] == 'ar' else '🇫🇷 [FR]'} {c['subject']} - {c['title']}" for c in courses_list}
@@ -917,7 +972,7 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                 btn_gen_fiche = "⚡ توليد بطاقة المراجعة المركزة بالذكاء الاصطناعي" if is_ar else "⚡ Générer la Fiche Express avec l'IA"
                 if st.button(btn_gen_fiche, type="primary"):
                     if not user_api_key:
-                        st.error("Veuillez d'abord configurer votre clé API Gemini dans l'onglet Paramètres.")
+                        st.error("Veuillez d'abord activer une clé API Gemini (dans la barre latérale ou auprès de l'administrateur).")
                     else:
                         with st.spinner("Génération de la fiche express..."):
                             generated_summary = generate_revision_sheet(
@@ -955,7 +1010,7 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
             btn_new_quiz = "🎯 توليد اختبار تدريبي جديد (5 أسئلة)" if is_ar else "🎯 Générer un nouveau quiz d'examen (5 questions)"
             if st.button(btn_new_quiz, type="secondary"):
                 if not user_api_key:
-                    st.error("Veuillez d'abord configurer votre clé API Gemini dans l'onglet Paramètres.")
+                    st.error("Veuillez d'abord activer une clé API Gemini (dans la barre latérale ou auprès de l'administrateur).")
                 else:
                     with st.spinner("Génération des questions d'examen..."):
                         quiz_questions = generate_quiz(
@@ -1044,7 +1099,7 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
             user_input = st.chat_input("Pose ta question à Sanad..." if not is_ar else "اطرح سؤالك على الأستاذ المساعد سند...")
             if user_input:
                 if not user_api_key:
-                    st.error("Veuillez d'abord configurer votre clé API Gemini dans l'onglet Paramètres.")
+                    st.error("Veuillez d'abord activer une clé API Gemini (dans la barre latérale ou auprès de l'administrateur).")
                 else:
                     add_chat_message(current_course["id"], "user", user_input, user_id=active_user_id)
                     with st.chat_message("user", avatar="🧑‍🎓"):
@@ -1073,18 +1128,48 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                     st.rerun()
 
     # -----------------------------------------------------------------------
-    # VUE ÉLÈVE : AJOUTER UN COURS
+    # GESTION & AJOUT DES COURS (ADMINISTRATEUR)
     # -----------------------------------------------------------------------
-    elif menu == "➕ Ajouter un Cours":
+    elif menu in ("➕ Ajouter un Cours", "➕ Gestion & Ajout des Cours"):
         if is_admin and active_student_info:
-            st.info(f"👀 **Espace de supervision :** Vous téléversez pour l'élève **{active_student_info['name']}**.")
-
-        st.title("➕ Ajouter des Cours (3AC)")
+            st.info(f"👀 **Espace de supervision :** Vous téléversez des supports pour l'élève **{active_student_info['name']}**.")
+            target_ids = [active_user_id]
+        elif is_global_admin_view:
+            st.title("➕ Gestion & Ajout des Cours (3AC)")
+            all_s = list_users(role="student")
+            target_choice = st.radio(
+                "Destinataire(s) du cours :",
+                ["👥 Tous les élèves inscrits", "🎒 Élève spécifique"],
+                horizontal=True,
+                key="admin_add_course_target_choice",
+            )
+            if target_choice == "👥 Tous les élèves inscrits":
+                target_ids = [s["id"] for s in all_s]
+                if not target_ids:
+                    st.warning("⚠️ Aucun élève n'est encore inscrit. Les cours seront ajoutés sous votre compte administrateur.")
+                    target_ids = [logged_in_user_id]
+                else:
+                    st.caption(f"Le cours sera injecté dans l'espace de {len(target_ids)} élève(s).")
+            else:
+                if not all_s:
+                    st.warning("Aucun élève inscrit.")
+                    target_ids = [logged_in_user_id]
+                else:
+                    target_sel = st.selectbox(
+                        "Choisir l'élève destinataire :",
+                        options=[s["id"] for s in all_s],
+                        format_func=lambda x: next((f"{s['name']} ({s['email']})" for s in all_s if s["id"] == x), str(x)),
+                        key="admin_add_course_student_select",
+                    )
+                    target_ids = [target_sel]
+        else:
+            target_ids = [active_user_id]
 
         mode = st.radio(
             "Mode d'importation :",
             ["📁 Import Manuel (PDF)", "🏫 Synchronisation Google Classroom"],
             horizontal=True,
+            key="add_course_mode_radio",
         )
 
         if mode == "📁 Import Manuel (PDF)":
@@ -1092,46 +1177,53 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                 "Sélectionnez un ou plusieurs fichiers PDF :",
                 type=["pdf"],
                 accept_multiple_files=True,
-                help="Les fichiers seront stockés dans votre dossier personnel isolé.",
+                help="Les fichiers seront stockés dans le dossier personnel isolé de chaque destinataire.",
             )
 
             if uploaded_files:
                 st.info(f"📄 {len(uploaded_files)} fichier(s) sélectionné(s).")
                 if st.button("🚀 Ingestion & Analyse Automatique", type="primary"):
                     progress_bar = st.progress(0)
+                    total_ops = len(uploaded_files) * len(target_ids)
+                    done = 0
                     success_count = 0
                     dup_count = 0
 
-                    for i, f in enumerate(uploaded_files):
+                    for f in uploaded_files:
                         file_bytes = f.read()
-                        res = ingest_pdf_bytes(file_bytes, f.name, user_id=active_user_id)
-                        if res["status"] == "success":
-                            success_count += 1
-                            st.success(f"✅ {f.name} ajouté ({res['subject']} - {res['language'].upper()})")
-                        else:
-                            dup_count += 1
-                            st.warning(f"ℹ️ {f.name} : Déjà présent dans votre espace.")
-                        progress_bar.progress((i + 1) / len(uploaded_files))
+                        for tid in target_ids:
+                            res = ingest_pdf_bytes(file_bytes, f.name, user_id=tid)
+                            if res["status"] == "success":
+                                success_count += 1
+                            else:
+                                dup_count += 1
+                            done += 1
+                            progress_bar.progress(done / total_ops)
 
                     st.success(f"Bilan : {success_count} cours ajouté(s), {dup_count} doublon(s).")
+                    st.rerun()
 
         else:
-            st.markdown("### 🏫 Synchronisation Google Classroom Individuelle")
-            st.write("Récupérez vos cours et devoirs depuis votre propre compte Classroom.")
+            st.markdown("### 🏫 Synchronisation Google Classroom")
+            st.write("Récupérez les cours et devoirs depuis Google Classroom.")
 
-            has_creds = is_classroom_configured(active_user_id)
+            primary_target = target_ids[0]
+            has_creds = is_classroom_configured(primary_target)
             if not has_creds:
                 st.warning("⚠️ Vos identifiants Google Classroom (`credentials.json`) ne sont pas encore téléversés.")
                 up_cred = st.file_uploader("Téléverser votre `credentials.json` :", type=["json"], key="up_cred_individual")
                 if up_cred:
-                    save_user_credentials(active_user_id, up_cred.read())
-                    st.success("Identifiants enregistrés dans votre espace !")
+                    cred_bytes = up_cred.read()
+                    for tid in target_ids:
+                        save_user_credentials(tid, cred_bytes)
+                    st.success("Identifiants Classroom enregistrés !")
                     st.rerun()
             else:
-                st.success("🟢 Identifiants Classroom configurés pour votre compte.")
-                if st.button("🔄 Synchroniser mes devoirs Classroom", type="primary"):
+                st.success("🟢 Identifiants Classroom configurés.")
+                if st.button("🔄 Synchroniser les devoirs Classroom", type="primary"):
                     with st.spinner("Synchronisation Classroom en cours..."):
-                        sync_res = sync_google_classroom(user_id=active_user_id)
+                        for tid in target_ids:
+                            sync_res = sync_google_classroom(user_id=tid)
                         if sync_res["success"]:
                             st.success(sync_res["message"])
                         else:
@@ -1187,7 +1279,7 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
     # -----------------------------------------------------------------------
     # VUE ÉLÈVE : PARAMÈTRES INDIVIDUELS & SAUVEGARDE ÉLÈVE
     # -----------------------------------------------------------------------
-    elif menu == "⚙️ Paramètres & Sauvegardes":
+    elif menu in ("⚙️ Paramètres & Sauvegardes", "⚙️ Sauvegardes & Paramètres de l'élève"):
         if is_admin and active_student_info:
             st.info(f"👀 **Espace de supervision :** Paramètres et sauvegarde de **{active_student_info['name']}**.")
 
@@ -1266,9 +1358,10 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
         with col_sb2:
             st.markdown("#### 📤 Restaurer mes révisions")
             uploaded_st_backup = st.file_uploader(
-                "Sélectionnez votre archive personnelle (.zip) :",
-                type=["zip"],
+                "Sélectionnez une sauvegarde (.zip ou base .db) :",
+                type=["zip", "db", "sqlite"],
                 key="restore_student_backup_uploader",
+                help="Supporte les nouvelles archives (.zip) et les anciennes sauvegardes (v1.0 ou .db)",
             )
             if uploaded_st_backup and st.button("🚀 Restaurer mes révisions", type="primary", use_container_width=True):
                 with st.spinner("Restauration de votre espace en cours..."):

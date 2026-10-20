@@ -11,6 +11,7 @@ et les scopes officiels Google Classroom.
 import io
 import json
 import os
+import sqlite3
 import tempfile
 import unittest
 import zipfile
@@ -336,6 +337,116 @@ class TestStudentAndGlobalBackup(unittest.TestCase):
 
         self.assertTrue(is_safe_extract_path(base, safe))
         self.assertFalse(is_safe_extract_path(base, unsafe))
+
+    def test_restore_legacy_backup_zip_to_student(self):
+        # Créer une base de données v1.0 (sans table users et sans colonne user_id)
+        legacy_db_file = Path(self.temp_dir.name) / "legacy_test.db"
+        l_conn = sqlite3.connect(legacy_db_file)
+        with l_conn:
+            l_conn.execute("""
+                CREATE TABLE courses (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    title TEXT NOT NULL,
+                    subject TEXT NOT NULL,
+                    language TEXT NOT NULL,
+                    file_path TEXT NOT NULL,
+                    file_hash TEXT UNIQUE NOT NULL,
+                    file_name TEXT NOT NULL,
+                    raw_text TEXT,
+                    summary_markdown TEXT,
+                    key_concepts_json TEXT
+                )
+            """)
+            l_conn.execute("""
+                CREATE TABLE quizzes (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    course_id INTEGER NOT NULL,
+                    quiz_data_json TEXT NOT NULL
+                )
+            """)
+            l_conn.execute("""
+                CREATE TABLE chat_messages (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    course_id INTEGER NOT NULL,
+                    role TEXT NOT NULL,
+                    content TEXT NOT NULL
+                )
+            """)
+            l_conn.execute(
+                "INSERT INTO courses (title, subject, language, file_path, file_hash, file_name, raw_text) "
+                "VALUES ('Ancien Cours SVT', 'SVT', 'fr', '/fake/svt.pdf', 'hash_svt_legacy', 'svt.pdf', 'Texte SVT')"
+            )
+            l_conn.execute(
+                "INSERT INTO quizzes (course_id, quiz_data_json) VALUES (1, '[{\"question\": \"cellule ?\", \"options\": [\"oui\", \"non\"], \"answer_index\": 0}]')"
+            )
+            l_conn.execute(
+                "INSERT INTO chat_messages (course_id, role, content) VALUES (1, 'user', 'Question SVT')"
+            )
+        l_conn.close()
+
+        # Pack dans une archive ZIP legacy (format 1814f19)
+        legacy_buf = io.BytesIO()
+        with zipfile.ZipFile(legacy_buf, "w") as zf:
+            zf.write(legacy_db_file, arcname="ecole_adnane.db")
+            zf.writestr("cours/svt.pdf", b"%PDF-1.4 Fake PDF Content")
+            zf.writestr("manifest.json", json.dumps({"version": "1.0.0", "type": "legacy"}))
+
+        legacy_bytes = legacy_buf.getvalue()
+
+        # Compte initial des utilisateurs
+        user_count_before = get_user_count()
+
+        # Restauration dans l'espace de notre élève
+        res = restore_student_backup(legacy_bytes, target_user_id=self.user_id)
+        self.assertTrue(res["success"])
+
+        # Vérifier que les utilisateurs n'ont pas été supprimés ou altérés
+        self.assertEqual(get_user_count(), user_count_before)
+        student_user = get_user_by_id(self.user_id)
+        self.assertIsNotNone(student_user)
+        self.assertEqual(student_user["email"], "eleve_backup@test.ma")
+
+        # Vérifier que le cours restauré est bien présent sous l'user_id de l'élève
+        courses = list_courses(user_id=self.user_id)
+        titles = [c["title"] for c in courses]
+        self.assertIn("Ancien Cours SVT", titles)
+
+        # Vérifier que les quiz et chats ont été assignés à l'élève
+        svt_course = next(c for c in courses if c["title"] == "Ancien Cours SVT")
+        chats = get_chat_history(svt_course["id"], user_id=self.user_id)
+        self.assertEqual(len(chats), 1)
+        self.assertEqual(chats[0]["content"], "Question SVT")
+
+    def test_restore_legacy_raw_db_to_student(self):
+        # Créer un fichier SQLite brut legacy
+        raw_db_file = Path(self.temp_dir.name) / "raw_legacy.db"
+        r_conn = sqlite3.connect(raw_db_file)
+        with r_conn:
+            r_conn.execute("""
+                CREATE TABLE courses (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    title TEXT NOT NULL,
+                    subject TEXT NOT NULL,
+                    language TEXT NOT NULL,
+                    file_path TEXT NOT NULL,
+                    file_hash TEXT UNIQUE NOT NULL,
+                    file_name TEXT NOT NULL,
+                    raw_text TEXT
+                )
+            """)
+            r_conn.execute(
+                "INSERT INTO courses (title, subject, language, file_path, file_hash, file_name, raw_text) "
+                "VALUES ('Cours Brut Maths', 'Mathématiques', 'fr', '/fake/math.pdf', 'hash_math_raw', 'math.pdf', 'Calcul')"
+            )
+        r_conn.close()
+
+        raw_bytes = raw_db_file.read_bytes()
+        res = restore_student_backup(raw_bytes, target_user_id=self.user_id)
+        self.assertTrue(res["success"])
+
+        courses = list_courses(user_id=self.user_id)
+        titles = [c["title"] for c in courses]
+        self.assertIn("Cours Brut Maths", titles)
 
     def test_google_classroom_scopes(self):
         # Vérification stricte des 4 scopes officiels requis
