@@ -273,110 +273,105 @@ def restore_student_backup(file_bytes: bytes, target_user_id: int) -> Dict[str, 
         if not data:
             return {"success": False, "error": "Aucune donnée exploitable trouvée dans la sauvegarde."}
 
-        # 3. Transaction SQL sécurisée pour insérer les données sous target_user_id
-        conn = get_connection()
-        try:
-            with conn:
-                cur = conn.cursor()
-                course_id_map: Dict[int, int] = {}
-                restored_courses = 0
-                restored_quizzes = 0
-                restored_attempts = 0
-                restored_chats = 0
-                restored_cards = 0
+        # 3. Assurer que le schéma de la base est à jour et insérer les données sous target_user_id
+        init_db()
 
-                # Ingestion des cours
-                for c in data.get("courses", []):
-                    old_id = c["id"]
-                    file_name = c["file_name"]
-                    file_hash = c["file_hash"]
-                    # Retrouver le PDF extrait correspondant
-                    matched_file = None
-                    for pdf_candidate in user_storage_dir.glob(f"*{file_hash[:8]}*"):
-                        matched_file = str(pdf_candidate)
-                        break
-                    if not matched_file:
-                        matched_file = str(user_storage_dir / file_name)
+        course_id_map: Dict[int, int] = {}
+        restored_courses = 0
+        restored_quizzes = 0
+        restored_attempts = 0
+        restored_chats = 0
+        restored_cards = 0
 
-                    try:
-                        key_concepts = json.loads(c.get("key_concepts_json") or "[]")
-                    except Exception:
-                        key_concepts = []
+        # Ingestion des cours
+        for c in data.get("courses", []):
+            old_id = c["id"]
+            file_name = c["file_name"]
+            file_hash = c["file_hash"]
+            # Retrouver le PDF extrait correspondant
+            matched_file = None
+            for pdf_candidate in user_storage_dir.glob(f"*{file_hash[:8]}*"):
+                matched_file = str(pdf_candidate)
+                break
+            if not matched_file:
+                matched_file = str(user_storage_dir / file_name)
 
-                    new_cid = save_course(
-                        title=c["title"],
-                        subject=c["subject"],
-                        language=c["language"],
-                        file_path=matched_file,
-                        file_hash=file_hash,
-                        file_name=file_name,
-                        raw_text=c.get("raw_text") or "",
-                        summary_markdown=c.get("summary_markdown"),
-                        key_concepts=key_concepts,
-                        user_id=target_user_id,
-                    )
-                    course_id_map[old_id] = new_cid
-                    restored_courses += 1
+            try:
+                key_concepts = json.loads(c.get("key_concepts_json") or "[]")
+            except Exception:
+                key_concepts = []
 
-                # Ingestion des quiz
-                quiz_id_map: Dict[int, int] = {}
-                for q in data.get("quizzes", []):
-                    old_cid = q["course_id"]
-                    new_cid = course_id_map.get(old_cid)
-                    if new_cid:
-                        try:
-                            q_data = json.loads(q.get("quiz_data_json") or "[]")
-                        except Exception:
-                            q_data = []
-                        new_qid = save_quiz(course_id=new_cid, quiz_data=q_data, user_id=target_user_id)
-                        quiz_id_map[q["id"]] = new_qid
-                        restored_quizzes += 1
+            new_cid = save_course(
+                title=c["title"],
+                subject=c["subject"],
+                language=c["language"],
+                file_path=matched_file,
+                file_hash=file_hash,
+                file_name=file_name,
+                raw_text=c.get("raw_text") or "",
+                summary_markdown=c.get("summary_markdown"),
+                key_concepts=key_concepts,
+                user_id=target_user_id,
+            )
+            course_id_map[old_id] = new_cid
+            restored_courses += 1
 
-                # Ingestion des tentatives de quiz
-                for a in data.get("quiz_attempts", []):
-                    new_cid = course_id_map.get(a["course_id"])
-                    new_qid = quiz_id_map.get(a["quiz_id"])
-                    if new_cid and new_qid:
-                        try:
-                            ans = json.loads(a.get("answers_json") or "{}")
-                        except Exception:
-                            ans = {}
-                        save_quiz_attempt(
-                            course_id=new_cid,
-                            quiz_id=new_qid,
-                            score=a["score"],
-                            total_questions=a["total_questions"],
-                            answers=ans,
-                            user_id=target_user_id,
-                        )
-                        restored_attempts += 1
+        # Ingestion des quiz
+        quiz_id_map: Dict[int, int] = {}
+        for q in data.get("quizzes", []):
+            old_cid = q["course_id"]
+            new_cid = course_id_map.get(old_cid)
+            if new_cid:
+                try:
+                    q_data = json.loads(q.get("quiz_data_json") or "[]")
+                except Exception:
+                    q_data = []
+                new_qid = save_quiz(course_id=new_cid, quiz_data=q_data, user_id=target_user_id)
+                quiz_id_map[q["id"]] = new_qid
+                restored_quizzes += 1
 
-                # Ingestion de l'historique Sanad
-                for m in data.get("chat_messages", []):
-                    new_cid = course_id_map.get(m["course_id"])
-                    if new_cid:
-                        add_chat_message(
-                            course_id=new_cid,
-                            role=m["role"],
-                            content=m["content"],
-                            user_id=target_user_id,
-                        )
-                        restored_chats += 1
+        # Ingestion des tentatives de quiz
+        for a in data.get("quiz_attempts", []):
+            new_cid = course_id_map.get(a["course_id"])
+            new_qid = quiz_id_map.get(a["quiz_id"])
+            if new_cid and new_qid:
+                try:
+                    ans = json.loads(a.get("answers_json") or "{}")
+                except Exception:
+                    ans = {}
+                save_quiz_attempt(
+                    course_id=new_cid,
+                    quiz_id=new_qid,
+                    score=a["score"],
+                    total_questions=a["total_questions"],
+                    answers=ans,
+                    user_id=target_user_id,
+                )
+                restored_attempts += 1
 
-                # Ingestion des flashcards
-                for f in data.get("flashcards", []):
-                    new_cid = course_id_map.get(f["course_id"])
-                    if new_cid:
-                        save_flashcard(
-                            user_id=target_user_id,
-                            course_id=new_cid,
-                            front=f["front"],
-                            back=f["back"],
-                        )
-                        restored_cards += 1
+        # Ingestion de l'historique Sanad
+        for m in data.get("chat_messages", []):
+            new_cid = course_id_map.get(m["course_id"])
+            if new_cid:
+                add_chat_message(
+                    course_id=new_cid,
+                    role=m["role"],
+                    content=m["content"],
+                    user_id=target_user_id,
+                )
+                restored_chats += 1
 
-        finally:
-            conn.close()
+        # Ingestion des flashcards
+        for f in data.get("flashcards", []):
+            new_cid = course_id_map.get(f["course_id"])
+            if new_cid:
+                save_flashcard(
+                    user_id=target_user_id,
+                    course_id=new_cid,
+                    front=f["front"],
+                    back=f["back"],
+                )
+                restored_cards += 1
 
         return {
             "success": True,

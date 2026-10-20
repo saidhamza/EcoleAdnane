@@ -448,6 +448,93 @@ class TestStudentAndGlobalBackup(unittest.TestCase):
         titles = [c["title"] for c in courses]
         self.assertIn("Cours Brut Maths", titles)
 
+    def test_multiple_users_can_have_same_course_hash(self):
+        # Deux élèves distincts doivent pouvoir avoir le même cours sans conflit UNIQUE
+        u1 = create_or_get_google_user("eleve1_hash@test.ma", "Élève 1", role="student")
+        u2 = create_or_get_google_user("eleve2_hash@test.ma", "Élève 2", role="student")
+
+        shared_hash = "sha256_shared_between_students_3ac"
+        cid1 = save_course(
+            title="Thalès Élève 1",
+            subject="Mathématiques",
+            language="fr",
+            file_path="/fake/thales.pdf",
+            file_hash=shared_hash,
+            file_name="thales.pdf",
+            user_id=u1["id"],
+        )
+        cid2 = save_course(
+            title="Thalès Élève 2",
+            subject="Mathématiques",
+            language="fr",
+            file_path="/fake/thales.pdf",
+            file_hash=shared_hash,
+            file_name="thales.pdf",
+            user_id=u2["id"],
+        )
+
+        self.assertIsNotNone(cid1)
+        self.assertIsNotNone(cid2)
+        self.assertNotEqual(cid1, cid2)
+
+        c1 = list_courses(user_id=u1["id"])
+        c2 = list_courses(user_id=u2["id"])
+        self.assertEqual(len(c1), 1)
+        self.assertEqual(len(c2), 1)
+        self.assertEqual(c1[0]["title"], "Thalès Élève 1")
+        self.assertEqual(c2[0]["title"], "Thalès Élève 2")
+
+    def test_restore_student_backup_with_existing_file_hash(self):
+        # 1. Un cours existe déjà globalement ou chez un autre utilisateur avec ce hash
+        existing_hash = "sha256_already_in_db"
+        save_course(
+            title="Cours Déjà en Base",
+            subject="Physique Chimie",
+            language="fr",
+            file_path="/fake/physique.pdf",
+            file_hash=existing_hash,
+            file_name="physique.pdf",
+            user_id=None,
+        )
+
+        # 2. Une sauvegarde d'un élève contient un cours avec ce MÊME hash
+        u_target = create_or_get_google_user("eleve_target@test.ma", "Cible", role="student")
+        backup_buf = io.BytesIO()
+        data = {
+            "courses": [
+                {
+                    "id": 10,
+                    "title": "Cours Cible Restauré",
+                    "subject": "Physique Chimie",
+                    "language": "fr",
+                    "file_name": "physique.pdf",
+                    "file_hash": existing_hash,
+                    "raw_text": "Contenu restauré",
+                }
+            ],
+            "quizzes": [
+                {
+                    "id": 20,
+                    "course_id": 10,
+                    "quiz_data_json": json.dumps([{"question": "Q1", "options": ["A", "B"], "answer_index": 0}]),
+                }
+            ],
+            "quiz_attempts": [],
+            "chat_messages": [],
+            "flashcards": [],
+        }
+        with zipfile.ZipFile(backup_buf, "w") as zf:
+            zf.writestr("manifest.json", json.dumps({"version": "2.0.0"}))
+            zf.writestr("data.json", json.dumps(data))
+
+        # 3. La restauration ne doit PAS lever d'erreur UNIQUE constraint failed: courses.file_hash
+        res = restore_student_backup(backup_buf.getvalue(), target_user_id=u_target["id"])
+        self.assertTrue(res["success"], f"Échec de la restauration : {res.get('error')}")
+
+        restored = list_courses(user_id=u_target["id"])
+        titles = [c["title"] for c in restored]
+        self.assertIn("Cours Cible Restauré", titles)
+
     def test_google_classroom_scopes(self):
         # Vérification stricte des 4 scopes officiels requis
         expected_scopes = [

@@ -147,9 +147,56 @@ def init_db(db_path: Optional[Path] = None) -> None:
                 if "user_id" not in cols:
                     cur.execute(f"ALTER TABLE {tbl} ADD COLUMN user_id INTEGER REFERENCES users(id) ON DELETE CASCADE")
 
+            # 2b. Migration courses : suppression de la contrainte UNIQUE globale sur file_hash
+            cur.execute("PRAGMA index_list(courses)")
+            indexes = cur.fetchall()
+            has_unique_hash = False
+            for idx in indexes:
+                if idx["unique"] == 1:
+                    idx_name = idx["name"]
+                    cur.execute(f"PRAGMA index_info({idx_name})")
+                    cols = [c["name"] for c in cur.fetchall()]
+                    if cols == ["file_hash"]:
+                        has_unique_hash = True
+                        break
+
+            if has_unique_hash:
+                logger.info("Migration courses : suppression de la contrainte UNIQUE globale sur file_hash...")
+                conn.execute("PRAGMA foreign_keys = OFF")
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS courses_temp_migration (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        user_id INTEGER,
+                        title TEXT NOT NULL,
+                        subject TEXT NOT NULL,
+                        language TEXT NOT NULL,
+                        file_path TEXT NOT NULL,
+                        file_hash TEXT NOT NULL,
+                        file_name TEXT NOT NULL,
+                        raw_text TEXT,
+                        summary_markdown TEXT,
+                        key_concepts_json TEXT,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+                    )
+                """)
+                conn.execute("""
+                    INSERT INTO courses_temp_migration (id, user_id, title, subject, language, file_path, file_hash, file_name, raw_text, summary_markdown, key_concepts_json, created_at, updated_at)
+                    SELECT id, user_id, title, subject, language, file_path, file_hash, file_name, raw_text, summary_markdown, key_concepts_json, created_at, updated_at FROM courses
+                """)
+                conn.execute("DROP TABLE courses")
+                conn.execute("ALTER TABLE courses_temp_migration RENAME TO courses")
+                conn.execute("PRAGMA foreign_keys = ON")
+
             # 3. Index et vues dépendant de user_id
             conn.executescript("""
+                CREATE INDEX IF NOT EXISTS idx_courses_hash ON courses(file_hash);
+                CREATE INDEX IF NOT EXISTS idx_courses_subject ON courses(subject);
+                CREATE INDEX IF NOT EXISTS idx_courses_lang ON courses(language);
                 CREATE INDEX IF NOT EXISTS idx_courses_user ON courses(user_id);
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_courses_user_hash ON courses(user_id, file_hash) WHERE user_id IS NOT NULL;
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_courses_null_user_hash ON courses(file_hash) WHERE user_id IS NULL;
                 CREATE INDEX IF NOT EXISTS idx_quizzes_user ON quizzes(user_id);
                 CREATE INDEX IF NOT EXISTS idx_attempts_user ON quiz_attempts(user_id);
                 CREATE INDEX IF NOT EXISTS idx_chat_user ON chat_messages(user_id);
@@ -412,7 +459,7 @@ def save_course(
             if user_id is not None:
                 cur.execute("SELECT id FROM courses WHERE file_hash = ? AND user_id = ?", (file_hash, user_id))
             else:
-                cur.execute("SELECT id FROM courses WHERE file_hash = ?", (file_hash,))
+                cur.execute("SELECT id FROM courses WHERE file_hash = ? AND user_id IS NULL", (file_hash,))
             existing = cur.fetchone()
 
             if existing:
@@ -439,25 +486,59 @@ def save_course(
                 )
                 return course_id
             else:
-                cur.execute(
-                    """
-                    INSERT INTO courses (user_id, title, subject, language, file_path, file_hash, file_name, raw_text, summary_markdown, key_concepts_json)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        user_id,
-                        title,
-                        subject,
-                        language,
-                        file_path,
-                        file_hash,
-                        file_name,
-                        raw_text,
-                        summary_markdown,
-                        concepts_json,
-                    ),
-                )
-                return cur.lastrowid
+                try:
+                    cur.execute(
+                        """
+                        INSERT INTO courses (user_id, title, subject, language, file_path, file_hash, file_name, raw_text, summary_markdown, key_concepts_json)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            user_id,
+                            title,
+                            subject,
+                            language,
+                            file_path,
+                            file_hash,
+                            file_name,
+                            raw_text,
+                            summary_markdown,
+                            concepts_json,
+                        ),
+                    )
+                    return cur.lastrowid
+                except sqlite3.IntegrityError:
+                    if user_id is not None:
+                        cur.execute("SELECT id FROM courses WHERE file_hash = ? AND user_id = ?", (file_hash, user_id))
+                    else:
+                        cur.execute("SELECT id FROM courses WHERE file_hash = ? AND user_id IS NULL", (file_hash,))
+                    row = cur.fetchone()
+                    if not row:
+                        cur.execute("SELECT id FROM courses WHERE file_hash = ?", (file_hash,))
+                        row = cur.fetchone()
+                    if row:
+                        cid = row["id"]
+                        cur.execute(
+                            """
+                            UPDATE courses
+                            SET title = ?, subject = ?, language = ?, file_path = ?,
+                                file_name = ?, raw_text = ?, summary_markdown = COALESCE(?, summary_markdown),
+                                key_concepts_json = ?, updated_at = CURRENT_TIMESTAMP
+                            WHERE id = ?
+                            """,
+                            (
+                                title,
+                                subject,
+                                language,
+                                file_path,
+                                file_name,
+                                raw_text,
+                                summary_markdown,
+                                concepts_json,
+                                cid,
+                            ),
+                        )
+                        return cid
+                    raise
     finally:
         conn.close()
 
@@ -484,13 +565,16 @@ def get_course_by_id(course_id: int, user_id: Optional[int] = None) -> Optional[
         conn.close()
 
 
-def get_course_by_hash(file_hash: str, user_id: Optional[int] = None) -> Optional[Dict[str, Any]]:
+def get_course_by_hash(file_hash: str, user_id: Optional[int] = None, include_global: bool = True) -> Optional[Dict[str, Any]]:
     """Récupère un cours par son hash SHA-256 (cloisonné par utilisateur)."""
     conn = get_connection()
     try:
         cur = conn.cursor()
         if user_id is not None:
-            cur.execute("SELECT * FROM courses WHERE file_hash = ? AND (user_id = ? OR user_id IS NULL)", (file_hash, user_id))
+            if include_global:
+                cur.execute("SELECT * FROM courses WHERE file_hash = ? AND (user_id = ? OR user_id IS NULL)", (file_hash, user_id))
+            else:
+                cur.execute("SELECT * FROM courses WHERE file_hash = ? AND user_id = ?", (file_hash, user_id))
         else:
             cur.execute("SELECT * FROM courses WHERE file_hash = ?", (file_hash,))
         row = cur.fetchone()
@@ -638,9 +722,24 @@ def save_quiz(course_id: int, quiz_data: List[Dict[str, Any]], user_id: Optional
     try:
         with conn:
             cur = conn.cursor()
+            data_json = json.dumps(quiz_data, ensure_ascii=False)
+            if user_id is not None:
+                cur.execute(
+                    "SELECT id FROM quizzes WHERE course_id = ? AND user_id = ? AND quiz_data_json = ?",
+                    (course_id, user_id, data_json),
+                )
+            else:
+                cur.execute(
+                    "SELECT id FROM quizzes WHERE course_id = ? AND user_id IS NULL AND quiz_data_json = ?",
+                    (course_id, data_json),
+                )
+            existing = cur.fetchone()
+            if existing:
+                return existing["id"]
+
             cur.execute(
                 "INSERT INTO quizzes (user_id, course_id, quiz_data_json) VALUES (?, ?, ?)",
-                (user_id, course_id, json.dumps(quiz_data, ensure_ascii=False)),
+                (user_id, course_id, data_json),
             )
             return cur.lastrowid
     finally:
@@ -854,6 +953,15 @@ def save_flashcard(user_id: int, course_id: int, front: str, back: str) -> int:
     try:
         with conn:
             cur = conn.cursor()
+            cur.execute(
+                "SELECT id FROM flashcards WHERE user_id = ? AND course_id = ? AND front = ?",
+                (user_id, course_id, front),
+            )
+            existing = cur.fetchone()
+            if existing:
+                cur.execute("UPDATE flashcards SET back = ? WHERE id = ?", (back, existing["id"]))
+                return existing["id"]
+
             cur.execute(
                 "INSERT INTO flashcards (user_id, course_id, front, back) VALUES (?, ?, ?, ?)",
                 (user_id, course_id, front, back),

@@ -121,7 +121,7 @@ def ingest_pdf_bytes(
     file_hash = calculate_sha256(file_bytes)
 
     # 1. Vérification des doublons dans l'espace de cet utilisateur
-    existing_course = get_course_by_hash(file_hash, user_id=user_id)
+    existing_course = get_course_by_hash(file_hash, user_id=user_id, include_global=(user_id is None))
     if existing_course:
         return {
             "status": "duplicate",

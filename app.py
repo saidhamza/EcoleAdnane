@@ -566,13 +566,13 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                 index=0,
             )
     else:
-        # ÉLÈVE : Navigation strictement limitée aux 2 menus d'apprentissage
+        # ÉLÈVE : Navigation complète d'apprentissage personnel
         is_global_admin_view = False
         active_user_id = logged_in_user_id
         active_student_info = None
         menu = st.sidebar.radio(
-            "Navigation",
-            ["📚 Mes Cours (Révisions)", "📊 Mes Progrès"],
+            "Mon Espace de Révision",
+            ["📚 Mes Cours (Révisions)", "➕ Ajouter un Cours", "📊 Mes Progrès", "⚙️ Paramètres & Sauvegardes"],
             index=0,
         )
 
@@ -823,7 +823,9 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                 )
             else:
                 st.info(
-                    "👋 Aucun cours n'est encore disponible dans votre espace. Votre professeur ou administrateur ajoutera prochainement vos supports de cours."
+                    "👋 **Bienvenue dans votre espace de révision !**\n\n"
+                    "Vous n'avez pas encore de cours enregistré. Rendez-vous dans le menu **➕ Ajouter un Cours** "
+                    "pour téléverser vos premiers supports PDF ou dans **⚙️ Paramètres & Sauvegardes** pour restaurer une sauvegarde existante."
                 )
             return
 
@@ -1163,6 +1165,11 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                     )
                     target_ids = [target_sel]
         else:
+            st.title("➕ Ajouter un Cours (Mes Révisions 3AC)")
+            st.markdown(
+                "Téléversez vos supports de cours au format PDF pour enrichir vos révisions, "
+                "générer automatiquement des résumés clés, fiches mémo et quiz personnalisés."
+            )
             target_ids = [active_user_id]
 
         mode = st.radio(
