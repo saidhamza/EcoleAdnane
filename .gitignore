@@ -1,0 +1,29 @@
+# Environnement virtuel Python
+.venv/
+venv/
+ENV/
+env/
+
+# Fichiers de configuration sensibles & Clés API
+.env
+.env.local
+credentials.json
+token.json
+.streamlit/secrets.toml
+
+# Base de données locale & Documents stockés
+storage/*.db
+storage/*.db-journal
+storage/*.sqlite*
+storage/*.pdf
+
+# Cache Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+
+# OS
+.DS_Store
+Thumbs.db
