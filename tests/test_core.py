@@ -44,6 +44,11 @@ from models.database import (
     update_course_summary,
 )
 from services.ai_engine import clean_json_output
+from services.auth_manager import (
+    extract_auth_code,
+    get_oauth_credentials,
+    normalize_redirect_uri,
+)
 from services.config_manager import (
     get_config_value,
     get_user_gemini_api_key,
@@ -347,5 +352,36 @@ class TestStudentAndGlobalBackup(unittest.TestCase):
             self.assertIn(scope, code)
 
 
+class TestOAuthRedirectAndCodeHandling(unittest.TestCase):
+    """Tests sur la robustesse des redirections et codes OAuth Google."""
+
+    def test_normalize_redirect_uri(self):
+        # Localhost sans port doit recevoir le port 8501
+        self.assertEqual(normalize_redirect_uri("http://localhost"), "http://localhost:8501")
+        self.assertEqual(normalize_redirect_uri("http://localhost/"), "http://localhost:8501")
+        self.assertEqual(normalize_redirect_uri("http://127.0.0.1"), "http://127.0.0.1:8501")
+        # Localhost avec port explicite reste inchangé
+        self.assertEqual(normalize_redirect_uri("http://localhost:8501"), "http://localhost:8501")
+        self.assertEqual(normalize_redirect_uri("http://localhost:3000"), "http://localhost:3000")
+        # URL Streamlit Cloud reste intacte
+        self.assertEqual(normalize_redirect_uri("https://ecoleadnane.streamlit.app"), "https://ecoleadnane.streamlit.app")
+        # None retourne localhost:8501 par défaut
+        self.assertEqual(normalize_redirect_uri(None), "http://localhost:8501")
+
+    def test_extract_auth_code(self):
+        # Code brut
+        self.assertEqual(extract_auth_code("4/0Abc123xyz"), "4/0Abc123xyz")
+        # URL complète avec localhost (comme rapporté dans le problème)
+        url1 = "http://localhost/?code=4/0Abc123xyz&scope=email%20profile"
+        self.assertEqual(extract_auth_code(url1), "4/0Abc123xyz")
+        # URL complète avec localhost:8501
+        url2 = "http://localhost:8501/?code=4/0Abc123xyz&authuser=0"
+        self.assertEqual(extract_auth_code(url2), "4/0Abc123xyz")
+        # URL Streamlit Cloud
+        url3 = "https://ecoleadnane.streamlit.app/?code=4/0Abc123xyz"
+        self.assertEqual(extract_auth_code(url3), "4/0Abc123xyz")
+
+
 if __name__ == "__main__":
     unittest.main()
+

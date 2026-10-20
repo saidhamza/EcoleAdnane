@@ -48,7 +48,9 @@ from services.ai_engine import (
 from services.auth_manager import (
     dev_mode_login,
     exchange_code_for_user,
+    extract_auth_code,
     get_google_auth_url,
+    get_oauth_credentials,
     init_session_state,
     is_oauth_configured,
     logout_user,
@@ -387,6 +389,9 @@ if not st.session_state.get("is_authenticated"):
             )
 
         # Bouton Google OAuth officiel
+        creds_info = get_oauth_credentials()
+        redirect_info = creds_info.get("redirect_uri", "")
+
         auth_url = get_google_auth_url()
         if auth_url:
             st.link_button(
@@ -395,8 +400,34 @@ if not st.session_state.get("is_authenticated"):
                 type="primary",
                 use_container_width=True,
             )
+            st.caption(f"🎯 URL de redirection configurée : `{redirect_info}`")
         else:
-            st.warning("⚠️ Les identifiants Google OAuth ne sont pas encore configurés dans `credentials.json`.")
+            st.warning("⚠️ Les identifiants Google OAuth ne sont pas encore configurés dans `credentials.json` ou dans les Secrets Streamlit.")
+
+        # Option de secours : Collage direct d'URL ou de code de redirection
+        with st.expander("🔗 Page 'localhost' inaccessible après la connexion ? Cliquez ici", expanded=False):
+            st.markdown(
+                "Si Firefox ou votre navigateur affiche *« La connexion a échoué à l'adresse localhost »* après validation Google :\n\n"
+                "1. **Copiez l'URL complète** qui se trouve dans la barre d'adresse de votre navigateur (elle contient `code=4/...`).\n"
+                "2. **Collez-la directement ci-dessous** puis cliquez sur Valider :"
+            )
+            pasted_code_url = st.text_input(
+                "URL de redirection ou code d'autorisation :",
+                placeholder="Ex: http://localhost/?code=4/0A... ou 4/0A...",
+                key="pasted_code_input"
+            )
+            if st.button("✅ Valider et continuer", type="primary", use_container_width=True, key="btn_validate_pasted_code"):
+                if pasted_code_url:
+                    clean_code = extract_auth_code(pasted_code_url)
+                    try:
+                        authenticated_user = exchange_code_for_user(clean_code)
+                        set_session_user(authenticated_user)
+                        st.success(f"🎉 Bienvenue, {authenticated_user['name']} !")
+                        st.rerun()
+                    except Exception as err:
+                        st.error(f"❌ Erreur lors de la validation du code : {err}")
+                else:
+                    st.warning("Veuillez coller l'URL ou le code.")
 
         st.write("")
 

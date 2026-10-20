@@ -32,18 +32,76 @@ AUTH_SCOPES = [
 ]
 
 
+def normalize_redirect_uri(uri: Optional[str]) -> str:
+    """
+    Normalise le redirect URI.
+    Si l'URI pointe vers localhost/127.0.0.1 sans port explicite, injecte le port Streamlit (8501 par défaut).
+    """
+    default_port = os.getenv("STREAMLIT_SERVER_PORT") or os.getenv("PORT") or "8501"
+    if not uri:
+        return f"http://localhost:{default_port}"
+
+    uri_str = uri.strip()
+    try:
+        parsed = urllib.parse.urlparse(uri_str)
+        if parsed.hostname in ("localhost", "127.0.0.1") and not parsed.port:
+            netloc = f"{parsed.hostname}:{default_port}"
+            return urllib.parse.urlunparse(parsed._replace(netloc=netloc)).rstrip("/")
+        return uri_str.rstrip("/")
+    except Exception:
+        return uri_str.rstrip("/")
+
+
+def get_current_base_url() -> Optional[str]:
+    """
+    Tente de détecter l'URL publique de l'application depuis la session Streamlit
+    (ex: https://xxx.streamlit.app sur Streamlit Cloud ou http://localhost:8501 en local).
+    """
+    try:
+        if hasattr(st, "context") and hasattr(st.context, "headers"):
+            headers = st.context.headers
+            if headers:
+                host = headers.get("x-forwarded-host") or headers.get("host")
+                if host:
+                    proto = headers.get("x-forwarded-proto")
+                    if not proto:
+                        proto = "https" if ("streamlit.app" in host or not host.startswith("localhost")) else "http"
+                    return f"{proto}://{host}".rstrip("/")
+    except Exception:
+        pass
+    return None
+
+
+def extract_auth_code(input_str: str) -> str:
+    """
+    Extrait proprement le code d'autorisation OAuth si l'utilisateur colle une URL
+    complète (ex: http://localhost/?code=4/0A...) ou directement un code brut.
+    """
+    val = input_str.strip()
+    if "code=" in val:
+        try:
+            parsed = urllib.parse.urlparse(val)
+            qs = urllib.parse.parse_qs(parsed.query)
+            if "code" in qs and qs["code"]:
+                return qs["code"][0].strip()
+        except Exception:
+            pass
+    return val
+
+
 def get_oauth_credentials() -> Dict[str, Optional[str]]:
     """
     Récupère les identifiants OAuth Google depuis :
-    1. Streamlit Secrets (st.secrets)
-    2. Variables d'environnement (GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET)
+    1. Streamlit Secrets (st.secrets["google_oauth"])
+    2. Variables d'environnement (GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET / GOOGLE_REDIRECT_URI)
     3. Fichier credentials.json à la racine ou dans storage/
+    4. Détection dynamique de l'hôte Streamlit / normalisation localhost:8501
     """
     client_id = os.getenv("GOOGLE_CLIENT_ID")
     client_secret = os.getenv("GOOGLE_CLIENT_SECRET")
     redirect_uri = os.getenv("GOOGLE_REDIRECT_URI")
 
-    # Vérification dans Streamlit secrets
+    # 1. Vérification dans Streamlit secrets
     try:
         if hasattr(st, "secrets") and "google_oauth" in st.secrets:
             cfg = st.secrets["google_oauth"]
@@ -53,7 +111,7 @@ def get_oauth_credentials() -> Dict[str, Optional[str]]:
     except Exception:
         pass
 
-    # Vérification dans credentials.json
+    # 2. Vérification dans credentials.json
     cred_path = None
     if CREDENTIALS_FILE.exists():
         cred_path = CREDENTIALS_FILE
@@ -73,10 +131,22 @@ def get_oauth_credentials() -> Dict[str, Optional[str]]:
         except Exception as e:
             logger.warning(f"Impossible de lire le fichier {cred_path}: {e}")
 
+    # 3. Détection dynamique de l'hôte si Streamlit Cloud ou reverse proxy
+    detected_base_url = get_current_base_url()
+    if detected_base_url and "streamlit.app" in detected_base_url:
+        # Sur Streamlit Cloud, privilégier l'URL publique détectée si pas de redirect_uri explicite
+        if not redirect_uri or "localhost" in redirect_uri:
+            redirect_uri = detected_base_url
+    elif not redirect_uri:
+        redirect_uri = detected_base_url
+
+    # 4. Normalisation de l'URI (injecte le port 8501 si localhost sans port)
+    final_redirect = normalize_redirect_uri(redirect_uri)
+
     return {
         "client_id": client_id,
         "client_secret": client_secret,
-        "redirect_uri": redirect_uri or "http://localhost:8501",
+        "redirect_uri": final_redirect,
     }
 
 
@@ -92,7 +162,7 @@ def get_google_auth_url(redirect_uri: Optional[str] = None) -> str:
     """
     creds = get_oauth_credentials()
     client_id = creds["client_id"]
-    final_redirect = redirect_uri or creds["redirect_uri"]
+    final_redirect = normalize_redirect_uri(redirect_uri or creds["redirect_uri"])
 
     if not client_id:
         return ""
@@ -112,33 +182,63 @@ def exchange_code_for_user(code: str, redirect_uri: Optional[str] = None) -> Dic
     """
     Échange le code d'autorisation contre les jetons d'accès Google
     et récupère les informations de profil de l'utilisateur.
+    Gère la résilience des redirections (localhost vs localhost:8501 vs Streamlit Cloud).
     """
+    cleaned_code = extract_auth_code(code)
     creds = get_oauth_credentials()
     client_id = creds["client_id"]
     client_secret = creds["client_secret"]
-    final_redirect = redirect_uri or creds["redirect_uri"]
+    primary_redirect = normalize_redirect_uri(redirect_uri or creds["redirect_uri"])
 
     if not client_id or not client_secret:
         raise ValueError("Identifiants OAuth (client_id / client_secret) introuvables.")
 
     token_url = "https://oauth2.googleapis.com/token"
-    token_payload = {
-        "code": code,
-        "client_id": client_id,
-        "client_secret": client_secret,
-        "redirect_uri": final_redirect,
-        "grant_type": "authorization_code",
-    }
 
-    resp = requests.post(token_url, data=token_payload, timeout=15)
-    if resp.status_code != 200:
-        logger.error(f"Échec de l'échange de token Google: {resp.text}")
-        raise ValueError(f"Échec d'authentification Google ({resp.status_code}) : {resp.text}")
+    # Liste ordonnée de redirect_uris à tester en cas de mismatch (ex: si le code a été émis avec http://localhost)
+    candidate_uris = [primary_redirect]
+    for alt in [
+        "http://localhost:8501",
+        "http://localhost",
+        "http://127.0.0.1:8501",
+        "http://127.0.0.1",
+        creds.get("redirect_uri"),
+    ]:
+        if alt:
+            alt_clean = alt.rstrip("/")
+            if alt_clean not in candidate_uris:
+                candidate_uris.append(alt_clean)
 
-    token_data = resp.json()
+    last_error_text = ""
+    token_data = None
+
+    for target_redirect in candidate_uris:
+        token_payload = {
+            "code": cleaned_code,
+            "client_id": client_id,
+            "client_secret": client_secret,
+            "redirect_uri": target_redirect,
+            "grant_type": "authorization_code",
+        }
+        try:
+            resp = requests.post(token_url, data=token_payload, timeout=15)
+            if resp.status_code == 200:
+                token_data = resp.json()
+                logger.info(f"Échange OAuth réussi avec redirect_uri: {target_redirect}")
+                break
+            else:
+                last_error_text = resp.text
+                # Si l'erreur est distincte d'un redirect_uri_mismatch, inutile de continuer
+                if "redirect_uri_mismatch" not in last_error_text:
+                    break
+        except Exception as e:
+            last_error_text = str(e)
+
+    if not token_data or not token_data.get("access_token"):
+        logger.error(f"Échec de l'échange de token Google: {last_error_text}")
+        raise ValueError(f"Échec d'authentification Google : {last_error_text}")
+
     access_token = token_data.get("access_token")
-    if not access_token:
-        raise ValueError("Aucun access_token reçu de Google.")
 
     userinfo_url = "https://www.googleapis.com/oauth2/v2/userinfo"
     userinfo_resp = requests.get(
@@ -160,6 +260,7 @@ def exchange_code_for_user(code: str, redirect_uri: Optional[str] = None) -> Dic
     # Attribution automatique : premier arrivé = admin, suivants = student
     user = create_or_get_google_user(email=email, name=name, avatar_url=avatar_url)
     return user
+
 
 
 def init_session_state() -> None:
