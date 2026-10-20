@@ -34,12 +34,14 @@ AUTH_SCOPES = [
 
 def normalize_redirect_uri(uri: Optional[str]) -> str:
     """
-    Normalise le redirect URI sans altérer le port s'il n'est pas renseigné,
-    afin de respecter fidèlement les URI enregistrés dans la console Google Cloud.
+    Normalise le redirect URI en retirant les espaces superflus tout en conservant
+    scrupuleusement la présence ou l'absence de slash final pour correspondre exactement
+    aux autorisations de Google Cloud Console.
     """
     if not uri:
         return "http://localhost"
-    return uri.strip().rstrip("/")
+    return uri.strip()
+
 
 
 def get_current_base_url() -> Optional[str]:
@@ -288,19 +290,23 @@ def exchange_code_for_user(code: str, redirect_uri: Optional[str] = None) -> Dic
 
     token_url = "https://oauth2.googleapis.com/token"
 
-    # Liste ordonnée de redirect_uris à tester en cas de mismatch (ex: si le code a été émis avec http://localhost)
+    # Liste ordonnée de redirect_uris à tester en cas de mismatch (ex: avec/sans slash final, localhost)
     candidate_uris = [primary_redirect]
+    alt_slash = primary_redirect[:-1] if primary_redirect.endswith("/") else primary_redirect + "/"
+    if alt_slash not in candidate_uris:
+        candidate_uris.append(alt_slash)
+
     for alt in [
+        "https://ecoleadnane.streamlit.app",
+        "https://ecoleadnane.streamlit.app/",
         "http://localhost:8501",
         "http://localhost",
         "http://127.0.0.1:8501",
         "http://127.0.0.1",
         creds.get("redirect_uri"),
     ]:
-        if alt:
-            alt_clean = alt.rstrip("/")
-            if alt_clean not in candidate_uris:
-                candidate_uris.append(alt_clean)
+        if alt and alt not in candidate_uris:
+            candidate_uris.append(alt)
 
     last_error_text = ""
     token_data = None

@@ -394,17 +394,29 @@ if not st.session_state.get("is_authenticated"):
         available_uris = creds_info.get("available_redirect_uris", [])
         default_redirect = creds_info.get("redirect_uri") or "http://localhost"
 
-        # Sélecteur d'URI si plusieurs sont déclarées dans le JSON
-        if len(available_uris) > 1:
+        # Construire les options avec les variantes de slash final
+        options = []
+        for u in available_uris:
+            if u not in options:
+                options.append(u)
+            if u.startswith("https://"):
+                alt = u[:-1] if u.endswith("/") else u + "/"
+                if alt not in options:
+                    options.append(alt)
+        if default_redirect not in options:
+            options.append(default_redirect)
+
+        # Sélecteur d'URI si plusieurs variantes sont disponibles
+        if len(options) > 1:
             try:
-                def_idx = available_uris.index(default_redirect)
+                def_idx = options.index(default_redirect)
             except ValueError:
                 def_idx = 0
             target_redirect = st.selectbox(
                 "🎯 URI de redirection Google :",
-                options=available_uris,
+                options=options,
                 index=def_idx,
-                help="Sélectionnez l'adresse correspondant à votre environnement actuel."
+                help="Sélectionnez l'adresse exacte (avec ou sans slash final) déclarée dans votre console Google Cloud."
             )
         else:
             target_redirect = default_redirect
@@ -419,7 +431,10 @@ if not st.session_state.get("is_authenticated"):
                 use_container_width=True,
             )
             if target_redirect.startswith("https://"):
-                st.success(f"✨ Redirection 1-clic active vers : `{target_redirect}`")
+                st.success(f"✨ Redirection web 1-clic : `{target_redirect}`")
+                st.caption(
+                    "💡 *Si Google affiche `redirect_uri_mismatch`, vérifiez que cette adresse exacte est bien ajoutée dans la section 'URI de redirection autorisés' sur Google Cloud Console.*"
+                )
             else:
                 st.caption(f"🎯 URI envoyée à Google : `{target_redirect}`")
         else:
