@@ -24,6 +24,7 @@ from models.database import (
     save_quiz,
     save_quiz_attempt,
     set_setting,
+    update_course_metadata,
     update_course_summary,
 )
 from services.ai_engine import clean_json_output
@@ -183,6 +184,23 @@ class TestDatabaseAndIngestion(unittest.TestCase):
         self.assertEqual(stats["total_attempts"], 1)
         self.assertEqual(stats["total_score"], 1)
         self.assertEqual(stats["average_success_rate"], 100.0)
+
+    def test_update_course_metadata(self):
+        cid = save_course(
+            title="Leçon Inconnue",
+            subject="Mathématiques",
+            language="fr",
+            file_path="/fake/test.pdf",
+            file_hash="hashmeta123",
+            file_name="test.pdf",
+            raw_text="Texte quelconque",
+        )
+        # Corriger la matière vers Histoire-Géo (الاجتماعيات) en Arabe
+        update_course_metadata(cid, "المغرب العربي", "الاجتماعيات", "ar")
+        updated = get_course_by_id(cid)
+        self.assertEqual(updated["title"], "المغرب العربي")
+        self.assertEqual(updated["subject"], "الاجتماعيات")
+        self.assertEqual(updated["language"], "ar")
 
     def test_chat_messages(self):
         cid = save_course(

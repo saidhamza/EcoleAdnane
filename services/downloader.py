@@ -12,6 +12,8 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from models.database import get_course_by_hash, save_course
 from services.pdf_parser import (
+    SUBJECTS_AR,
+    SUBJECTS_FR,
     classify_subject_heuristic,
     extract_fallback_title,
     extract_text_from_pdf,
@@ -87,6 +89,13 @@ def ingest_pdf_bytes(
     # 4. Détection ou validation de la matière
     heuristic_subj, confidence = classify_subject_heuristic(raw_text, language)
     subject = custom_subject or heuristic_subj
+
+    # Si une matière spécifique a été demandée, adapter la langue correspondante
+    if custom_subject:
+        if custom_subject in SUBJECTS_AR:
+            language = "ar"
+        elif custom_subject in SUBJECTS_FR:
+            language = "fr"
 
     # Titre lisible
     title = custom_title or extract_fallback_title(original_filename, raw_text, language)

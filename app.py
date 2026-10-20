@@ -473,6 +473,68 @@ if menu == "📚 Mes Cours (Révisions)":
             chips = " ".join([f"<span class='concept-tag'>#{c}</span>" for c in current_course["key_concepts"]])
             st.markdown(f"**Notions clés :** {chips}", unsafe_allow_html=True)
 
+    # Volet de modification rapide de la matière / titre / langue
+    edit_header_label = "✏️ تصحيح مادة الدرس أو العنوان أو اللغة" if is_ar else "✏️ Modifier la matière, le titre ou la langue de ce cours"
+    with st.expander(edit_header_label):
+        st.caption(
+            "إذا تم تصنيف هذا الدرس في مادة غير صحيحة عند الاستيراد، يمكنك تصحيحها هنا فوراً وسيتكيف التطبيق بالكامل."
+            if is_ar else
+            "Si la matière ou la langue de ce cours a été mal détectée lors de l'import PDF, vous pouvez la rectifier ici. Tous les onglets s'adapteront immédiatement."
+        )
+        col_ed1, col_ed2, col_ed3 = st.columns([3, 2, 2])
+        with col_ed1:
+            new_title = st.text_input(
+                "عنوان الدرس" if is_ar else "Titre du cours",
+                value=current_course["title"],
+                key=f"edit_top_title_{current_course['id']}",
+            )
+
+        with col_ed2:
+            all_subjects_display = [
+                "🇲🇦 التربية الإسلامية",
+                "🇲🇦 الاجتماعيات",
+                "🇲🇦 اللغة العربية",
+                "🇫🇷 Mathématiques",
+                "🇫🇷 Physique-Chimie",
+                "🇫🇷 SVT",
+                "🇫🇷 Français",
+                "🇫🇷 Anglais",
+            ]
+            current_prefix = "🇲🇦 " if is_ar else "🇫🇷 "
+            current_match = current_prefix + current_course["subject"]
+            default_idx = (
+                all_subjects_display.index(current_match)
+                if current_match in all_subjects_display
+                else (all_subjects_display.index(f"🇲🇦 {current_course['subject']}") if f"🇲🇦 {current_course['subject']}" in all_subjects_display else 0)
+            )
+            chosen_subject_labeled = st.selectbox(
+                "المادة" if is_ar else "Matière",
+                all_subjects_display,
+                index=default_idx,
+                key=f"edit_top_subj_{current_course['id']}",
+            )
+            cleaned_subj = chosen_subject_labeled.replace("🇲🇦 ", "").replace("🇫🇷 ", "")
+            is_ar_choice = "🇲🇦" in chosen_subject_labeled or cleaned_subj in SUBJECTS_AR
+
+        with col_ed3:
+            lang_options = ["🇲🇦 العربية (ar)", "🇫🇷 Français (fr)"]
+            lang_default_idx = 0 if is_ar_choice else 1
+            chosen_lang_label = st.selectbox(
+                "اللغة" if is_ar else "Langue du cours",
+                lang_options,
+                index=lang_default_idx,
+                key=f"edit_top_lang_{current_course['id']}",
+            )
+            final_lang = "ar" if "العربية" in chosen_lang_label else "fr"
+
+        btn_save_col1, _ = st.columns([2, 5])
+        with btn_save_col1:
+            btn_save_txt = "💾 حفظ التعديل" if is_ar else "💾 Enregistrer les modifications"
+            if st.button(btn_save_txt, type="primary", use_container_width=True, key=f"btn_save_top_{current_course['id']}"):
+                update_course_metadata(current_course["id"], new_title, cleaned_subj, final_lang)
+                st.success("تم تحديث المادة بنجاح !" if is_ar else "Matière mise à jour avec succès !")
+                st.rerun()
+
     st.write("")
 
     # Les 4 Onglets Pédagogiques (bilingues et adaptés à la langue du cours, sans bidi conflict)
@@ -515,16 +577,38 @@ if menu == "📚 Mes Cours (Révisions)":
                     use_container_width=True,
                 )
 
-            with doc_col2:
                 # Option pour affiner le titre ou la matière
-                edit_exp_label = "✏️ تعديل عنوان الدرس أو المادة" if is_ar else "✏️ Modifier le titre ou la matière"
+                edit_exp_label = "✏️ تعديل عنوان الدرس أو المادة أو اللغة" if is_ar else "✏️ Modifier le titre, la matière ou la langue"
                 with st.expander(edit_exp_label):
-                    new_title = st.text_input("عنوان الدرس" if is_ar else "Titre du cours", value=current_course["title"])
-                    current_subj_list = SUBJECTS_AR if is_ar else SUBJECTS_FR
-                    subj_idx = current_subj_list.index(current_course["subject"]) if current_course["subject"] in current_subj_list else 0
-                    new_subject = st.selectbox("المادة" if is_ar else "Matière", current_subj_list, index=subj_idx)
-                    if st.button("حفظ التعديلات" if is_ar else "Enregistrer les modifications", key="save_meta_btn"):
-                        update_course_metadata(current_course["id"], new_title, new_subject, current_course["language"])
+                    new_tab_title = st.text_input("عنوان الدرس" if is_ar else "Titre du cours", value=current_course["title"], key=f"tab_title_{current_course['id']}")
+                    all_subjects_display = [
+                        "🇲🇦 التربية الإسلامية",
+                        "🇲🇦 الاجتماعيات",
+                        "🇲🇦 اللغة العربية",
+                        "🇫🇷 Mathématiques",
+                        "🇫🇷 Physique-Chimie",
+                        "🇫🇷 SVT",
+                        "🇫🇷 Français",
+                        "🇫🇷 Anglais",
+                    ]
+                    current_prefix = "🇲🇦 " if is_ar else "🇫🇷 "
+                    current_match = current_prefix + current_course["subject"]
+                    default_idx = (
+                        all_subjects_display.index(current_match)
+                        if current_match in all_subjects_display
+                        else (all_subjects_display.index(f"🇲🇦 {current_course['subject']}") if f"🇲🇦 {current_course['subject']}" in all_subjects_display else 0)
+                    )
+                    chosen_tab_subj = st.selectbox("المادة" if is_ar else "Matière", all_subjects_display, index=default_idx, key=f"tab_subj_{current_course['id']}")
+                    cleaned_tab_subj = chosen_tab_subj.replace("🇲🇦 ", "").replace("🇫🇷 ", "")
+                    is_tab_ar = "🇲🇦" in chosen_tab_subj or cleaned_tab_subj in SUBJECTS_AR
+
+                    lang_tab_options = ["🇲🇦 العربية (ar)", "🇫🇷 Français (fr)"]
+                    lang_tab_default = 0 if is_tab_ar else 1
+                    chosen_tab_lang = st.selectbox("اللغة" if is_ar else "Langue", lang_tab_options, index=lang_tab_default, key=f"tab_lang_{current_course['id']}")
+                    final_tab_lang = "ar" if "العربية" in chosen_tab_lang else "fr"
+
+                    if st.button("حفظ التعديلات" if is_ar else "Enregistrer les modifications", key=f"save_tab_meta_btn_{current_course['id']}"):
+                        update_course_metadata(current_course["id"], new_tab_title, cleaned_tab_subj, final_tab_lang)
                         st.success("تم حفظ التعديلات بنجاح !" if is_ar else "Modifications enregistrées !")
                         st.rerun()
 
@@ -912,9 +996,31 @@ elif menu == "➕ Ajouter un Cours":
 
         if uploaded_files:
             st.info(f"📄 {len(uploaded_files)} fichier(s) sélectionné(s).")
+            with st.expander("⚙️ Spécifier manuellement la matière (Optionnel)"):
+                st.caption("Par défaut, l'application analyse le contenu du PDF pour détecter automatiquement la matière. Vous pouvez forcer une matière pour ce lot si nécessaire :")
+                manual_subj_upload = st.selectbox(
+                    "Matière spécifique :",
+                    [
+                        "🔍 Détection automatique (recommandé)",
+                        "🇲🇦 التربية الإسلامية",
+                        "🇲🇦 الاجتماعيات",
+                        "🇲🇦 اللغة العربية",
+                        "🇫🇷 Mathématiques",
+                        "🇫🇷 Physique-Chimie",
+                        "🇫🇷 SVT",
+                        "🇫🇷 Français",
+                        "🇫🇷 Anglais",
+                    ],
+                    key="manual_subj_upload",
+                )
+
             if st.button("🚀 Lancer l'ingestion & l'analyse automatique", type="primary"):
                 progress_bar = st.progress(0)
                 status_text = st.empty()
+
+                forced_subj = None
+                if manual_subj_upload and not manual_subj_upload.startswith("🔍"):
+                    forced_subj = manual_subj_upload.replace("🇲🇦 ", "").replace("🇫🇷 ", "")
 
                 success_count = 0
                 duplicate_count = 0
@@ -923,7 +1029,7 @@ elif menu == "➕ Ajouter un Cours":
                     status_text.text(f"Traitement de {uploaded_file.name}...")
                     file_bytes = uploaded_file.read()
 
-                    res = ingest_pdf_bytes(file_bytes, uploaded_file.name)
+                    res = ingest_pdf_bytes(file_bytes, uploaded_file.name, custom_subject=forced_subj)
 
                     if res["status"] == "success":
                         success_count += 1
@@ -937,7 +1043,7 @@ elif menu == "➕ Ajouter un Cours":
                 status_text.text("Ingestion terminée !")
                 st.write("---")
                 st.success(f"🎉 Bilan : {success_count} cours ajouté(s), {duplicate_count} doublon(s) évité(s).")
-                st.info("Rendez-vous dans l'onglet **📚 Mes Cours** pour commencer les révisions !")
+                st.info("💡 *Si la matière d'un cours a été mal détectée, vous pouvez la changer en 1 clic dans l'onglet **Mes Cours**.*")
 
     else:
         st.markdown("### 🏫 Synchronisation Google Classroom")
