@@ -137,10 +137,43 @@ def get_oauth_credentials() -> Dict[str, Optional[str]]:
     }
 
 
+def save_uploaded_oauth_credentials(file_bytes: bytes) -> Dict[str, Any]:
+    """
+    Valide et enregistre un fichier credentials.json Google Cloud téléversé via l'UI.
+    Supporte les formats 'web' (Application Web) et 'installed' (Application de bureau).
+    Sauvegarde le fichier dans storage/credentials.json.
+    """
+    try:
+        data = json.loads(file_bytes.decode("utf-8"))
+    except Exception as e:
+        raise ValueError(f"Fichier JSON non valide : {e}")
+
+    client_info = data.get("web") or data.get("installed")
+    if not client_info:
+        raise ValueError("Structure Google OAuth non reconnue (clé 'web' ou 'installed' introuvable).")
+
+    client_id = client_info.get("client_id")
+    client_secret = client_info.get("client_secret")
+    if not client_id or not client_secret:
+        raise ValueError("Identifiants (client_id ou client_secret) manquants dans le fichier.")
+
+    STORAGE_CREDENTIALS.parent.mkdir(parents=True, exist_ok=True)
+    with open(STORAGE_CREDENTIALS, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
+
+    return {
+        "type": "web" if "web" in data else "installed",
+        "client_id": client_id,
+        "client_secret": client_secret,
+        "redirect_uris": client_info.get("redirect_uris", []),
+    }
+
+
 def is_oauth_configured() -> bool:
     """Indique si les identifiants Google OAuth sont renseignés."""
     creds = get_oauth_credentials()
     return bool(creds.get("client_id") and creds.get("client_secret"))
+
 
 
 def get_google_auth_url(redirect_uri: Optional[str] = None) -> str:

@@ -54,6 +54,7 @@ from services.auth_manager import (
     init_session_state,
     is_oauth_configured,
     logout_user,
+    save_uploaded_oauth_credentials,
     set_session_user,
 )
 from services.backup_manager import (
@@ -439,6 +440,28 @@ if not st.session_state.get("is_authenticated"):
                         st.error(f"❌ Erreur lors de la validation du code : {err}")
                 else:
                     st.warning("Veuillez d'abord coller l'URL de votre navigateur.")
+
+        # Option de téléversement direct du fichier credentials.json
+        with st.expander("📂 Téléverser votre fichier credentials.json (Google Cloud)", expanded=(not is_oauth_configured())):
+            st.markdown(
+                "Vous pouvez glisser-déposer directement le fichier JSON téléchargé depuis Google Cloud Console "
+                "(*Application Web* ou *Application de bureau*) :"
+            )
+            uploaded_json = st.file_uploader(
+                "Fichier credentials.json ou client_secret_xxxx.json :",
+                type=["json"],
+                key="oauth_credentials_uploader",
+                help="Prend en charge les formats 'web' et 'installed'."
+            )
+            if uploaded_json is not None:
+                try:
+                    cred_details = save_uploaded_oauth_credentials(uploaded_json.getvalue())
+                    st.success(f"✅ Fichier Google OAuth ({cred_details['type']}) enregistré avec succès !")
+                    if cred_details["type"] == "web" and cred_details["redirect_uris"]:
+                        st.info(f"🎯 URI de redirection détectée : `{cred_details['redirect_uris'][0]}`")
+                    st.rerun()
+                except Exception as upload_err:
+                    st.error(f"❌ {upload_err}")
 
         st.write("")
 

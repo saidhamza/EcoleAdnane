@@ -48,6 +48,7 @@ from services.auth_manager import (
     extract_auth_code,
     get_oauth_credentials,
     normalize_redirect_uri,
+    save_uploaded_oauth_credentials,
 )
 from services.config_manager import (
     get_config_value,
@@ -381,7 +382,48 @@ class TestOAuthRedirectAndCodeHandling(unittest.TestCase):
         url3 = "https://ecoleadnane.streamlit.app/?code=4/0Abc123xyz"
         self.assertEqual(extract_auth_code(url3), "4/0Abc123xyz")
 
+    def test_save_uploaded_oauth_credentials(self):
+        cred_path = Path(__file__).parent.parent / "storage" / "credentials.json"
+        original_content = cred_path.read_bytes() if cred_path.exists() else None
+        try:
+            # Format web valide
+            web_json = json.dumps({
+                "web": {
+                    "client_id": "test-web-id.apps.googleusercontent.com",
+                    "client_secret": "test-web-secret",
+                    "redirect_uris": ["https://ecoleadnane.streamlit.app"]
+                }
+            }).encode("utf-8")
+            res_web = save_uploaded_oauth_credentials(web_json)
+            self.assertEqual(res_web["type"], "web")
+            self.assertEqual(res_web["client_id"], "test-web-id.apps.googleusercontent.com")
+
+            # Format installed (desktop) valide
+            installed_json = json.dumps({
+                "installed": {
+                    "client_id": "test-inst-id.apps.googleusercontent.com",
+                    "client_secret": "test-inst-secret",
+                    "redirect_uris": ["http://localhost"]
+                }
+            }).encode("utf-8")
+            res_inst = save_uploaded_oauth_credentials(installed_json)
+            self.assertEqual(res_inst["type"], "installed")
+
+            # Format invalide
+            with self.assertRaises(ValueError):
+                save_uploaded_oauth_credentials(b"not json")
+
+            # Clé manquante
+            with self.assertRaises(ValueError):
+                save_uploaded_oauth_credentials(json.dumps({"other": {}}).encode("utf-8"))
+        finally:
+            if original_content is not None:
+                cred_path.write_bytes(original_content)
+            elif cred_path.exists():
+                cred_path.unlink()
+
 
 if __name__ == "__main__":
     unittest.main()
+
 
