@@ -1,5 +1,11 @@
 """Entrypoint alias for Streamlit Community Cloud."""
 import runpy
+import sys
 from pathlib import Path
 
-runpy.run_path(str(Path(__file__).parent / "app.py"), run_name="__main__")
+# Add project root directory to sys.path so modules like models and services resolve properly
+PROJECT_ROOT = Path(__file__).resolve().parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+runpy.run_path(str(PROJECT_ROOT / "app.py"), run_name="__main__")
