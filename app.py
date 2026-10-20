@@ -592,41 +592,6 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                         st.success("Clé enregistrée !")
                         st.rerun()
 
-    # Volet de Sauvegarde & Restauration personnelle pour les élèves (dans la barre latérale)
-    if not is_admin:
-        with st.sidebar.expander("💾 Mes Sauvegardes Personnelles", expanded=False):
-            st.caption("Sauvegardez ou restaurez vos cours, quiz et historiques.")
-            st_stats = get_student_backup_summary(active_user_id)
-            st.write(f"📊 **Données :** {st_stats['courses']} cours | {st_stats['attempts']} quiz.")
-
-            student_backup_zip = export_student_backup(active_user_id)
-            timestamp_str = datetime.now().strftime("%Y%m%d_%H%M")
-            st.download_button(
-                label="💾 Sauvegarder mes révisions (.zip)",
-                data=student_backup_zip,
-                file_name=f"mes_revisions_{current_user['name']}_{timestamp_str}.zip",
-                mime="application/zip",
-                use_container_width=True,
-                key="student_sidebar_download_backup",
-            )
-
-            st.write("---")
-            uploaded_st_backup = st.file_uploader(
-                "Restaurer une sauvegarde :",
-                type=["zip", "db", "sqlite"],
-                key="student_sidebar_restore_uploader",
-                help="Supporte les nouvelles archives (.zip) ainsi que les anciennes sauvegardes (v1.0 avec base .db ou fichier .db brut)",
-            )
-            if uploaded_st_backup and st.button("🚀 Restaurer mes données", type="primary", use_container_width=True, key="student_sidebar_restore_btn"):
-                with st.spinner("Restauration de votre espace personnel..."):
-                    res = restore_student_backup(uploaded_st_backup.read(), target_user_id=active_user_id)
-                    if res["success"]:
-                        st.success(f"✅ {res['message']}")
-                        st.balloons()
-                        st.rerun()
-                    else:
-                        st.error(f"❌ {res['error']}")
-
     st.sidebar.divider()
     if st.sidebar.button("🚪 Déconnexion", use_container_width=True):
         logout_user()
