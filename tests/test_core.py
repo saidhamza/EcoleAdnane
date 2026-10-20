@@ -238,6 +238,30 @@ class TestDatabaseAndIngestion(unittest.TestCase):
         cleaned = clean_json_output(raw_markdown)
         self.assertEqual(cleaned, '[\n  {"title": "Test"}\n]')
 
+    def test_backup_and_restore(self):
+        from services.backup_manager import (
+            export_backup_zip,
+            export_database_file,
+            get_backup_summary,
+            restore_backup,
+        )
+        # Vérifier que les fonctions d'export génèrent des octets valides
+        db_bytes = export_database_file()
+        self.assertTrue(len(db_bytes) > 0)
+        self.assertTrue(db_bytes.startswith(b"SQLite format 3\x00"))
+
+        zip_bytes = export_backup_zip()
+        self.assertTrue(len(zip_bytes) > 0)
+
+        # Tester la restauration avec le zip
+        res_zip = restore_backup(zip_bytes, "test_backup.zip")
+        self.assertTrue(res_zip["success"])
+
+        # Tester la restauration avec le fichier .db brut
+        res_db = restore_backup(db_bytes, "ecole_adnane.db")
+        self.assertTrue(res_db["success"])
+
 
 if __name__ == "__main__":
     unittest.main()
+

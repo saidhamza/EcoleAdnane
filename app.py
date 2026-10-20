@@ -38,6 +38,12 @@ from services.config_manager import (
     test_active_connection,
     test_gemini_connection,
 )
+from services.backup_manager import (
+    export_backup_zip,
+    export_database_file,
+    get_backup_summary,
+    restore_backup,
+)
 from services.downloader import (
     CREDENTIALS_PATH,
     ingest_pdf_bytes,
@@ -45,6 +51,7 @@ from services.downloader import (
     sync_google_classroom,
 )
 from services.pdf_parser import SUBJECTS_AR, SUBJECTS_FR
+from datetime import datetime
 
 # Initialisation de la base SQLite
 init_db()
@@ -1225,3 +1232,74 @@ elif menu == "⚙️ Configuration & Guide":
         with open(CREDENTIALS_PATH, "wb") as f:
             f.write(cred_file.read())
         st.success("Fichier credentials.json mis à jour avec succès !")
+
+    st.divider()
+
+    # -----------------------------------------------------------------------
+    # Section Sauvegarde, Export & Restauration des Données & Chats IA
+    # -----------------------------------------------------------------------
+    st.markdown("### 💾 Sauvegarde & Restauration Complète des Données")
+    st.markdown(
+        "Exportez ou restaurez l'intégralité de vos cours, fiches express, quiz, scores "
+        "**et toutes vos discussions avec le tuteur IA Sanad** en 1 clic. "
+        "Idéal pour transférer vos données vers Streamlit Cloud ou faire une copie de sécurité sur clé USB."
+    )
+
+    backup_stats = get_backup_summary()
+    st.info(
+        f"📊 **État actuel de votre base de données :** "
+        f"**{backup_stats['courses']}** cours | "
+        f"**{backup_stats['messages']}** échanges avec l'IA Sanad | "
+        f"**{backup_stats['quizzes']}** quiz d'examen | "
+        f"**{backup_stats['attempts']}** entraînements terminés."
+    )
+
+    col_bk1, col_bk2 = st.columns([1, 1])
+
+    with col_bk1:
+        st.markdown("#### 📥 Exporter mes données")
+        st.caption("Téléchargez votre sauvegarde complète (Base de données SQLite + PDFs originaux).")
+
+        # Bouton d'export ZIP complet
+        zip_data = export_backup_zip()
+        timestamp_str = datetime.now().strftime("%Y%m%d_%H%M")
+        st.download_button(
+            label="📦 Télécharger l'archive complète (.zip)",
+            data=zip_data,
+            file_name=f"sauvegarde_ecole_adnane_{timestamp_str}.zip",
+            mime="application/zip",
+            type="primary",
+            use_container_width=True,
+            help="Archive contenant la base SQLite, les cours PDF et tout l'historique de chat de l'IA Sanad.",
+        )
+
+        # Bouton d'export base SQLite seule
+        db_raw_data = export_database_file()
+        st.download_button(
+            label="🗄️ Télécharger uniquement la base (.db)",
+            data=db_raw_data,
+            file_name="ecole_adnane.db",
+            mime="application/x-sqlite3",
+            use_container_width=True,
+            help="Fichier SQLite contenant tous les textes, cours, quiz et discussions IA.",
+        )
+
+    with col_bk2:
+        st.markdown("#### 📤 Restaurer une sauvegarde")
+        st.caption("Chargez un fichier (.zip ou .db) pour restaurer instantanément tous vos cours et échanges IA.")
+
+        uploaded_backup = st.file_uploader(
+            "Sélectionnez votre fichier de sauvegarde :",
+            type=["zip", "db", "sqlite"],
+            key="restore_uploader",
+        )
+        if uploaded_backup is not None:
+            if st.button("🚀 Restaurer cette sauvegarde maintenant", type="primary", use_container_width=True):
+                with st.spinner("Restauration des données en cours..."):
+                    res = restore_backup(uploaded_backup.read(), uploaded_backup.name)
+                    if res["success"]:
+                        st.success(f"✅ {res['message']}")
+                        st.balloons()
+                        st.rerun()
+                    else:
+                        st.error(f"❌ {res['error']}")
