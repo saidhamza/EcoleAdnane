@@ -388,46 +388,57 @@ if not st.session_state.get("is_authenticated"):
                 "Connectez-vous pour accéder à vos cours, vos quiz d'entraînement et votre tuteur virtuel Sanad."
             )
 
-        # Bouton Google OAuth officiel
+        # Configuration de l'URI de redirection
         creds_info = get_oauth_credentials()
-        redirect_info = creds_info.get("redirect_uri", "")
+        default_redirect = creds_info.get("redirect_uri") or "http://localhost"
 
-        auth_url = get_google_auth_url()
+        col_opt1, col_opt2 = st.columns([1, 1])
+        with col_opt1:
+            use_direct_8501 = st.checkbox(
+                "Redirection directe vers :8501",
+                value=False,
+                help="Activez uniquement si vous avez ajouté http://localhost:8501 dans les 'URI de redirection autorisés' de votre console Google Cloud.",
+            )
+
+        target_redirect = "http://localhost:8501" if use_direct_8501 else default_redirect
+        auth_url = get_google_auth_url(redirect_uri=target_redirect)
+
         if auth_url:
             st.link_button(
-                "🔑 Se connecter avec Google",
+                "🔑 1. Se connecter avec Google",
                 url=auth_url,
                 type="primary",
                 use_container_width=True,
             )
-            st.caption(f"🎯 URL de redirection configurée : `{redirect_info}`")
+            st.caption(f"🎯 URI envoyée à Google : `{target_redirect}`")
         else:
             st.warning("⚠️ Les identifiants Google OAuth ne sont pas encore configurés dans `credentials.json` ou dans les Secrets Streamlit.")
 
-        # Option de secours : Collage direct d'URL ou de code de redirection
-        with st.expander("🔗 Page 'localhost' inaccessible après la connexion ? Cliquez ici", expanded=False):
+        # Option de finalisation : Collage direct d'URL ou de code de redirection
+        with st.expander("🔗 2. Finaliser la connexion Google (si redirection locale bloquée)", expanded=True):
             st.markdown(
-                "Si Firefox ou votre navigateur affiche *« La connexion a échoué à l'adresse localhost »* après validation Google :\n\n"
-                "1. **Copiez l'URL complète** qui se trouve dans la barre d'adresse de votre navigateur (elle contient `code=4/...`).\n"
-                "2. **Collez-la directement ci-dessous** puis cliquez sur Valider :"
+                "Après avoir cliqué sur **Se connecter avec Google** et validé votre compte :\n\n"
+                "1. Votre navigateur affiche *« La connexion a échoué à l'adresse localhost »* (comportement normal avec un identifiant de bureau Google).\n"
+                "2. **Copiez l'URL complète** affichée dans votre barre d'adresse Firefox (elle contient `code=4/...`).\n"
+                "3. **Collez-la ci-dessous** et cliquez sur **Valider** :"
             )
             pasted_code_url = st.text_input(
-                "URL de redirection ou code d'autorisation :",
+                "Collez l'URL complète ou le code ici :",
                 placeholder="Ex: http://localhost/?code=4/0A... ou 4/0A...",
                 key="pasted_code_input"
             )
-            if st.button("✅ Valider et continuer", type="primary", use_container_width=True, key="btn_validate_pasted_code"):
+            if st.button("✅ Valider et se connecter", type="primary", use_container_width=True, key="btn_validate_pasted_code"):
                 if pasted_code_url:
                     clean_code = extract_auth_code(pasted_code_url)
                     try:
-                        authenticated_user = exchange_code_for_user(clean_code)
+                        authenticated_user = exchange_code_for_user(clean_code, redirect_uri=target_redirect)
                         set_session_user(authenticated_user)
-                        st.success(f"🎉 Bienvenue, {authenticated_user['name']} !")
+                        st.success(f"🎉 Bienvenue, {authenticated_user['name']} ({authenticated_user['role'].upper()}) !")
                         st.rerun()
                     except Exception as err:
                         st.error(f"❌ Erreur lors de la validation du code : {err}")
                 else:
-                    st.warning("Veuillez coller l'URL ou le code.")
+                    st.warning("Veuillez d'abord coller l'URL de votre navigateur.")
 
         st.write("")
 

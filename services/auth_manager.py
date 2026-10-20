@@ -34,22 +34,12 @@ AUTH_SCOPES = [
 
 def normalize_redirect_uri(uri: Optional[str]) -> str:
     """
-    Normalise le redirect URI.
-    Si l'URI pointe vers localhost/127.0.0.1 sans port explicite, injecte le port Streamlit (8501 par défaut).
+    Normalise le redirect URI sans altérer le port s'il n'est pas renseigné,
+    afin de respecter fidèlement les URI enregistrés dans la console Google Cloud.
     """
-    default_port = os.getenv("STREAMLIT_SERVER_PORT") or os.getenv("PORT") or "8501"
     if not uri:
-        return f"http://localhost:{default_port}"
-
-    uri_str = uri.strip()
-    try:
-        parsed = urllib.parse.urlparse(uri_str)
-        if parsed.hostname in ("localhost", "127.0.0.1") and not parsed.port:
-            netloc = f"{parsed.hostname}:{default_port}"
-            return urllib.parse.urlunparse(parsed._replace(netloc=netloc)).rstrip("/")
-        return uri_str.rstrip("/")
-    except Exception:
-        return uri_str.rstrip("/")
+        return "http://localhost"
+    return uri.strip().rstrip("/")
 
 
 def get_current_base_url() -> Optional[str]:
@@ -95,7 +85,7 @@ def get_oauth_credentials() -> Dict[str, Optional[str]]:
     1. Streamlit Secrets (st.secrets["google_oauth"])
     2. Variables d'environnement (GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET / GOOGLE_REDIRECT_URI)
     3. Fichier credentials.json à la racine ou dans storage/
-    4. Détection dynamique de l'hôte Streamlit / normalisation localhost:8501
+    4. Détection dynamique de l'hôte Streamlit
     """
     client_id = os.getenv("GOOGLE_CLIENT_ID")
     client_secret = os.getenv("GOOGLE_CLIENT_SECRET")
@@ -118,7 +108,7 @@ def get_oauth_credentials() -> Dict[str, Optional[str]]:
     elif STORAGE_CREDENTIALS.exists():
         cred_path = STORAGE_CREDENTIALS
 
-    if cred_path and (not client_id or not client_secret):
+    if cred_path and (not client_id or not client_secret or not redirect_uri):
         try:
             with open(cred_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
@@ -127,26 +117,23 @@ def get_oauth_credentials() -> Dict[str, Optional[str]]:
                 client_secret = client_secret or client_info.get("client_secret")
                 redirect_uris = client_info.get("redirect_uris", [])
                 if not redirect_uri and redirect_uris:
+                    # Respecter scrupuleusement l'URI déclaré dans Google Cloud Console pour éviter redirect_uri_mismatch
                     redirect_uri = redirect_uris[0]
         except Exception as e:
             logger.warning(f"Impossible de lire le fichier {cred_path}: {e}")
 
     # 3. Détection dynamique de l'hôte si Streamlit Cloud ou reverse proxy
-    detected_base_url = get_current_base_url()
-    if detected_base_url and "streamlit.app" in detected_base_url:
-        # Sur Streamlit Cloud, privilégier l'URL publique détectée si pas de redirect_uri explicite
-        if not redirect_uri or "localhost" in redirect_uri:
+    if not redirect_uri:
+        detected_base_url = get_current_base_url()
+        if detected_base_url and "streamlit.app" in detected_base_url:
             redirect_uri = detected_base_url
-    elif not redirect_uri:
-        redirect_uri = detected_base_url
-
-    # 4. Normalisation de l'URI (injecte le port 8501 si localhost sans port)
-    final_redirect = normalize_redirect_uri(redirect_uri)
+        else:
+            redirect_uri = "http://localhost"
 
     return {
         "client_id": client_id,
         "client_secret": client_secret,
-        "redirect_uri": final_redirect,
+        "redirect_uri": normalize_redirect_uri(redirect_uri),
     }
 
 

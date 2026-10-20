@@ -356,17 +356,17 @@ class TestOAuthRedirectAndCodeHandling(unittest.TestCase):
     """Tests sur la robustesse des redirections et codes OAuth Google."""
 
     def test_normalize_redirect_uri(self):
-        # Localhost sans port doit recevoir le port 8501
-        self.assertEqual(normalize_redirect_uri("http://localhost"), "http://localhost:8501")
-        self.assertEqual(normalize_redirect_uri("http://localhost/"), "http://localhost:8501")
-        self.assertEqual(normalize_redirect_uri("http://127.0.0.1"), "http://127.0.0.1:8501")
+        # Respect de l'URI Google Console sans forcer de port arbitraire
+        self.assertEqual(normalize_redirect_uri("http://localhost"), "http://localhost")
+        self.assertEqual(normalize_redirect_uri("http://localhost/"), "http://localhost")
+        self.assertEqual(normalize_redirect_uri("http://127.0.0.1"), "http://127.0.0.1")
         # Localhost avec port explicite reste inchangé
         self.assertEqual(normalize_redirect_uri("http://localhost:8501"), "http://localhost:8501")
         self.assertEqual(normalize_redirect_uri("http://localhost:3000"), "http://localhost:3000")
         # URL Streamlit Cloud reste intacte
         self.assertEqual(normalize_redirect_uri("https://ecoleadnane.streamlit.app"), "https://ecoleadnane.streamlit.app")
-        # None retourne localhost:8501 par défaut
-        self.assertEqual(normalize_redirect_uri(None), "http://localhost:8501")
+        # None retourne http://localhost par défaut
+        self.assertEqual(normalize_redirect_uri(None), "http://localhost")
 
     def test_extract_auth_code(self):
         # Code brut
