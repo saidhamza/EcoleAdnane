@@ -101,24 +101,84 @@ def get_oauth_credentials() -> Dict[str, Optional[str]]:
     except Exception:
         pass
 
-    # 2. Vérification dans credentials.json
-    cred_path = None
-    if CREDENTIALS_FILE.exists():
-        cred_path = CREDENTIALS_FILE
-    elif STORAGE_CREDENTIALS.exists():
-        cred_path = STORAGE_CREDENTIALS
+def get_best_redirect_uri(redirect_uris: List[str]) -> str:
+    """
+    Choisit intelligemment l'URI de redirection :
+    1. Si un URI correspond à l'hôte Streamlit détecté
+    2. Priorité absolue aux URL web https:// (notamment streamlit.app) par rapport à http://localhost
+    3. Priorité à localhost:8501 en local
+    4. Premier URI disponible
+    """
+    if not redirect_uris:
+        detected = get_current_base_url()
+        return detected or "http://localhost"
 
-    if cred_path and (not client_id or not client_secret or not redirect_uri):
+    detected = get_current_base_url() or ""
+
+    # 1. Correspondance avec l'hôte détecté
+    if detected:
+        for u in redirect_uris:
+            if detected in u or u.rstrip("/") == detected.rstrip("/"):
+                return u
+
+    # 2. Priorité absolue aux domaines web https:// (ex: *.streamlit.app)
+    for u in redirect_uris:
+        if "streamlit.app" in u:
+            return u
+    for u in redirect_uris:
+        if u.startswith("https://"):
+            return u
+
+    # 3. Priorité à localhost:8501 si disponible en local
+    for u in redirect_uris:
+        if "8501" in u:
+            return u
+
+    # 4. Premier URI
+    return redirect_uris[0]
+
+
+def get_oauth_credentials() -> Dict[str, Any]:
+    """
+    Récupère les identifiants OAuth Google depuis :
+    1. Streamlit Secrets (st.secrets["google_oauth"])
+    2. Variables d'environnement (GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET / GOOGLE_REDIRECT_URI)
+    3. Fichier storage/credentials.json (téléversé par l'admin, PRIORITAIRE) puis racine
+    4. Détection dynamique de l'hôte Streamlit
+    """
+    client_id = os.getenv("GOOGLE_CLIENT_ID")
+    client_secret = os.getenv("GOOGLE_CLIENT_SECRET")
+    redirect_uri = os.getenv("GOOGLE_REDIRECT_URI")
+    available_redirect_uris: List[str] = []
+
+    # 1. Vérification dans Streamlit secrets
+    try:
+        if hasattr(st, "secrets") and "google_oauth" in st.secrets:
+            cfg = st.secrets["google_oauth"]
+            client_id = client_id or cfg.get("client_id")
+            client_secret = client_secret or cfg.get("client_secret")
+            redirect_uri = redirect_uri or cfg.get("redirect_uri")
+    except Exception:
+        pass
+
+    # 2. Vérification dans storage/credentials.json (PRIORITAIRE car téléversé via l'UI)
+    # puis credentials.json à la racine
+    cred_path = None
+    if STORAGE_CREDENTIALS.exists():
+        cred_path = STORAGE_CREDENTIALS
+    elif CREDENTIALS_FILE.exists():
+        cred_path = CREDENTIALS_FILE
+
+    if cred_path:
         try:
             with open(cred_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 client_info = data.get("web") or data.get("installed") or {}
                 client_id = client_id or client_info.get("client_id")
                 client_secret = client_secret or client_info.get("client_secret")
-                redirect_uris = client_info.get("redirect_uris", [])
-                if not redirect_uri and redirect_uris:
-                    # Respecter scrupuleusement l'URI déclaré dans Google Cloud Console pour éviter redirect_uri_mismatch
-                    redirect_uri = redirect_uris[0]
+                available_redirect_uris = client_info.get("redirect_uris", [])
+                if not redirect_uri and available_redirect_uris:
+                    redirect_uri = get_best_redirect_uri(available_redirect_uris)
         except Exception as e:
             logger.warning(f"Impossible de lire le fichier {cred_path}: {e}")
 
@@ -134,6 +194,7 @@ def get_oauth_credentials() -> Dict[str, Optional[str]]:
         "client_id": client_id,
         "client_secret": client_secret,
         "redirect_uri": normalize_redirect_uri(redirect_uri),
+        "available_redirect_uris": available_redirect_uris,
     }
 
 
@@ -141,7 +202,7 @@ def save_uploaded_oauth_credentials(file_bytes: bytes) -> Dict[str, Any]:
     """
     Valide et enregistre un fichier credentials.json Google Cloud téléversé via l'UI.
     Supporte les formats 'web' (Application Web) et 'installed' (Application de bureau).
-    Sauvegarde le fichier dans storage/credentials.json.
+    Sauvegarde le fichier dans storage/credentials.json et à la racine.
     """
     try:
         data = json.loads(file_bytes.decode("utf-8"))
@@ -157,15 +218,27 @@ def save_uploaded_oauth_credentials(file_bytes: bytes) -> Dict[str, Any]:
     if not client_id or not client_secret:
         raise ValueError("Identifiants (client_id ou client_secret) manquants dans le fichier.")
 
+    # 1. Sauvegarde dans storage/credentials.json (prioritaire)
     STORAGE_CREDENTIALS.parent.mkdir(parents=True, exist_ok=True)
     with open(STORAGE_CREDENTIALS, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2)
+
+    # 2. Écrase également CREDENTIALS_FILE pour qu'aucun vieux fichier desktop ne persiste
+    try:
+        with open(CREDENTIALS_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+    except Exception:
+        pass
+
+    redirect_uris = client_info.get("redirect_uris", [])
+    best_uri = get_best_redirect_uri(redirect_uris)
 
     return {
         "type": "web" if "web" in data else "installed",
         "client_id": client_id,
         "client_secret": client_secret,
-        "redirect_uris": client_info.get("redirect_uris", []),
+        "redirect_uris": redirect_uris,
+        "best_redirect_uri": best_uri,
     }
 
 

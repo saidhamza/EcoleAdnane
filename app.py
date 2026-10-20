@@ -391,37 +391,68 @@ if not st.session_state.get("is_authenticated"):
 
         # Configuration de l'URI de redirection
         creds_info = get_oauth_credentials()
+        available_uris = creds_info.get("available_redirect_uris", [])
         default_redirect = creds_info.get("redirect_uri") or "http://localhost"
 
-        col_opt1, col_opt2 = st.columns([1, 1])
-        with col_opt1:
-            use_direct_8501 = st.checkbox(
-                "Redirection directe vers :8501",
-                value=False,
-                help="Activez uniquement si vous avez ajouté http://localhost:8501 dans les 'URI de redirection autorisés' de votre console Google Cloud.",
+        # Sélecteur d'URI si plusieurs sont déclarées dans le JSON
+        if len(available_uris) > 1:
+            try:
+                def_idx = available_uris.index(default_redirect)
+            except ValueError:
+                def_idx = 0
+            target_redirect = st.selectbox(
+                "🎯 URI de redirection Google :",
+                options=available_uris,
+                index=def_idx,
+                help="Sélectionnez l'adresse correspondant à votre environnement actuel."
             )
+        else:
+            target_redirect = default_redirect
 
-        target_redirect = "http://localhost:8501" if use_direct_8501 else default_redirect
         auth_url = get_google_auth_url(redirect_uri=target_redirect)
 
         if auth_url:
             st.link_button(
-                "🔑 1. Se connecter avec Google",
+                "🔑 Se connecter avec Google",
                 url=auth_url,
                 type="primary",
                 use_container_width=True,
             )
-            st.caption(f"🎯 URI envoyée à Google : `{target_redirect}`")
+            if target_redirect.startswith("https://"):
+                st.success(f"✨ Redirection 1-clic active vers : `{target_redirect}`")
+            else:
+                st.caption(f"🎯 URI envoyée à Google : `{target_redirect}`")
         else:
-            st.warning("⚠️ Les identifiants Google OAuth ne sont pas encore configurés dans `credentials.json` ou dans les Secrets Streamlit.")
+            st.warning("⚠️ Les identifiants Google OAuth ne sont pas encore configurés.")
 
-        # Option de finalisation : Collage direct d'URL ou de code de redirection
-        with st.expander("🔗 2. Finaliser la connexion Google (si redirection locale bloquée)", expanded=True):
+        # Option de téléversement direct du fichier credentials.json
+        with st.expander("📂 Téléverser un fichier credentials.json (Application Web ou Bureau)", expanded=(not is_oauth_configured())):
             st.markdown(
-                "Après avoir cliqué sur **Se connecter avec Google** et validé votre compte :\n\n"
-                "1. Votre navigateur affiche *« La connexion a échoué à l'adresse localhost »* (comportement normal avec un identifiant de bureau Google).\n"
-                "2. **Copiez l'URL complète** affichée dans votre barre d'adresse Firefox (elle contient `code=4/...`).\n"
-                "3. **Collez-la ci-dessous** et cliquez sur **Valider** :"
+                "Déposez votre fichier `client_secret_xxxx.json` téléchargé depuis Google Cloud. "
+                "L'application extraira automatiquement le client_id, le client_secret et vos adresses de redirection :"
+            )
+            uploaded_json = st.file_uploader(
+                "Fichier credentials.json :",
+                type=["json"],
+                key="oauth_credentials_uploader",
+                help="Prend en charge les formats 'web' et 'installed'."
+            )
+            if uploaded_json is not None:
+                try:
+                    cred_details = save_uploaded_oauth_credentials(uploaded_json.getvalue())
+                    st.success(f"✅ Fichier Google OAuth ({cred_details['type']}) enregistré avec succès !")
+                    if cred_details.get("redirect_uris"):
+                        st.info(f"🎯 URI détectées dans le fichier : {', '.join(cred_details['redirect_uris'])}")
+                    st.rerun()
+                except Exception as upload_err:
+                    st.error(f"❌ {upload_err}")
+
+        # Option de finalisation manuelle (uniquement utile en mode local / localhost si bloqué)
+        with st.expander("🔗 Finaliser manuellement la connexion (si redirection locale bloquée)", expanded=(not target_redirect.startswith("https://"))):
+            st.markdown(
+                "Si votre navigateur s'est arrêté sur une page d'erreur locale (ex: `http://localhost/?code=...`) :\n\n"
+                "1. **Copiez l'URL complète** affichée dans votre barre d'adresse de navigateur.\n"
+                "2. **Collez-la ci-dessous** et cliquez sur **Valider** :"
             )
             pasted_code_url = st.text_input(
                 "Collez l'URL complète ou le code ici :",
@@ -440,28 +471,6 @@ if not st.session_state.get("is_authenticated"):
                         st.error(f"❌ Erreur lors de la validation du code : {err}")
                 else:
                     st.warning("Veuillez d'abord coller l'URL de votre navigateur.")
-
-        # Option de téléversement direct du fichier credentials.json
-        with st.expander("📂 Téléverser votre fichier credentials.json (Google Cloud)", expanded=(not is_oauth_configured())):
-            st.markdown(
-                "Vous pouvez glisser-déposer directement le fichier JSON téléchargé depuis Google Cloud Console "
-                "(*Application Web* ou *Application de bureau*) :"
-            )
-            uploaded_json = st.file_uploader(
-                "Fichier credentials.json ou client_secret_xxxx.json :",
-                type=["json"],
-                key="oauth_credentials_uploader",
-                help="Prend en charge les formats 'web' et 'installed'."
-            )
-            if uploaded_json is not None:
-                try:
-                    cred_details = save_uploaded_oauth_credentials(uploaded_json.getvalue())
-                    st.success(f"✅ Fichier Google OAuth ({cred_details['type']}) enregistré avec succès !")
-                    if cred_details["type"] == "web" and cred_details["redirect_uris"]:
-                        st.info(f"🎯 URI de redirection détectée : `{cred_details['redirect_uris'][0]}`")
-                    st.rerun()
-                except Exception as upload_err:
-                    st.error(f"❌ {upload_err}")
 
         st.write("")
 
