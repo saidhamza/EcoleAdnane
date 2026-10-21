@@ -1701,16 +1701,17 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                             language=current_course.get("language", "fr"),
                             player_id=f"voice_msg_{current_course['id']}_{i}",
                             rate=voice_speed,
-                            compact=True,
+                            compact=False,
                             auto_play=should_auto_play,
                         )
-                        if tts_html:
-                            st.components.v1.html(tts_html, height=36)
 
                         if is_ar:
                             st.markdown(f"<div class='rtl-box'>{content}</div>", unsafe_allow_html=True)
                         else:
                             st.markdown(content)
+
+                        if tts_html:
+                            st.components.v1.html(tts_html, height=42)
                     else:
                         if is_ar:
                             st.markdown(f"<div class='rtl-box'>{content}</div>", unsafe_allow_html=True)
@@ -2039,24 +2040,27 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                 "Bonjour ! Je suis Sanad, ton tuteur personnel. Prêt pour les révisions ?",
                 language="fr",
                 player_id="test_voice_fr",
+                compact=False,
             )
-            st.components.v1.html(test_fr_html, height=36)
+            st.components.v1.html(test_fr_html, height=42)
         with col_test_v2:
-            st.markdown("**🇲🇦 Voix Arabe (العربية) :**")
+            st.markdown("**🇲🇦 Voix Arabe (العربية مع الحركات) :**")
             test_ar_html = generate_tts_player_html(
-                "مرحباً بك ! أنا الأستاذ سند، رفيقك في الدراسة والمراجعة.",
+                "مَرْحَباً بِكَ ! أَنَا الأُسْتَاذُ سَنَد، رَفِيقُكَ فِي الدِّرَاسَةِ وَالمُرَاجَعَةِ.",
                 language="ar",
                 player_id="test_voice_ar",
+                compact=False,
             )
-            st.components.v1.html(test_ar_html, height=36)
+            st.components.v1.html(test_ar_html, height=42)
         with col_test_v3:
             st.markdown("**🇬🇧 Voix Anglaise (English) :**")
             test_en_html = generate_tts_player_html(
                 "Hello! I am Sanad, your personal study tutor. Ready to practice?",
                 language="en",
                 player_id="test_voice_en",
+                compact=False,
             )
-            st.components.v1.html(test_en_html, height=36)
+            st.components.v1.html(test_en_html, height=42)
 
         st.divider()
 

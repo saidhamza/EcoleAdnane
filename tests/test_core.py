@@ -16,6 +16,7 @@ import tempfile
 import unittest
 import zipfile
 from pathlib import Path
+from unittest.mock import patch
 
 from models.database import (
     add_chat_message,
@@ -55,7 +56,7 @@ from models.database import (
     update_user_name,
     update_user_role,
 )
-from services.ai_engine import clean_json_output, resolve_student_age
+from services.ai_engine import clean_json_output, resolve_student_age, socratic_tutor_response
 from services.auth_manager import (
     check_active_user_session,
     extract_auth_code,
@@ -1150,6 +1151,38 @@ print("debug")
         mic_html = generate_mic_speech_html(language="fr", widget_id="test_mic_1")
         self.assertIn("SpeechRecognition", mic_html)
         self.assertIn("fr-FR", mic_html)
+
+    def test_arabic_tashkeel_preserved_for_tts(self):
+        # Les harakat et accents arabes (fatha, damma, kasra, sukun, shadda, tanwin) doivent être conservés intacts
+        ar_vocalized = "مَرْحَباً بِكَ يَا بَطَلُ ! كَيْفَ نُطَبِّقُ مُبَرْهَنَةَ طَالِيسَ؟"
+        cleaned = clean_text_for_speech(ar_vocalized)
+        self.assertEqual(cleaned, ar_vocalized)
+
+    def test_tts_player_mobile_pill_mode(self):
+        # Mode pilule pour smartphone (compact=False)
+        html_pill_fr = generate_tts_player_html("Explication Sanad", language="fr", player_id="test_pill_fr", compact=False)
+        self.assertIn("isCompact = false", html_pill_fr)
+        self.assertIn("border-radius: 16px", html_pill_fr)
+        self.assertIn("wave-bars_test_pill_fr", html_pill_fr)
+        self.assertIn("justify-content: flex-start", html_pill_fr)
+        self.assertIn("Écouter l'explication", html_pill_fr)
+
+        # Mode pilule en arabe (RTL avec justify-content: flex-end)
+        html_pill_ar = generate_tts_player_html("مرحباً يا بطل", language="ar", player_id="test_pill_ar", compact=False)
+        self.assertIn("justify-content: flex-end", html_pill_ar)
+        self.assertIn("direction: rtl", html_pill_ar)
+        self.assertIn("استمع للشرح", html_pill_ar)
+
+    def test_arabic_tutor_system_instruction_requires_tashkeel(self):
+        with patch("services.ai_engine.call_llm") as mock_llm:
+            mock_llm.return_value = "مَرْحَباً بِكَ"
+            socratic_tutor_response([{"role": "user", "content": "اشرح لي"}], "سياق الدرس", "التربية الإسلامية", "ar")
+            call_args = mock_llm.call_args
+            prompt = call_args[0][0]
+            sys_instruction = call_args[1]["system_instruction"]
+            self.assertTrue("التَّشْكِيلُ" in sys_instruction or "التشكيل" in sys_instruction)
+            self.assertTrue("الحَرَكَاتُ" in sys_instruction or "الحركات" in sys_instruction)
+            self.assertTrue("مشكولاً" in prompt or "التشكيل" in prompt)
 
 
 class TestCourseDeletion(unittest.TestCase):

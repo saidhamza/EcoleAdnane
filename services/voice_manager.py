@@ -79,41 +79,41 @@ def get_speech_config(language: str) -> Dict[str, str]:
     if lang == "ar":
         return {
             "lang_code": "ar-SA",
-            "play_label": "🔊 استمع إلى سَنَد",
-            "stop_label": "⏹️ إيقاف الصوت",
-            "speaking_label": "🔊 جاري التحدث...",
+            "play_label": "استمع للشرح",
+            "stop_label": "إيقاف",
+            "speaking_label": "جاري التحدث...",
             "tooltip_play": "استمع إلى إجابة الأستاذ سَنَد",
             "tooltip_stop": "إيقاف الصوت",
             "dir": "rtl",
-            "mic_label": "🎙️ تحدث بالصوت",
+            "mic_label": "تحدث بالصوت",
             "mic_tooltip": "تحدث إلى سند (تسجيل صوتي بالمايكروفون)",
-            "mic_listening": "🔴 جاري الاستماع...",
+            "mic_listening": "جاري الاستماع...",
         }
     elif lang == "en":
         return {
             "lang_code": "en-US",
-            "play_label": "🔊 Listen to Sanad",
-            "stop_label": "⏹️ Stop Audio",
-            "speaking_label": "🔊 Speaking...",
+            "play_label": "Listen to Sanad",
+            "stop_label": "Stop",
+            "speaking_label": "Speaking...",
             "tooltip_play": "Listen to Sanad's response",
             "tooltip_stop": "Stop speaking",
             "dir": "ltr",
-            "mic_label": "🎙️ Speak to Sanad",
+            "mic_label": "Speak to Sanad",
             "mic_tooltip": "Speak to Sanad (Microphone dictation)",
-            "mic_listening": "🔴 Listening...",
+            "mic_listening": "Listening...",
         }
     else:
         return {
             "lang_code": "fr-FR",
-            "play_label": "🔊 Écouter Sanad",
-            "stop_label": "⏹️ Arrêter",
-            "speaking_label": "🔊 Sanad parle...",
+            "play_label": "Écouter l'explication",
+            "stop_label": "Arrêter",
+            "speaking_label": "Sanad parle...",
             "tooltip_play": "Écouter la réponse de Sanad",
             "tooltip_stop": "Arrêter la voix",
             "dir": "ltr",
-            "mic_label": "🎙️ Parler à Sanad",
+            "mic_label": "Parler à Sanad",
             "mic_tooltip": "Parler à Sanad (Dictée vocale au micro)",
-            "mic_listening": "🔴 Écoute en cours...",
+            "mic_listening": "Écoute en cours...",
         }
 
 
@@ -134,8 +134,8 @@ def generate_tts_player_html(
 ) -> str:
     """
     Génère un composant HTML/JavaScript autonome et réactif pour la synthèse vocale.
-    En mode compact (par défaut) : affiche uniquement une icône circulaire élégante sans texte,
-    parfaitement adaptée pour être logée à côté de l'icône du robot Sanad.
+    - Mode pilule (compact=False) : design moderne sous le message avec égaliseur animé.
+    - Mode icône (compact=True) : bouton carré 32x32px.
     Supporte la lecture automatique (auto_play=True).
     Coût : 0 token Gemini, latence 0ms, 100% gratuit.
     """
@@ -153,7 +153,7 @@ def generate_tts_player_html(
     json_text = json.dumps(cleaned)
     clean_id = re.sub(r"[^a-zA-Z0-9_]", "_", player_id)
 
-    # Styles du bouton selon mode compact ou texte
+    # Styles du bouton selon mode compact ou pilule
     if compact:
         btn_content = SVG_SPEAKER
         btn_style = (
@@ -163,29 +163,55 @@ def generate_tts_player_html(
             "cursor: pointer; transition: all 0.2s ease; padding: 0; box-shadow: 0 1px 2px rgba(0,0,0,0.05);"
         )
     else:
-        btn_content = f"{SVG_SPEAKER} <span id='label_{clean_id}' style='margin-left: 5px;'>{cfg['play_label']}</span>"
+        btn_content = f"{SVG_SPEAKER} <span id='label_{clean_id}' style='margin-left: 6px; margin-right: 6px;'>{cfg['play_label']}</span>"
         btn_style = (
-            "display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; "
-            "font-size: 12px; font-weight: 500; color: #1e3a8a; background: #eff6ff; "
-            "border: 1px solid #bfdbfe; border-radius: 8px; cursor: pointer; transition: all 0.2s ease;"
+            "display: inline-flex; align-items: center; justify-content: center; gap: 6px; "
+            "padding: 5px 14px; height: 32px; font-size: 12.5px; font-weight: 500; "
+            "color: #1e40af; background: #eff6ff; border: 1px solid #bfdbfe; "
+            "border-radius: 16px; cursor: pointer; transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); "
+            "box-shadow: 0 1px 2px rgba(37, 99, 235, 0.08); -webkit-tap-highlight-color: transparent;"
         )
 
+    justify_style = "flex-end" if direction == "rtl" else "flex-start"
+
     html_code = f"""
-    <div id="wrapper_{clean_id}" style="display: flex; align-items: center; margin: 0 0 4px 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; direction: {direction};">
+    <div id="wrapper_{clean_id}" style="display: flex; align-items: center; justify-content: {justify_style}; margin: 3px 0 0 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; direction: {direction};">
       <style>
         #btn_{clean_id}:hover {{
-          transform: scale(1.06);
+          transform: translateY(-1px);
           background: #dbeafe !important;
           border-color: #93c5fd !important;
         }}
         @keyframes pulseAudio_{clean_id} {{
-          0% {{ box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.4); }}
+          0% {{ box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.35); }}
           70% {{ box-shadow: 0 0 0 6px rgba(220, 38, 38, 0); }}
           100% {{ box-shadow: 0 0 0 0 rgba(220, 38, 38, 0); }}
         }}
         .speaking-active_{clean_id} {{
-          animation: pulseAudio_{clean_id} 1.5s infinite;
+          animation: pulseAudio_{clean_id} 1.6s infinite;
         }}
+        @keyframes soundWave_{clean_id} {{
+          0% {{ height: 3px; }}
+          100% {{ height: 12px; }}
+        }}
+        .wave-bars_{clean_id} {{
+          display: inline-flex;
+          align-items: center;
+          gap: 2px;
+          height: 12px;
+          margin: 0 4px;
+        }}
+        .wave-bar_{clean_id} {{
+          width: 2px;
+          background: #dc2626;
+          border-radius: 1px;
+          height: 3px;
+          animation: soundWave_{clean_id} 0.6s ease-in-out infinite alternate;
+        }}
+        .wave-bar_{clean_id}:nth-child(1) {{ animation-delay: 0.1s; }}
+        .wave-bar_{clean_id}:nth-child(2) {{ animation-delay: 0.3s; }}
+        .wave-bar_{clean_id}:nth-child(3) {{ animation-delay: 0.15s; }}
+        .wave-bar_{clean_id}:nth-child(4) {{ animation-delay: 0.35s; }}
       </style>
 
       <button id="btn_{clean_id}" 
@@ -231,13 +257,17 @@ def generate_tts_player_html(
               btn.style.background = "#eff6ff";
               btn.style.borderColor = "#bfdbfe";
               btn.style.color = "#2563eb";
-              btn.style.borderRadius = "8px";
+              if (isCompact) {{
+                btn.style.borderRadius = "8px";
+              }} else {{
+                btn.style.borderRadius = "16px";
+              }}
             }}
             if (icn) {{
               if (isCompact) {{
                 icn.innerHTML = svgSpeaker;
               }} else {{
-                icn.innerHTML = svgSpeaker + " <span id='label_{clean_id}' style='margin-left:5px;'>{cfg['play_label']}</span>";
+                icn.innerHTML = svgSpeaker + " <span id='label_{clean_id}' style='margin-left:6px; margin-right:6px;'>{cfg['play_label']}</span>";
               }}
             }}
           }}
@@ -252,13 +282,17 @@ def generate_tts_player_html(
               btn.style.background = "#fee2e2";
               btn.style.borderColor = "#fca5a5";
               btn.style.color = "#dc2626";
-              btn.style.borderRadius = "8px";
+              if (isCompact) {{
+                btn.style.borderRadius = "8px";
+              }} else {{
+                btn.style.borderRadius = "16px";
+              }}
             }}
             if (icn) {{
               if (isCompact) {{
                 icn.innerHTML = svgStop;
               }} else {{
-                icn.innerHTML = svgStop + " <span id='label_{clean_id}' style='margin-left:5px;'>{cfg['stop_label']}</span>";
+                icn.innerHTML = svgStop + " <span id='label_{clean_id}' style='margin-left:6px; margin-right:6px;'>{cfg['stop_label']}</span><span class='wave-bars_{clean_id}'><span class='wave-bar_{clean_id}'></span><span class='wave-bar_{clean_id}'></span><span class='wave-bar_{clean_id}'></span><span class='wave-bar_{clean_id}'></span></span>";
               }}
             }}
           }}
@@ -290,7 +324,17 @@ def generate_tts_player_html(
                 const prefix = langCode.split('-')[0].toLowerCase();
                 const matched = voices.filter(v => v.lang && v.lang.toLowerCase().startsWith(prefix));
                 if (matched.length > 0) {{
-                  const natural = matched.find(v => v.name.includes("Google") || v.name.includes("Natural") || v.name.includes("Online"));
+                  const natural = matched.find(v => 
+                    v.name.includes("Google") || 
+                    v.name.includes("Natural") || 
+                    v.name.includes("Online") ||
+                    v.name.includes("Tarik") ||
+                    v.name.includes("Maged") ||
+                    v.name.includes("Laila") ||
+                    v.name.includes("Salma") ||
+                    v.name.includes("Mehdi") ||
+                    v.name.includes("Zeina")
+                  );
                   utter.voice = natural || matched[0];
                 }}
               }}
