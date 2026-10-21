@@ -15,6 +15,43 @@ from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
+__all__ = [
+    "get_db_path",
+    "get_connection",
+    "init_db",
+    "get_user_count",
+    "get_user_by_id",
+    "get_user_by_email",
+    "create_or_get_google_user",
+    "list_users",
+    "set_user_blocked_status",
+    "update_user_role",
+    "delete_user_account",
+    "update_user_name",
+    "get_pedagogical_cycle",
+    "update_user_age",
+    "get_global_admin_kpis",
+    "save_course",
+    "list_courses",
+    "get_course_by_id",
+    "get_course_by_hash",
+    "update_course_metadata",
+    "update_course_summary",
+    "delete_course",
+    "save_flashcard",
+    "save_quiz",
+    "get_latest_quiz",
+    "save_quiz_attempt",
+    "get_quiz_stats",
+    "add_chat_message",
+    "get_chat_history",
+    "clear_chat_history",
+    "get_setting",
+    "set_setting",
+    "get_user_setting",
+    "set_user_setting",
+]
+
 DEFAULT_DB_DIR = Path(__file__).parent.parent / "storage"
 DEFAULT_DB_PATH = DEFAULT_DB_DIR / "ecole_adnane.db"
 

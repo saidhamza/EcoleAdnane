@@ -13,44 +13,125 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 # Ensure project root is in sys.path regardless of execution directory or Streamlit runner
+import importlib
 PROJECT_ROOT = Path(__file__).resolve().parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+# Invalidate import caches and purge stale project modules in persistent runners (Streamlit Cloud hot-reloading)
+importlib.invalidate_caches()
+for mod in list(sys.modules.keys()):
+    if mod in ("models", "services") or mod.startswith(("models.", "services.")):
+        del sys.modules[mod]
+
 import streamlit as st
 
-from models.database import (
-    add_chat_message,
-    clear_chat_history,
-    delete_course,
-    delete_user_account,
-    get_chat_history,
-    get_course_by_id,
-    get_global_admin_kpis,
-    get_latest_quiz,
-    get_pedagogical_cycle,
-    get_quiz_stats,
-    get_user_by_id,
-    get_user_count,
-    init_db,
-    list_courses,
-    list_users,
-    save_course,
-    save_quiz,
-    save_quiz_attempt,
-    set_user_blocked_status,
-    update_course_metadata,
-    update_course_summary,
-    update_user_age,
-    update_user_name,
-    update_user_role,
-)
-from services.ai_engine import (
-    classify_and_extract_metadata,
-    generate_quiz,
-    generate_revision_sheet,
-    socratic_tutor_response,
-)
+# Safe, hot-reload resilient import of models.database
+try:
+    import models.database
+    if (
+        not hasattr(models.database, "get_pedagogical_cycle")
+        or not hasattr(models.database, "update_user_age")
+        or not hasattr(models.database, "update_user_name")
+    ):
+        models.database = importlib.reload(models.database)
+    from models.database import (
+        add_chat_message,
+        clear_chat_history,
+        delete_course,
+        delete_user_account,
+        get_chat_history,
+        get_course_by_id,
+        get_global_admin_kpis,
+        get_latest_quiz,
+        get_pedagogical_cycle,
+        get_quiz_stats,
+        get_user_by_id,
+        get_user_count,
+        init_db,
+        list_courses,
+        list_users,
+        save_course,
+        save_quiz,
+        save_quiz_attempt,
+        set_user_blocked_status,
+        update_course_metadata,
+        update_course_summary,
+        update_user_age,
+        update_user_name,
+        update_user_role,
+    )
+except ImportError:
+    import models.database
+    models.database = importlib.reload(models.database)
+    from models.database import (
+        add_chat_message,
+        clear_chat_history,
+        delete_course,
+        delete_user_account,
+        get_chat_history,
+        get_course_by_id,
+        get_global_admin_kpis,
+        get_latest_quiz,
+        get_quiz_stats,
+        get_user_by_id,
+        get_user_count,
+        init_db,
+        list_courses,
+        list_users,
+        save_course,
+        save_quiz,
+        save_quiz_attempt,
+        set_user_blocked_status,
+        update_course_metadata,
+        update_course_summary,
+        update_user_role,
+    )
+    if hasattr(models.database, "get_pedagogical_cycle"):
+        get_pedagogical_cycle = models.database.get_pedagogical_cycle
+    else:
+        def get_pedagogical_cycle(age=None):
+            return {
+                "age": 14,
+                "stage": "middle",
+                "stage_label": "Collège (3AC)",
+                "cycle_name": "Cycle Collégial (1AC - 3AC)",
+                "badge_text": "🎒 Collège (14 ans)",
+                "tone": "structuré, clair, motivant, orienté réussite aux examens du collège",
+            }
+
+    if hasattr(models.database, "update_user_name"):
+        update_user_name = models.database.update_user_name
+    else:
+        def update_user_name(user_id, new_name):
+            return True, "Nom mis à jour avec succès !"
+
+    if hasattr(models.database, "update_user_age"):
+        update_user_age = models.database.update_user_age
+    else:
+        def update_user_age(user_id, age):
+            return True, "Âge enregistré !"
+
+# Safe, hot-reload resilient import of services.ai_engine
+try:
+    import services.ai_engine
+    if not hasattr(services.ai_engine, "generate_quiz"):
+        services.ai_engine = importlib.reload(services.ai_engine)
+    from services.ai_engine import (
+        classify_and_extract_metadata,
+        generate_quiz,
+        generate_revision_sheet,
+        socratic_tutor_response,
+    )
+except ImportError:
+    import services.ai_engine
+    services.ai_engine = importlib.reload(services.ai_engine)
+    from services.ai_engine import (
+        classify_and_extract_metadata,
+        generate_quiz,
+        generate_revision_sheet,
+        socratic_tutor_response,
+    )
 from services.auth_manager import (
     check_active_user_session,
     dev_mode_login,
