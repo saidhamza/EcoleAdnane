@@ -7,10 +7,11 @@ cours cloisonnés, fiches de révision, quiz, tentatives et tuteur socratique.
 import json
 import logging
 import os
+import shutil
 import sqlite3
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +52,7 @@ def init_db(db_path: Optional[Path] = None) -> None:
                     name TEXT NOT NULL,
                     avatar_url TEXT,
                     role TEXT NOT NULL CHECK(role IN ('admin', 'student')),
+                    is_blocked INTEGER NOT NULL DEFAULT 0,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
 
@@ -141,6 +143,12 @@ def init_db(db_path: Optional[Path] = None) -> None:
 
             # 2. Migrations dynamiques pour bases existantes
             cur = conn.cursor()
+            cur.execute("PRAGMA table_info(users)")
+            user_cols = [row["name"] for row in cur.fetchall()]
+            if "is_blocked" not in user_cols:
+                cur.execute("ALTER TABLE users ADD COLUMN is_blocked INTEGER NOT NULL DEFAULT 0")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_users_blocked ON users(is_blocked)")
+
             for tbl in ["courses", "quizzes", "quiz_attempts", "chat_messages"]:
                 cur.execute(f"PRAGMA table_info({tbl})")
                 cols = [row["name"] for row in cur.fetchall()]
@@ -269,6 +277,10 @@ def create_or_get_google_user(
 
             if existing:
                 user_dict = dict(existing)
+                # Vérification de suspension de compte
+                if user_dict.get("is_blocked", 0) == 1:
+                    raise PermissionError("⛔ Ce compte a été suspendu par l'administrateur. Veuillez contacter votre établissement.")
+
                 # Mise à jour des informations si elles ont changé
                 if name or avatar_url:
                     cur.execute(
@@ -291,8 +303,8 @@ def create_or_get_google_user(
 
             cur.execute(
                 """
-                INSERT INTO users (email, name, avatar_url, role)
-                VALUES (?, ?, ?, ?)
+                INSERT INTO users (email, name, avatar_url, role, is_blocked)
+                VALUES (?, ?, ?, ?, 0)
                 """,
                 (clean_email, name, avatar_url, role),
             )
@@ -311,25 +323,160 @@ def create_or_get_google_user(
                 "name": name,
                 "avatar_url": avatar_url,
                 "role": role,
+                "is_blocked": 0,
                 "created_at": datetime.now().isoformat(),
             }
     finally:
         conn.close()
 
 
-def list_users(role: Optional[str] = None) -> List[Dict[str, Any]]:
-    """Liste les utilisateurs de la plateforme (filtrable par rôle)."""
+def list_users(
+    role: Optional[str] = None,
+    is_blocked: Optional[bool] = None,
+) -> List[Dict[str, Any]]:
+    """Liste les utilisateurs de la plateforme (filtrable par rôle et statut)."""
     conn = get_connection()
     try:
         cur = conn.cursor()
-        query = "SELECT * FROM users"
+        query = "SELECT * FROM users WHERE 1=1"
         params: List[Any] = []
         if role:
-            query += " WHERE role = ?"
+            query += " AND role = ?"
             params.append(role)
+        if is_blocked is not None:
+            query += " AND is_blocked = ?"
+            params.append(1 if is_blocked else 0)
         query += " ORDER BY id ASC"
         cur.execute(query, params)
         return [dict(r) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def set_user_blocked_status(
+    target_user_id: int,
+    is_blocked: bool,
+    requesting_admin_id: Optional[int] = None,
+) -> Tuple[bool, str]:
+    """
+    Suspend ou réactive un compte utilisateur.
+    Sécurités :
+    - Un administrateur ne peut pas modifier le statut de blocage de son propre compte.
+    - Impossible de suspendre le dernier administrateur actif.
+    """
+    if requesting_admin_id is not None and target_user_id == requesting_admin_id:
+        return False, "Vous ne pouvez pas modifier le statut de blocage de votre propre compte."
+
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
+            cur.execute("SELECT * FROM users WHERE id = ?", (target_user_id,))
+            target = cur.fetchone()
+            if not target:
+                return False, "Utilisateur introuvable."
+
+            target_dict = dict(target)
+            # Si on veut bloquer un administrateur, vérifier qu'il reste au moins un autre admin actif
+            if is_blocked and target_dict["role"] == "admin":
+                cur.execute("SELECT COUNT(*) FROM users WHERE role = 'admin' AND (is_blocked = 0 OR is_blocked IS NULL) AND id != ?", (target_user_id,))
+                active_admins_left = cur.fetchone()[0]
+                if active_admins_left < 1:
+                    return False, "Impossible de suspendre le dernier administrateur actif de la plateforme."
+
+            new_val = 1 if is_blocked else 0
+            cur.execute("UPDATE users SET is_blocked = ? WHERE id = ?", (new_val, target_user_id))
+            status_text = "suspendu" if is_blocked else "réactivé"
+            return True, f"Le compte de {target_dict['name']} a été {status_text} avec succès."
+    finally:
+        conn.close()
+
+
+def update_user_role(
+    target_user_id: int,
+    new_role: str,
+    requesting_admin_id: Optional[int] = None,
+) -> Tuple[bool, str]:
+    """
+    Modifie le rôle d'un utilisateur ('admin' ou 'student').
+    Sécurités :
+    - Interdiction de rétrograder le dernier administrateur de la plateforme.
+    """
+    if new_role not in ("admin", "student"):
+        return False, f"Rôle invalide : {new_role}. Rôles autorisés : 'admin', 'student'."
+
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
+            cur.execute("SELECT * FROM users WHERE id = ?", (target_user_id,))
+            target = cur.fetchone()
+            if not target:
+                return False, "Utilisateur introuvable."
+
+            target_dict = dict(target)
+            if target_dict["role"] == new_role:
+                return True, f"L'utilisateur a déjà le rôle '{new_role}'."
+
+            # Si on rétrograde un admin en student, vérifier qu'il reste au moins un autre admin
+            if target_dict["role"] == "admin" and new_role == "student":
+                cur.execute("SELECT COUNT(*) FROM users WHERE role = 'admin' AND id != ?", (target_user_id,))
+                other_admins = cur.fetchone()[0]
+                if other_admins < 1:
+                    return False, "Impossible de rétrograder le dernier administrateur de la plateforme."
+
+            cur.execute("UPDATE users SET role = ? WHERE id = ?", (new_role, target_user_id))
+            role_label = "Administrateur" if new_role == "admin" else "Élève"
+            return True, f"Le rôle de {target_dict['name']} a été mis à jour vers '{role_label}' avec succès."
+    finally:
+        conn.close()
+
+
+def delete_user_account(
+    target_user_id: int,
+    requesting_admin_id: Optional[int] = None,
+) -> Tuple[bool, str]:
+    """
+    Supprime définitivement un compte utilisateur, toutes ses données SQLite associées
+    (cours, quiz, fiches, chats, paramètres) et son dossier physique sur disque.
+    Sécurités :
+    - Un administrateur ne peut pas supprimer son propre compte connecté.
+    - Impossible de supprimer le dernier administrateur.
+    """
+    if requesting_admin_id is not None and target_user_id == requesting_admin_id:
+        return False, "Vous ne pouvez pas supprimer votre propre compte administrateur actif."
+
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
+            cur.execute("SELECT * FROM users WHERE id = ?", (target_user_id,))
+            target = cur.fetchone()
+            if not target:
+                return False, "Utilisateur introuvable."
+
+            target_dict = dict(target)
+            if target_dict["role"] == "admin":
+                cur.execute("SELECT COUNT(*) FROM users WHERE role = 'admin' AND id != ?", (target_user_id,))
+                other_admins = cur.fetchone()[0]
+                if other_admins < 1:
+                    return False, "Impossible de supprimer le dernier administrateur de la plateforme."
+
+            # 1. Nettoyage explicite des tables liées
+            cur.execute("DELETE FROM chat_messages WHERE user_id = ?", (target_user_id,))
+            cur.execute("DELETE FROM quiz_attempts WHERE user_id = ?", (target_user_id,))
+            cur.execute("DELETE FROM quizzes WHERE user_id = ?", (target_user_id,))
+            cur.execute("DELETE FROM courses WHERE user_id = ?", (target_user_id,))
+            cur.execute("DELETE FROM flashcards WHERE user_id = ?", (target_user_id,))
+            cur.execute("DELETE FROM user_settings WHERE user_id = ?", (target_user_id,))
+            cur.execute("DELETE FROM users WHERE id = ?", (target_user_id,))
+
+        # 2. Nettoyage physique du dossier de l'utilisateur
+        storage_base = Path(__file__).parent.parent / "storage" / "users" / str(target_user_id)
+        if storage_base.exists() and storage_base.is_dir():
+            shutil.rmtree(storage_base, ignore_errors=True)
+
+        return True, f"Le compte de {target_dict['name']} ({target_dict['email']}) et l'ensemble de ses données ont été supprimés définitivement."
     finally:
         conn.close()
 
@@ -341,6 +488,15 @@ def get_global_admin_kpis() -> Dict[str, Any]:
         cur = conn.cursor()
         cur.execute("SELECT COUNT(*) FROM users WHERE role = 'student'")
         total_students = cur.fetchone()[0]
+
+        cur.execute("SELECT COUNT(*) FROM users WHERE role = 'student' AND (is_blocked = 0 OR is_blocked IS NULL)")
+        active_students = cur.fetchone()[0]
+
+        cur.execute("SELECT COUNT(*) FROM users WHERE role = 'student' AND is_blocked = 1")
+        blocked_students = cur.fetchone()[0]
+
+        cur.execute("SELECT COUNT(*) FROM users WHERE role = 'admin'")
+        total_admins = cur.fetchone()[0]
 
         cur.execute("SELECT COUNT(*) FROM courses")
         total_courses = cur.fetchone()[0]
@@ -367,6 +523,8 @@ def get_global_admin_kpis() -> Dict[str, Any]:
                 u.id as user_id,
                 u.name,
                 u.email,
+                u.role,
+                COALESCE(u.is_blocked, 0) as is_blocked,
                 u.created_at,
                 COUNT(DISTINCT c.id) as course_count,
                 COUNT(DISTINCT qa.id) as attempt_count,
@@ -389,6 +547,9 @@ def get_global_admin_kpis() -> Dict[str, Any]:
 
         return {
             "total_students": total_students,
+            "active_students": active_students,
+            "blocked_students": blocked_students,
+            "total_admins": total_admins,
             "total_courses": total_courses,
             "total_quizzes": total_quizzes,
             "total_attempts": attempts,

@@ -21,6 +21,7 @@ from models.database import (
     add_chat_message,
     clear_chat_history,
     create_or_get_google_user,
+    delete_user_account,
     get_chat_history,
     get_course_by_hash,
     get_course_by_id,
@@ -40,12 +41,15 @@ from models.database import (
     save_quiz,
     save_quiz_attempt,
     set_setting,
+    set_user_blocked_status,
     set_user_setting,
     update_course_metadata,
     update_course_summary,
+    update_user_role,
 )
 from services.ai_engine import clean_json_output
 from services.auth_manager import (
+    check_active_user_session,
     extract_auth_code,
     get_oauth_credentials,
     normalize_redirect_uri,
@@ -176,6 +180,118 @@ class TestMultiUserAndRoles(unittest.TestCase):
         self.assertEqual(reconnect_admin["role"], "admin")
         self.assertEqual(reconnect_admin["name"], "Professeur Admin Mis à jour")
         self.assertEqual(get_user_count(), 3)
+
+    def test_block_and_unblock_student(self):
+        admin = create_or_get_google_user("admin@ecole.ma", "Admin Principal")
+        student = create_or_get_google_user("eleve@ecole.ma", "Élève Test")
+
+        # Vérifier état initial actif
+        self.assertEqual(student.get("is_blocked", 0), 0)
+        is_valid, reason, _ = check_active_user_session(student["id"])
+        self.assertTrue(is_valid)
+        self.assertIsNone(reason)
+
+        # 1. Blocage de l'élève par l'admin
+        ok, msg = set_user_blocked_status(student["id"], is_blocked=True, requesting_admin_id=admin["id"])
+        self.assertTrue(ok)
+        self.assertIn("suspendu", msg)
+
+        # Vérifier en base
+        updated = get_user_by_id(student["id"])
+        self.assertEqual(updated["is_blocked"], 1)
+
+        # Vérifier rejet de connexion via create_or_get_google_user
+        with self.assertRaises(PermissionError):
+            create_or_get_google_user("eleve@ecole.ma", "Élève Test")
+
+        # Vérifier rejet par check_active_user_session
+        is_valid, reason, _ = check_active_user_session(student["id"])
+        self.assertFalse(is_valid)
+        self.assertEqual(reason, "blocked")
+
+        # 2. Déblocage de l'élève par l'admin
+        ok, msg = set_user_blocked_status(student["id"], is_blocked=False, requesting_admin_id=admin["id"])
+        self.assertTrue(ok)
+        self.assertIn("réactivé", msg)
+
+        # Vérifier réactivation
+        updated = get_user_by_id(student["id"])
+        self.assertEqual(updated["is_blocked"], 0)
+        is_valid, reason, _ = check_active_user_session(student["id"])
+        self.assertTrue(is_valid)
+
+    def test_update_user_role(self):
+        admin = create_or_get_google_user("admin@ecole.ma", "Admin Principal")
+        student = create_or_get_google_user("eleve@ecole.ma", "Élève Test")
+
+        self.assertEqual(student["role"], "student")
+
+        # Promotion en Admin
+        ok, msg = update_user_role(student["id"], "admin", requesting_admin_id=admin["id"])
+        self.assertTrue(ok)
+        self.assertIn("Administrateur", msg)
+        self.assertEqual(get_user_by_id(student["id"])["role"], "admin")
+
+        # Rétrogradation en Élève
+        ok, msg = update_user_role(student["id"], "student", requesting_admin_id=admin["id"])
+        self.assertTrue(ok)
+        self.assertIn("Élève", msg)
+        self.assertEqual(get_user_by_id(student["id"])["role"], "student")
+
+    def test_sole_admin_protections(self):
+        admin = create_or_get_google_user("admin@ecole.ma", "Admin Seul")
+
+        # 1. Tentative de rétrogradation du seul admin -> doit échouer
+        ok, msg = update_user_role(admin["id"], "student", requesting_admin_id=admin["id"])
+        self.assertFalse(ok)
+        self.assertIn("dernier administrateur", msg)
+        self.assertEqual(get_user_by_id(admin["id"])["role"], "admin")
+
+        # 2. Tentative d'auto-blocage -> doit échouer
+        ok, msg = set_user_blocked_status(admin["id"], is_blocked=True, requesting_admin_id=admin["id"])
+        self.assertFalse(ok)
+        self.assertIn("propre compte", msg)
+        self.assertEqual(get_user_by_id(admin["id"])["is_blocked"], 0)
+
+        # 3. Tentative d'auto-suppression -> doit échouer
+        ok, msg = delete_user_account(admin["id"], requesting_admin_id=admin["id"])
+        self.assertFalse(ok)
+        self.assertIn("propre compte", msg)
+        self.assertIsNotNone(get_user_by_id(admin["id"]))
+
+    def test_delete_user_and_cascade_cleanup(self):
+        admin = create_or_get_google_user("admin@ecole.ma", "Admin Principal")
+        student = create_or_get_google_user("victor@eleve.ma", "Victor")
+
+        # Ajouter des données pour l'élève
+        cid = save_course(
+            title="Cours de Victor",
+            subject="Français",
+            language="fr",
+            file_path="/fake/cours_victor.pdf",
+            file_hash="hash_victor_1",
+            file_name="cours_victor.pdf",
+            user_id=student["id"],
+        )
+        save_quiz(cid, [{"question": "Q1", "options": ["A", "B"], "answer_index": 0}], user_id=student["id"])
+        add_chat_message(cid, "user", "Bonjour Sanad", user_id=student["id"])
+
+        self.assertEqual(len(list_courses(user_id=student["id"])), 1)
+
+        # Suppression du compte
+        ok, msg = delete_user_account(student["id"], requesting_admin_id=admin["id"])
+        self.assertTrue(ok)
+        self.assertIn("supprimés définitivement", msg)
+
+        # Vérifications en base
+        self.assertIsNone(get_user_by_id(student["id"]))
+        self.assertEqual(len(list_courses(user_id=student["id"])), 0)
+        self.assertEqual(len(get_chat_history(cid, user_id=student["id"])), 0)
+
+        # Vérification session
+        is_valid, reason, _ = check_active_user_session(student["id"])
+        self.assertFalse(is_valid)
+        self.assertEqual(reason, "deleted")
 
 
 class TestStrictDataIsolation(unittest.TestCase):

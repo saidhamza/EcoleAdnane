@@ -9,7 +9,7 @@ import logging
 import os
 import urllib.parse
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 import requests
 import streamlit as st
 
@@ -357,7 +357,10 @@ def exchange_code_for_user(code: str, redirect_uri: Optional[str] = None) -> Dic
         raise ValueError("L'adresse email Google est manquante.")
 
     # Attribution automatique : premier arrivé = admin, suivants = student
-    user = create_or_get_google_user(email=email, name=name, avatar_url=avatar_url)
+    try:
+        user = create_or_get_google_user(email=email, name=name, avatar_url=avatar_url)
+    except PermissionError as pe:
+        raise ValueError(str(pe))
     return user
 
 
@@ -413,3 +416,23 @@ def dev_mode_login(email: str, name: str, role: Optional[str] = None) -> Dict[st
     user = create_or_get_google_user(email=email, name=name, role=role)
     set_session_user(user)
     return user
+
+
+def check_active_user_session(user_id: Optional[int]) -> Tuple[bool, Optional[str], Optional[Dict[str, Any]]]:
+    """
+    Vérifie en direct la validité de la session d'un utilisateur :
+    - S'il n'existe plus en base (supprimé) -> (False, "deleted", None)
+    - S'il est suspendu/bloqué -> (False, "blocked", user)
+    - S'il est actif -> (True, None, user)
+    """
+    if not user_id:
+        return False, "no_user", None
+
+    user = get_user_by_id(user_id)
+    if not user:
+        return False, "deleted", None
+
+    if user.get("is_blocked", 0) == 1:
+        return False, "blocked", user
+
+    return True, None, user

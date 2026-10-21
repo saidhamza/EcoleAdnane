@@ -23,6 +23,7 @@ from models.database import (
     add_chat_message,
     clear_chat_history,
     delete_course,
+    delete_user_account,
     get_chat_history,
     get_course_by_id,
     get_global_admin_kpis,
@@ -36,8 +37,10 @@ from models.database import (
     save_course,
     save_quiz,
     save_quiz_attempt,
+    set_user_blocked_status,
     update_course_metadata,
     update_course_summary,
+    update_user_role,
 )
 from services.ai_engine import (
     classify_and_extract_metadata,
@@ -46,6 +49,7 @@ from services.ai_engine import (
     socratic_tutor_response,
 )
 from services.auth_manager import (
+    check_active_user_session,
     dev_mode_login,
     exchange_code_for_user,
     extract_auth_code,
@@ -532,6 +536,31 @@ if not st.session_state.get("is_authenticated"):
 # ===========================================================================
 
 def render_authenticated_app(current_user: Dict[str, Any]) -> None:
+    # 1. Vérification en direct de la validité de la session
+    is_valid, reason, refreshed_user = check_active_user_session(current_user.get("id"))
+    if not is_valid:
+        if reason == "deleted":
+            logout_user()
+            st.warning("⚠️ Votre compte a été supprimé par l'administrateur.")
+            st.rerun()
+        elif reason == "blocked":
+            st.error("⛔ **Votre compte a été suspendu par l'administrateur de l'établissement.**")
+            st.info("Vous ne pouvez plus accéder aux révisions. Veuillez contacter votre responsable ou enseignant.")
+            if st.button("🚪 Se déconnecter", type="primary"):
+                logout_user()
+                st.rerun()
+            st.stop()
+        else:
+            logout_user()
+            st.rerun()
+
+    # Si le profil ou le rôle a été mis à jour par l'admin
+    if refreshed_user:
+        current_user = refreshed_user
+        if current_user["role"] != st.session_state.get("role"):
+            st.session_state["role"] = current_user["role"]
+            st.session_state["user"] = current_user
+
     logged_in_user_id = current_user["id"]
     user_role = current_user.get("role", "student")
     is_admin = user_role == "admin"
@@ -552,7 +581,8 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
         all_students = list_users(role="student")
         student_options: Dict[str, str] = {"global": "📊 Vue Globale (Supervision)"}
         for s in all_students:
-            student_options[str(s["id"])] = f"🎒 {s['name']} ({s['email']})"
+            blocked_tag = " [SUSPENDU]" if s.get("is_blocked") else ""
+            student_options[str(s["id"])] = f"🎒 {s['name']} ({s['email']}){blocked_tag}"
 
         chosen_space = st.sidebar.selectbox(
             "Espace de travail :",
@@ -566,7 +596,12 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
             active_user_id = logged_in_user_id
             menu = st.sidebar.radio(
                 "Supervision Globale",
-                ["📊 Supervision Globale", "➕ Gestion & Ajout des Cours", "⚙️ Configuration Système & Sauvegardes"],
+                [
+                    "📊 Supervision Globale",
+                    "👥 Gestion des Utilisateurs",
+                    "➕ Gestion & Ajout des Cours",
+                    "⚙️ Configuration Système & Sauvegardes",
+                ],
                 index=0,
             )
         else:
@@ -642,6 +677,7 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                         "ID": s["user_id"],
                         "Nom": s["name"],
                         "Email": s["email"],
+                        "Statut": "🔴 Suspendu" if s.get("is_blocked") == 1 else "🟢 Actif",
                         "Cours ajoutés": s["course_count"],
                         "Quiz terminés": s["attempt_count"],
                         "Moyenne Quiz": f"{s['average_rate']}%",
@@ -655,6 +691,144 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
             st.caption("💡 *Sélectionnez un élève dans la barre latérale pour naviguer directement dans ses cours et ses devoirs.*")
         else:
             st.info("Aucun élève inscrit pour l'instant. Les nouveaux utilisateurs connectés via Google OAuth apparaîtront ici.")
+
+        return
+
+    # -----------------------------------------------------------------------
+    # VUE ADMIN : GESTION DES UTILISATEURS (SUPPRESSION, BLOCAGE, RÔLES)
+    # -----------------------------------------------------------------------
+    elif is_global_admin_view and menu == "👥 Gestion des Utilisateurs":
+        st.title("👥 Gestion des Utilisateurs & Élèves")
+        st.markdown(
+            "Supervisez et modifiez les comptes utilisateurs : ajustez les rôles (Élève ↔ Administrateur), "
+            "suspendez temporairement des accès ou supprimez définitivement un compte et ses cours."
+        )
+
+        kpis = get_global_admin_kpis()
+        all_users = list_users()
+
+        # Cartes métriques
+        m_col1, m_col2, m_col3, m_col4 = st.columns(4)
+        with m_col1:
+            st.metric("Total Utilisateurs", len(all_users))
+        with m_col2:
+            st.metric("Élèves Actifs", kpis.get("active_students", 0))
+        with m_col3:
+            st.metric("Comptes Suspendus", kpis.get("blocked_students", 0))
+        with m_col4:
+            st.metric("Administrateurs", kpis.get("total_admins", 0))
+
+        st.divider()
+
+        # Filtres & Recherche
+        f_col1, f_col2, f_col3 = st.columns([3, 2, 2])
+        with f_col1:
+            search_query = st.text_input("🔍 Rechercher un utilisateur (nom ou email) :", key="user_search_input").strip().lower()
+        with f_col2:
+            role_filter = st.selectbox("Filtrer par rôle :", ["Tous", "Élèves", "Administrateurs"], key="user_role_filter")
+        with f_col3:
+            status_filter = st.selectbox("Filtrer par statut :", ["Tous", "Actifs uniquement", "Suspendus uniquement"], key="user_status_filter")
+
+        filtered_users = all_users
+        if search_query:
+            filtered_users = [u for u in filtered_users if search_query in u["name"].lower() or search_query in u["email"].lower()]
+        if role_filter == "Élèves":
+            filtered_users = [u for u in filtered_users if u["role"] == "student"]
+        elif role_filter == "Administrateurs":
+            filtered_users = [u for u in filtered_users if u["role"] == "admin"]
+
+        if status_filter == "Actifs uniquement":
+            filtered_users = [u for u in filtered_users if u.get("is_blocked", 0) == 0]
+        elif status_filter == "Suspendus uniquement":
+            filtered_users = [u for u in filtered_users if u.get("is_blocked", 0) == 1]
+
+        st.write(f"**{len(filtered_users)} utilisateur(s) affiché(s)**")
+
+        if not filtered_users:
+            st.info("Aucun utilisateur ne correspond à vos critères.")
+            return
+
+        for u in filtered_users:
+            u_id = u["id"]
+            is_self = (u_id == logged_in_user_id)
+            is_u_blocked = (u.get("is_blocked", 0) == 1)
+            is_u_admin = (u["role"] == "admin")
+
+            status_badge = "🔴 Suspendu" if is_u_blocked else "🟢 Actif"
+            role_badge = "👑 Administrateur" if is_u_admin else "🎒 Élève"
+            self_tag = " *(Votre compte)*" if is_self else ""
+
+            expander_title = f"{role_badge} — **{u['name']}** (`{u['email']}`) | {status_badge}{self_tag}"
+            with st.expander(expander_title, expanded=False):
+                col_u1, col_u2, col_u3 = st.columns([2, 2, 3])
+
+                # 1. Rôle
+                with col_u1:
+                    st.markdown("##### 🎭 Rôle")
+                    role_options = ["student", "admin"]
+                    role_labels = {"student": "🎒 Élève (student)", "admin": "👑 Administrateur (admin)"}
+                    current_idx = 1 if is_u_admin else 0
+
+                    new_role_val = st.selectbox(
+                        "Modifier le rôle :",
+                        options=role_options,
+                        index=current_idx,
+                        format_func=lambda x: role_labels[x],
+                        key=f"sel_role_{u_id}",
+                        disabled=is_self and kpis.get("total_admins", 0) <= 1,
+                    )
+                    if new_role_val != u["role"]:
+                        if st.button("💾 Enregistrer le rôle", key=f"btn_save_role_{u_id}", type="primary"):
+                            ok, msg = update_user_role(u_id, new_role_val, requesting_admin_id=logged_in_user_id)
+                            if ok:
+                                st.success(msg)
+                                st.rerun()
+                            else:
+                                st.error(msg)
+
+                # 2. Statut (Bloquer / Débloquer)
+                with col_u2:
+                    st.markdown("##### 🛡️ Statut d'accès")
+                    if is_u_blocked:
+                        st.caption("Compte actuellement **suspendu**.")
+                        if st.button("✅ Réactiver le compte", key=f"btn_unblock_{u_id}", type="secondary"):
+                            ok, msg = set_user_blocked_status(u_id, is_blocked=False, requesting_admin_id=logged_in_user_id)
+                            if ok:
+                                st.success(msg)
+                                st.rerun()
+                            else:
+                                st.error(msg)
+                    else:
+                        st.caption("Compte actuellement **actif**.")
+                        if is_self:
+                            st.button("🚫 Suspendre l'accès", key=f"btn_block_{u_id}", disabled=True, help="Vous ne pouvez pas suspendre votre propre compte.")
+                        else:
+                            if st.button("🚫 Suspendre l'accès", key=f"btn_block_{u_id}", type="secondary"):
+                                ok, msg = set_user_blocked_status(u_id, is_blocked=True, requesting_admin_id=logged_in_user_id)
+                                if ok:
+                                    st.warning(msg)
+                                    st.rerun()
+                                else:
+                                    st.error(msg)
+
+                # 3. Suppression définitive
+                with col_u3:
+                    st.markdown("##### 🗑️ Suppression Définitive")
+                    if is_self:
+                        st.caption("🔒 Protection : Vous ne pouvez pas supprimer votre propre compte connecté.")
+                    else:
+                        with st.popover("⚠️ Supprimer ce compte..."):
+                            st.warning(f"La suppression du compte de **{u['name']}** est **DÉFINITIVE ET IRRÉVERSIBLE**.")
+                            st.write("- Tous ses cours, fiches de révision et quiz seront effacés.")
+                            st.write("- L'ensemble de ses fichiers PDF sur le disque seront supprimés.")
+                            confirm_check = st.checkbox("Je confirme la suppression définitive", key=f"confirm_del_{u_id}")
+                            if st.button("💥 Confirmer la suppression définitive", key=f"btn_del_{u_id}", type="primary", disabled=not confirm_check):
+                                ok, msg = delete_user_account(u_id, requesting_admin_id=logged_in_user_id)
+                                if ok:
+                                    st.success(msg)
+                                    st.rerun()
+                                else:
+                                    st.error(msg)
 
         return
 
