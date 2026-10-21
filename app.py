@@ -440,6 +440,79 @@ def get_subject_badge_class(subject: str) -> str:
     return mapping.get(subject, "badge-default")
 
 
+def render_gemini_key_instructions(expanded: bool = False) -> None:
+    """Affiche un guide pas à pas clair pour obtenir une clé API Google Gemini 100% gratuite."""
+    with st.expander("💡 Comment obtenir votre clé API Google Gemini (100% Gratuite) ?", expanded=expanded):
+        st.markdown(
+            """
+#### 🔑 Guide pas à pas : Obtenir votre clé API Google Gemini gratuite
+
+Google met à disposition une clé d'accès **100% gratuite**, sans carte bancaire, offrant un quota très généreux pour vos révisions, fiches express et quiz.
+
+1. **Accédez à Google AI Studio :**
+   - Rendez-vous sur **[aistudio.google.com](https://aistudio.google.com/)**.
+   - Connectez-vous avec votre compte Google ordinaire (Gmail ou compte scolaire).
+2. **Ouvrez la section des clés d'API :**
+   - En haut à gauche, cliquez sur le bouton bleu **"Get API key"** (ou rendez-vous directement sur [aistudio.google.com/app/apikey](https://aistudio.google.com/app/apikey)).
+3. **Créez votre clé en un clic :**
+   - Cliquez sur le bouton bleu **"Create API key"**.
+   - Choisissez *"Create API key in new project"* (Créer une clé dans un nouveau projet) ou sélectionnez un projet existant.
+4. **Copiez la clé générée :**
+   - Une fenêtre s'affiche avec votre clé secrète commençant généralement par `AIzaSy...`.
+   - Cliquez sur l'icône **Copier**.
+5. **Collez-la dans Ecole Adnane :**
+   - Revenez sur cette page, collez votre clé dans le champ prévu et cliquez sur **"💾 Enregistrer la clé"**.
+   - Cliquez ensuite sur **"🔍 Tester ma connexion Gemini"** pour vérifier que le voyant vert s'allume.
+
+> 💡 **Pourquoi une clé individuelle ?**  
+> Chaque élève dispose ainsi de son propre quota gratuit et indépendant. Vos échanges avec le tuteur Sanad et vos révisions ne risquent jamais d'être ralentis par les autres utilisateurs.
+            """
+        )
+
+
+def render_classroom_credentials_instructions(expanded: bool = False) -> None:
+    """Affiche un guide pas à pas pour créer et télécharger credentials.json Google Classroom."""
+    with st.expander("💡 Comment obtenir votre fichier credentials.json Google Classroom (Tutoriel pas à pas) ?", expanded=expanded):
+        st.markdown(
+            """
+#### 🏫 Guide pas à pas : Obtenir votre fichier `credentials.json` Google Classroom
+
+Ce fichier permet à Ecole Adnane d'importer directement vos cours, devoirs et supports PDF depuis vos classes Google Classroom sans quitter la plateforme.
+
+1. **Accédez à la Console Google Cloud :**
+   - Rendez-vous sur **[console.cloud.google.com](https://console.cloud.google.com/)** avec votre compte Google.
+2. **Créez ou sélectionnez un projet :**
+   - En haut à gauche (à côté du logo Google Cloud), cliquez sur le sélecteur de projets.
+   - Cliquez sur **"Nouveau projet"**, nommez-le par exemple `Ecole Adnane Classroom`, puis cliquez sur **"Créer"**.
+3. **Activez l'API Google Classroom & Google Drive :**
+   - Dans le menu de navigation à gauche ☰, allez dans **"API et services"** > **"Bibliothèque"**.
+   - Dans la barre de recherche, tapez **"Google Classroom API"**, cliquez sur le résultat puis cliquez sur **"Activer"**.
+   - *(Recommandé)* Retournez dans la Bibliothèque, cherchez **"Google Drive API"** et cliquez sur **"Activer"** (nécessaire pour télécharger les pièces jointes PDF de vos devoirs).
+4. **Configurez l'écran de consentement OAuth :**
+   - Dans le menu ☰, allez dans **"API et services"** > **"Écran de consentement OAuth"**.
+   - Type d'utilisateur : choisissez **"Externe"** (ou "Interne" si votre établissement utilise Google Workspace for Education) et cliquez sur **"Créer"**.
+   - Renseignez les informations de base :
+     - *Nom de l'application :* `Ecole Adnane`
+     - *Adresse email d'assistance :* Votre adresse email Google.
+     - *Coordonnées du développeur :* Votre adresse email Google.
+   - Cliquez sur **"Enregistrer et continuer"** jusqu'à l'étape **"Utilisateurs tests"** (Test users).
+   - Cliquez sur **"+ Add Users"** et ajoutez votre adresse email Google. Cliquez sur **"Enregistrer et continuer"**.
+5. **Générez l'identifiant client OAuth :**
+   - Dans le menu de gauche, cliquez sur **"Identifiants"** (Credentials).
+   - En haut, cliquez sur **"+ Créer des identifiants"** > **"ID client OAuth"**.
+   - *Type d'application :* Sélectionnez **"Application de bureau"** (Desktop app) ou **"Application Web"**.
+   - *Nom :* `Client Classroom Adnane`.
+   - Cliquez sur **"Créer"**.
+6. **Téléchargez le fichier `credentials.json` :**
+   - Une fenêtre s'ouvre confirmant la création. Cliquez sur **"Télécharger le fichier JSON"** (ou dans la liste des identifiants, cliquez sur l'icône de flèche de téléchargement ⬇️ à droite de votre ID client).
+   - Renommez le fichier téléchargé en `credentials.json` si besoin (ou téléversez-le directement tel quel).
+7. **Téléversez-le dans Ecole Adnane :**
+   - Déposez ce fichier dans la zone de téléversement ci-dessus.
+   - Vos classes et devoirs PDF pourront alors être synchronisés en un clic !
+            """
+        )
+
+
 # ===========================================================================
 # 0. GESTION DE L'AUTHENTIFICATION & SESSIONS GOOGLE OAUTH
 # ===========================================================================
@@ -718,8 +791,8 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
         st.sidebar.warning("⚠️ Clé IA non configurée", icon="🔑")
         if not is_admin:
             with st.sidebar.expander("🔑 Saisir ma clé Gemini (Optionnel)", expanded=False):
-                st.caption("Optionnel : saisissez votre clé issue de https://aistudio.google.com/ si l'établissement ne fournit pas de quota.")
-                new_st_key = st.text_input("Clé Gemini :", type="password", key="sidebar_student_gemini_key")
+                st.caption("👉 Obtenez votre clé gratuite en 1 minute sur [Google AI Studio](https://aistudio.google.com/).")
+                new_st_key = st.text_input("Clé Gemini :", type="password", key="sidebar_student_gemini_key", placeholder="AIzaSy...")
                 if st.button("Enregistrer ma clé", key="sidebar_save_gemini_btn"):
                     if new_st_key:
                         save_user_gemini_api_key(active_user_id, new_st_key)
@@ -970,6 +1043,8 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                     st.success(f"✅ {res['message']}")
                 else:
                     st.error(f"❌ {res['error']}")
+
+        render_gemini_key_instructions(expanded=not bool(current_admin_key))
 
         st.divider()
 
@@ -1283,7 +1358,7 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                 btn_gen_fiche = "⚡ توليد بطاقة المراجعة المركزة بالذكاء الاصطناعي" if is_ar else ("⚡ Generate AI Revision Sheet" if is_en else "⚡ Générer la Fiche Express avec l'IA")
                 if st.button(btn_gen_fiche, type="primary"):
                     if not user_api_key:
-                        st.error("Veuillez d'abord activer une clé API Gemini (dans la barre latérale ou auprès de l'administrateur)." if not is_en else "Please configure your Gemini API key first.")
+                        st.error("⚠️ Clé API Gemini requise. Obtenez votre clé 100% gratuite sur [Google AI Studio](https://aistudio.google.com/) et activez-la dans **⚙️ Paramètres** ou la barre latérale." if not is_en else "⚠️ Gemini API key required. Get your free key on [Google AI Studio](https://aistudio.google.com/) and configure it in **⚙️ Settings** or the sidebar.")
                     else:
                         with st.spinner("Génération de la fiche express..." if not is_en else "Generating revision sheet..."):
                             generated_summary = generate_revision_sheet(
@@ -1304,7 +1379,7 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                 regen_label = "🔄 إعادة توليد بطاقة المراجعة" if is_ar else ("🔄 Regenerate Revision Sheet" if is_en else "🔄 Régénérer la Fiche Express")
                 if st.button(regen_label):
                     if not user_api_key:
-                        st.error("Veuillez d'abord configurer votre clé API Gemini." if not is_en else "Please configure your Gemini API key first.")
+                        st.error("⚠️ Clé API Gemini requise. Obtenez votre clé 100% gratuite sur [Google AI Studio](https://aistudio.google.com/) et activez-la dans **⚙️ Paramètres** ou la barre latérale." if not is_en else "⚠️ Gemini API key required. Get your free key on [Google AI Studio](https://aistudio.google.com/) and configure it in **⚙️ Settings** or the sidebar.")
                     else:
                         with st.spinner("Régénération..." if not is_en else "Regenerating..."):
                             generated_summary = generate_revision_sheet(
@@ -1322,7 +1397,7 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
             btn_new_quiz = "🎯 توليد اختبار تدريبي جديد (5 أسئلة)" if is_ar else ("🎯 Generate Exam Practice Quiz (5 questions)" if is_en else "🎯 Générer un nouveau quiz d'examen (5 questions)")
             if st.button(btn_new_quiz, type="secondary"):
                 if not user_api_key:
-                    st.error("Veuillez d'abord activer une clé API Gemini (dans la barre latérale ou auprès de l'administrateur)." if not is_en else "Please configure your Gemini API key first.")
+                    st.error("⚠️ Clé API Gemini requise. Obtenez votre clé 100% gratuite sur [Google AI Studio](https://aistudio.google.com/) et activez-la dans **⚙️ Paramètres** ou la barre latérale." if not is_en else "⚠️ Gemini API key required. Get your free key on [Google AI Studio](https://aistudio.google.com/) and configure it in **⚙️ Settings** or the sidebar.")
                 else:
                     with st.spinner("Génération des questions d'examen..." if not is_en else "Generating exam quiz questions..."):
                         quiz_questions = generate_quiz(
@@ -1422,7 +1497,7 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
             user_input = st.chat_input(chat_placeholder)
             if user_input:
                 if not user_api_key:
-                    st.error("Veuillez d'abord activer une clé API Gemini (dans la barre latérale ou auprès de l'administrateur)." if not is_en else "Please configure your Gemini API key first.")
+                    st.error("⚠️ Clé API Gemini requise pour échanger avec Sanad. Obtenez votre clé 100% gratuite sur [Google AI Studio](https://aistudio.google.com/) et activez-la dans **⚙️ Paramètres** ou la barre latérale." if not is_en else "⚠️ Gemini API key required to chat with Sanad. Get your free key on [Google AI Studio](https://aistudio.google.com/) and configure it in **⚙️ Settings** or the sidebar.")
                 else:
                     add_chat_message(current_course["id"], "user", user_input, user_id=active_user_id)
                     with st.chat_message("user", avatar="🧑‍🎓"):
@@ -1548,6 +1623,7 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                         save_user_credentials(tid, cred_bytes)
                     st.success("Identifiants Classroom enregistrés !")
                     st.rerun()
+                render_classroom_credentials_instructions(expanded=True)
             else:
                 st.success("🟢 Identifiants Classroom configurés.")
                 if st.button("🔄 Synchroniser les devoirs Classroom", type="primary"):
@@ -1558,6 +1634,7 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                             st.success(sync_res["message"])
                         else:
                             st.error(sync_res["error"])
+                render_classroom_credentials_instructions(expanded=False)
 
     # -----------------------------------------------------------------------
     # VUE ÉLÈVE : MES PROGRÈS
@@ -1691,13 +1768,24 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                 else:
                     st.error(f"❌ {res['error']}")
 
+        render_gemini_key_instructions(expanded=not bool(current_user_gemini))
+
         st.divider()
 
         st.markdown("### 🏫 Identifiants Google Classroom Personnels")
+        has_user_creds = is_classroom_configured(active_user_id)
+        if has_user_creds:
+            st.success("🟢 Identifiants Classroom actuellement configurés et actifs.")
+        else:
+            st.info("ℹ️ Téléversez votre fichier `credentials.json` ci-dessous pour activer la synchronisation de vos classes.")
+
         cred_file = st.file_uploader("Fichier client `credentials.json` personnel :", type=["json"], key="up_cred_settings")
         if cred_file:
             save_user_credentials(active_user_id, cred_file.read())
             st.success("Fichier credentials.json enregistré dans votre espace personnel !")
+            st.rerun()
+
+        render_classroom_credentials_instructions(expanded=not has_user_creds)
 
         st.divider()
 
