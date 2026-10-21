@@ -51,6 +51,7 @@ try:
         get_user_by_id,
         get_user_count,
         get_user_from_session_token,
+        get_user_setting,
         init_db,
         list_courses,
         list_users,
@@ -58,6 +59,7 @@ try:
         save_quiz,
         save_quiz_attempt,
         set_user_blocked_status,
+        set_user_setting,
         update_course_metadata,
         update_course_summary,
         update_user_age,
@@ -191,6 +193,7 @@ try:
         services.voice_manager = importlib.reload(services.voice_manager)
     from services.voice_manager import (
         clean_text_for_speech,
+        generate_chat_mic_injector_html,
         generate_mic_speech_html,
         generate_tts_player_html,
         get_speech_config,
@@ -198,6 +201,7 @@ try:
 except Exception:
     from services.voice_manager import (
         clean_text_for_speech,
+        generate_chat_mic_injector_html,
         generate_mic_speech_html,
         generate_tts_player_html,
         get_speech_config,
@@ -1529,18 +1533,35 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                 st.info("Aucun quiz généré pour ce cours pour le moment." if not is_en else "No quiz generated for this course yet.")
 
         with tab_tuteur:
-            if is_ar:
-                st.markdown("<div class='rtl-section-title'>🤖 الأستاذ المساعد : سَنَد</div>", unsafe_allow_html=True)
-            elif is_en:
-                st.markdown("### 🤖 Socratic AI Tutor: Sanad")
-            else:
-                st.markdown("### 🤖 Tuteur Virtuel : Sanad")
+            stored_auto_speak = get_user_setting(active_user_id, "auto_speak_sanad", "false") == "true"
+            stored_speed_str = get_user_setting(active_user_id, "voice_speed_sanad", "1.0")
+            try:
+                stored_speed = float(stored_speed_str)
+            except Exception:
+                stored_speed = 1.0
 
-            # Réglages vocaux & vitesse de lecture (Web Speech API - 0 quota Gemini)
+            col_hdr_title, col_hdr_toggle = st.columns([0.65, 0.35])
+            with col_hdr_title:
+                if is_ar:
+                    st.markdown("<div class='rtl-section-title'>🤖 الأستاذ المساعد : سَنَد</div>", unsafe_allow_html=True)
+                elif is_en:
+                    st.markdown("### 🤖 Socratic AI Tutor: Sanad")
+                else:
+                    st.markdown("### 🤖 Tuteur Virtuel : Sanad")
+            with col_hdr_toggle:
+                auto_speak = st.toggle(
+                    "🔊 Lecture vocale auto" if not is_en else ("🔊 Auto-speak" if is_en else "🔊 قراءة تلقائية"),
+                    value=stored_auto_speak,
+                    key=f"auto_speak_toggle_{current_course['id']}",
+                    help="Sanad lit automatiquement ses réponses à voix haute dès qu'il vous répond (100% gratuit, 0 quota Gemini).",
+                )
+                if auto_speak != stored_auto_speak:
+                    set_user_setting(active_user_id, "auto_speak_sanad", "true" if auto_speak else "false")
+
             with st.expander(
-                "🎙️ Options Vocales & Vitesse (100% Gratuites — 0 quota Gemini)"
+                "⚙️ Options vocales & vitesse (Web Speech API — 0 quota Gemini)"
                 if not is_en
-                else ("🎙️ Voice Settings & Speed (100% Free — 0 Gemini quota)" if is_en else "🎙️ إعدادات الصوت وسرعة النطق (مجاني 100%)"),
+                else ("⚙️ Voice speed & options (0 Gemini quota)" if is_en else "⚙️ خيارات سرعة الصوت (مجاني)"),
                 expanded=False,
             ):
                 col_v1, col_v2 = st.columns([1, 1])
@@ -1548,10 +1569,12 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                     voice_speed = st.select_slider(
                         "Vitesse de lecture :" if not is_en else ("Voice Speed:" if is_en else "سرعة النطق :"),
                         options=[0.8, 0.9, 1.0, 1.1, 1.2],
-                        value=1.0,
+                        value=stored_speed if stored_speed in [0.8, 0.9, 1.0, 1.1, 1.2] else 1.0,
                         format_func=lambda x: f"{x}x" + (" (Douce)" if x < 1.0 else (" (Normale)" if x == 1.0 else " (Rapide)")),
                         key=f"voice_speed_slider_{current_course['id']}",
                     )
+                    if voice_speed != stored_speed:
+                        set_user_setting(active_user_id, "voice_speed_sanad", str(voice_speed))
                 with col_v2:
                     st.caption(
                         "💡 **Zéro impact sur votre forfait Gemini :** La synthèse vocale et le micro fonctionnent directement dans votre navigateur grâce à la Web Speech API HTML5."
@@ -1564,32 +1587,58 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                     )
 
             history = get_chat_history(current_course["id"], user_id=active_user_id)
+            trigger_auto_key = f"auto_speak_trigger_{current_course['id']}"
+            has_auto_trigger = bool(st.session_state.get(trigger_auto_key))
+
             for i, msg in enumerate(history):
                 role = msg["role"]
                 content = msg["content"]
                 with st.chat_message("user" if role == "user" else "assistant", avatar="🧑‍🎓" if role == "user" else "🤖"):
-                    if is_ar:
-                        st.markdown(f"<div class='rtl-box'>{content}</div>", unsafe_allow_html=True)
-                    else:
-                        st.markdown(content)
-
                     if role == "assistant":
-                        tts_html = generate_tts_player_html(
-                            content,
-                            language=current_course.get("language", "fr"),
-                            player_id=f"voice_msg_{current_course['id']}_{i}",
-                            rate=voice_speed,
-                        )
-                        if tts_html:
-                            st.components.v1.html(tts_html, height=36)
+                        col_bot_lbl, col_bot_voice = st.columns([0.90, 0.10])
+                        with col_bot_lbl:
+                            if is_ar:
+                                st.markdown("<div style='font-size:12px; font-weight:600; color:#4b5563; padding-top:4px;'>الأستاذ سَنَد</div>", unsafe_allow_html=True)
+                            else:
+                                st.markdown("<div style='font-size:12px; font-weight:600; color:#4b5563; padding-top:4px;'>Sanad</div>", unsafe_allow_html=True)
+                        with col_bot_voice:
+                            should_auto_play = bool(
+                                auto_speak
+                                and (i == len(history) - 1)
+                                and has_auto_trigger
+                            )
+                            tts_html = generate_tts_player_html(
+                                content,
+                                language=current_course.get("language", "fr"),
+                                player_id=f"voice_msg_{current_course['id']}_{i}",
+                                rate=voice_speed,
+                                compact=True,
+                                auto_play=should_auto_play,
+                            )
+                            if tts_html:
+                                st.components.v1.html(tts_html, height=32)
 
-            # Widget Dictée Vocale au micro (Speech-to-Text gratuit)
-            mic_html = generate_mic_speech_html(
+                        if is_ar:
+                            st.markdown(f"<div class='rtl-box'>{content}</div>", unsafe_allow_html=True)
+                        else:
+                            st.markdown(content)
+                    else:
+                        if is_ar:
+                            st.markdown(f"<div class='rtl-box'>{content}</div>", unsafe_allow_html=True)
+                        else:
+                            st.markdown(content)
+
+            # Réinitialiser le déclencheur de lecture automatique après affichage
+            if has_auto_trigger:
+                st.session_state[trigger_auto_key] = False
+
+            # Injection discrète de l'icône micro directement sur le champ st.chat_input à côté du bouton envoyer
+            mic_injector_html = generate_chat_mic_injector_html(
                 language=current_course.get("language", "fr"),
                 widget_id=f"mic_chat_{current_course['id']}",
             )
-            if mic_html:
-                st.components.v1.html(mic_html, height=75)
+            if mic_injector_html:
+                st.components.v1.html(mic_injector_html, height=0)
 
             chat_placeholder = "اطرح سؤالك على الأستاذ المساعد سند..." if is_ar else ("Ask Sanad a question about this lesson..." if is_en else "Pose ta question à Sanad...")
             user_input = st.chat_input(chat_placeholder)
@@ -1617,14 +1666,8 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                                 st.markdown(f"<div class='rtl-box'>{reply}</div>", unsafe_allow_html=True)
                             else:
                                 st.markdown(reply)
-                            tts_html = generate_tts_player_html(
-                                reply,
-                                language=current_course.get("language", "fr"),
-                                player_id=f"voice_msg_new_{current_course['id']}",
-                                rate=voice_speed,
-                            )
-                            if tts_html:
-                                st.components.v1.html(tts_html, height=36)
+                            if auto_speak:
+                                st.session_state[trigger_auto_key] = True
                     st.rerun()
 
             if history:

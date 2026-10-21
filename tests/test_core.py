@@ -93,6 +93,7 @@ from services.pdf_parser import (
 )
 from services.voice_manager import (
     clean_text_for_speech,
+    generate_chat_mic_injector_html,
     generate_mic_speech_html,
     generate_tts_player_html,
     get_speech_config,
@@ -1116,21 +1117,34 @@ print("debug")
         self.assertEqual(cfg_default["lang_code"], "fr-FR")
 
     def test_generate_tts_player_html_structure(self):
-        html_code = generate_tts_player_html("Bravo champion, continue ainsi !", language="fr", player_id="test_player_1")
+        # Mode compact (par défaut, sans texte)
+        html_code = generate_tts_player_html("Bravo champion, continue ainsi !", language="fr", player_id="test_player_1", compact=True)
         self.assertIn("speechSynthesis", html_code)
         self.assertIn("SpeechSynthesisUtterance", html_code)
         self.assertIn("fr-FR", html_code)
         self.assertIn("btn_test_player_1", html_code)
         self.assertIn("Bravo champion", html_code)
+        self.assertIn("isCompact = true", html_code)
+
+        # Mode avec auto_play
+        html_auto = generate_tts_player_html("Explication Sanad", language="fr", player_id="test_auto_1", auto_play=True)
+        self.assertIn("shouldAutoPlay = true", html_auto)
 
         # Si texte vide
         self.assertEqual(generate_tts_player_html("", language="fr"), "")
 
+    def test_generate_chat_mic_injector_html_structure(self):
+        mic_injector = generate_chat_mic_injector_html(language="ar", widget_id="test_mic_chat")
+        self.assertIn("SpeechRecognition", mic_injector)
+        self.assertIn("ar-SA", mic_injector)
+        self.assertIn("stChatInputSubmitButton", mic_injector)
+        self.assertIn("sanad_chat_input_mic_btn", mic_injector)
+        self.assertIn("stChatInputTextArea", mic_injector)
+
     def test_generate_mic_speech_html_structure(self):
-        mic_html = generate_mic_speech_html(language="ar", widget_id="test_mic_1")
+        mic_html = generate_mic_speech_html(language="fr", widget_id="test_mic_1")
         self.assertIn("SpeechRecognition", mic_html)
-        self.assertIn("ar-SA", mic_html)
-        self.assertIn("mic_btn_test_mic_1", mic_html)
+        self.assertIn("fr-FR", mic_html)
 
 
 if __name__ == "__main__":

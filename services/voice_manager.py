@@ -3,7 +3,10 @@ Module de gestion vocale pour le tuteur socratique Sanad.
 Fournit :
 1. Nettoyage de texte pédagogique pour une élocution naturelle (suppression du Markdown, LaTeX, émojis).
 2. Synthèse vocale trilingue (Français, Arabe, Anglais) basée sur la Web Speech API native du navigateur.
-3. Zéro consommation de quota ou de jetons Google Gemini (100% gratuit côté client).
+3. Bouton d'écoute minimaliste sans texte (icône circulaire design à côté du robot).
+4. Bouton de dictée vocale (micro) injecté directement sur la barre de saisie à côté du bouton envoyer.
+5. Prise en charge de la lecture automatique des réponses de Sanad.
+6. Zéro consommation de quota ou de jetons Google Gemini (100% gratuit côté client).
 """
 
 import html
@@ -28,7 +31,7 @@ def clean_text_for_speech(text: str) -> str:
     # 2. Supprimer les balises HTML (<...>)
     s = re.sub(r"<[^>]+>", " ", s)
 
-    # 3. Remplacer les formules LaTeX display $$ ... $$ par le contenu ou une pause
+    # 3. Remplacer les formules LaTeX display $$ ... $$ par un espace
     s = re.sub(r"\$\$[\s\S]*?\$\$", " ", s)
 
     # 4. Remplacer les formules LaTeX inline $ ... $ par le texte intérieur
@@ -58,8 +61,6 @@ def clean_text_for_speech(text: str) -> str:
     s = re.sub(r"^\s*>\s*", "", s, flags=re.MULTILINE)
 
     # 11. Nettoyer les symboles spéciaux et émojis décoratifs qui polluent la diction
-    # On conserve la ponctuation essentielle : . , ! ? : ; ' " - ()
-    # Les émojis unicode courants (plages \U00010000 à \U0010ffff et quelques symboles)
     s = re.sub(
         r"[\U00010000-\U0010ffff]|[\u2600-\u26ff]|[\u2700-\u27bf]|[\u2300-\u23ff]",
         "",
@@ -81,9 +82,11 @@ def get_speech_config(language: str) -> Dict[str, str]:
             "play_label": "🔊 استمع إلى سَنَد",
             "stop_label": "⏹️ إيقاف الصوت",
             "speaking_label": "🔊 جاري التحدث...",
-            "tooltip": "الاستماع إلى نصائح وتوجيهات الأستاذ سند",
+            "tooltip_play": "استمع إلى إجابة الأستاذ سَنَد",
+            "tooltip_stop": "إيقاف الصوت",
             "dir": "rtl",
             "mic_label": "🎙️ تحدث بالصوت",
+            "mic_tooltip": "تحدث إلى سند (تسجيل صوتي بالمايكروفون)",
             "mic_listening": "🔴 جاري الاستماع...",
         }
     elif lang == "en":
@@ -92,9 +95,11 @@ def get_speech_config(language: str) -> Dict[str, str]:
             "play_label": "🔊 Listen to Sanad",
             "stop_label": "⏹️ Stop Audio",
             "speaking_label": "🔊 Speaking...",
-            "tooltip": "Listen to Sanad's guidance",
+            "tooltip_play": "Listen to Sanad's response",
+            "tooltip_stop": "Stop speaking",
             "dir": "ltr",
             "mic_label": "🎙️ Speak to Sanad",
+            "mic_tooltip": "Speak to Sanad (Microphone dictation)",
             "mic_listening": "🔴 Listening...",
         }
     else:
@@ -103,11 +108,19 @@ def get_speech_config(language: str) -> Dict[str, str]:
             "play_label": "🔊 Écouter Sanad",
             "stop_label": "⏹️ Arrêter",
             "speaking_label": "🔊 Sanad parle...",
-            "tooltip": "Écouter les conseils de Sanad à voix haute",
+            "tooltip_play": "Écouter la réponse de Sanad",
+            "tooltip_stop": "Arrêter la voix",
             "dir": "ltr",
             "mic_label": "🎙️ Parler à Sanad",
+            "mic_tooltip": "Parler à Sanad (Dictée vocale au micro)",
             "mic_listening": "🔴 Écoute en cours...",
         }
+
+
+# SVG Icons
+SVG_SPEAKER = """<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path></svg>"""
+SVG_STOP = """<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="2" ry="2"></rect></svg>"""
+SVG_MIC = """<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg>"""
 
 
 def generate_tts_player_html(
@@ -116,10 +129,14 @@ def generate_tts_player_html(
     player_id: str = "sanad_voice",
     rate: float = 1.0,
     pitch: float = 1.0,
+    compact: bool = True,
+    auto_play: bool = False,
 ) -> str:
     """
     Génère un composant HTML/JavaScript autonome et réactif pour la synthèse vocale.
-    Utilise la Web Speech API native du navigateur (SpeechSynthesis).
+    En mode compact (par défaut) : affiche uniquement une icône circulaire élégante sans texte,
+    parfaitement adaptée pour être logée à côté de l'icône du robot Sanad.
+    Supporte la lecture automatique (auto_play=True).
     Coût : 0 token Gemini, latence 0ms, 100% gratuit.
     """
     cleaned = clean_text_for_speech(text)
@@ -128,21 +145,56 @@ def generate_tts_player_html(
 
     cfg = get_speech_config(language)
     lang_code = cfg["lang_code"]
-    play_label = cfg["play_label"]
-    stop_label = cfg["stop_label"]
+    tooltip_play = cfg["tooltip_play"]
+    tooltip_stop = cfg["tooltip_stop"]
     direction = cfg["dir"]
 
-    # Sérialisation JSON pour échapper proprement tous les caractères (guillemets, accents, retours)
+    # Sérialisation JSON pour échapper proprement tous les caractères
     json_text = json.dumps(cleaned)
     clean_id = re.sub(r"[^a-zA-Z0-9_]", "_", player_id)
 
+    # Styles du bouton selon mode compact ou texte
+    if compact:
+        btn_content = SVG_SPEAKER
+        btn_style = (
+            "display: inline-flex; align-items: center; justify-content: center; "
+            "width: 28px; height: 28px; border-radius: 50%; "
+            "color: #2563eb; background: #eff6ff; border: 1px solid #bfdbfe; "
+            "cursor: pointer; transition: all 0.2s ease; padding: 0; box-shadow: 0 1px 2px rgba(0,0,0,0.04);"
+        )
+    else:
+        btn_content = f"{SVG_SPEAKER} <span id='label_{clean_id}' style='margin-left: 5px;'>{cfg['play_label']}</span>"
+        btn_style = (
+            "display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; "
+            "font-size: 12px; font-weight: 500; color: #1e3a8a; background: #eff6ff; "
+            "border: 1px solid #bfdbfe; border-radius: 16px; cursor: pointer; transition: all 0.2s ease;"
+        )
+
     html_code = f"""
-    <div id="wrapper_{clean_id}" style="display: inline-block; margin: 4px 0 6px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; direction: {direction};">
+    <div id="wrapper_{clean_id}" style="display: inline-block; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; direction: {direction};">
+      <style>
+        #btn_{clean_id}:hover {{
+          transform: scale(1.08);
+          background: #dbeafe !important;
+          border-color: #93c5fd !important;
+        }}
+        @keyframes pulseAudio_{clean_id} {{
+          0% {{ box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.4); }}
+          70% {{ box-shadow: 0 0 0 6px rgba(220, 38, 38, 0); }}
+          100% {{ box-shadow: 0 0 0 0 rgba(220, 38, 38, 0); }}
+        }}
+        .speaking-active_{clean_id} {{
+          animation: pulseAudio_{clean_id} 1.5s infinite;
+        }}
+      </style>
+
       <button id="btn_{clean_id}" 
               onclick="toggleSpeech_{clean_id}()" 
-              title="{html.escape(cfg['tooltip'])}"
-              style="display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; font-size: 12px; font-weight: 500; color: #1e3a8a; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 16px; cursor: pointer; transition: all 0.2s ease; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
-        <span id="label_{clean_id}">{play_label}</span>
+              title="{html.escape(tooltip_play)}"
+              style="{btn_style}">
+        <span id="icon_container_{clean_id}" style="display: flex; align-items: center; justify-content: center;">
+          {btn_content}
+        </span>
       </button>
 
       <script>
@@ -151,6 +203,11 @@ def generate_tts_player_html(
           const langCode = '{lang_code}';
           const rateVal = {rate};
           const pitchVal = {pitch};
+          const isCompact = {'true' if compact else 'false'};
+          const shouldAutoPlay = {'true' if auto_play else 'false'};
+
+          const svgSpeaker = `{SVG_SPEAKER}`;
+          const svgStop = `{SVG_STOP}`;
 
           function getSynth() {{
             try {{
@@ -167,24 +224,40 @@ def generate_tts_player_html(
           function setIdleUI() {{
             isSpeaking = false;
             const btn = document.getElementById("btn_{clean_id}");
-            const lbl = document.getElementById("label_{clean_id}");
-            if (lbl) lbl.textContent = "{play_label}";
+            const icn = document.getElementById("icon_container_{clean_id}");
             if (btn) {{
+              btn.title = "{html.escape(tooltip_play)}";
+              btn.classList.remove("speaking-active_{clean_id}");
               btn.style.background = "#eff6ff";
               btn.style.borderColor = "#bfdbfe";
-              btn.style.color = "#1e3a8a";
+              btn.style.color = "#2563eb";
+            }}
+            if (icn) {{
+              if (isCompact) {{
+                icn.innerHTML = svgSpeaker;
+              }} else {{
+                icn.innerHTML = svgSpeaker + " <span id='label_{clean_id}' style='margin-left:5px;'>{cfg['play_label']}</span>";
+              }}
             }}
           }}
 
           function setSpeakingUI() {{
             isSpeaking = true;
             const btn = document.getElementById("btn_{clean_id}");
-            const lbl = document.getElementById("label_{clean_id}");
-            if (lbl) lbl.textContent = "{stop_label}";
+            const icn = document.getElementById("icon_container_{clean_id}");
             if (btn) {{
+              btn.title = "{html.escape(tooltip_stop)}";
+              btn.classList.add("speaking-active_{clean_id}");
               btn.style.background = "#fee2e2";
               btn.style.borderColor = "#fca5a5";
-              btn.style.color = "#991b1b";
+              btn.style.color = "#dc2626";
+            }}
+            if (icn) {{
+              if (isCompact) {{
+                icn.innerHTML = svgStop;
+              }} else {{
+                icn.innerHTML = svgStop + " <span id='label_{clean_id}' style='margin-left:5px;'>{cfg['stop_label']}</span>";
+              }}
             }}
           }}
 
@@ -209,14 +282,13 @@ def generate_tts_player_html(
             utter.rate = rateVal;
             utter.pitch = pitchVal;
 
-            // Tentative de sélection d'une voix naturelle si disponible
             try {{
               const voices = synth.getVoices();
               if (voices && voices.length > 0) {{
                 const prefix = langCode.split('-')[0].toLowerCase();
                 const matched = voices.filter(v => v.lang && v.lang.toLowerCase().startsWith(prefix));
                 if (matched.length > 0) {{
-                  const natural = matched.find(v => v.name.includes("Google") || v.name.includes("Natural"));
+                  const natural = matched.find(v => v.name.includes("Google") || v.name.includes("Natural") || v.name.includes("Online"));
                   utter.voice = natural || matched[0];
                 }}
               }}
@@ -238,7 +310,15 @@ def generate_tts_player_html(
             synth.speak(utter);
           }};
 
-          // Réinitialiser l'UI si la page se décharge
+          // Lecture automatique si activée
+          if (shouldAutoPlay) {{
+            setTimeout(function() {{
+              if (!isSpeaking) {{
+                window.toggleSpeech_{clean_id}();
+              }}
+            }}, 350);
+          }}
+
           window.addEventListener('beforeunload', function() {{
             const synth = getSynth();
             if (synth) synth.cancel();
@@ -250,164 +330,204 @@ def generate_tts_player_html(
     return html_code
 
 
-def generate_mic_speech_html(language: str = "fr", widget_id: str = "sanad_mic") -> str:
+def generate_chat_mic_injector_html(language: str = "fr", widget_id: str = "chat_mic") -> str:
     """
-    Génère un widget interactif de dictée vocale (Speech-to-Text) au micro.
-    Permet à l'élève de dicter sa question à Sanad sans taper au clavier.
-    Coût : 0 token Gemini, 100% exécuté localement par l'API SpeechRecognition.
+    Génère un script discret qui injecte l'icône de dictée vocale (micro) directement
+    à l'intérieur du champ de saisie de texte st.chat_input, juste à côté du bouton d'envoi.
+    Fournit une expérience utilisateur fluide type WhatsApp / ChatGPT :
+    - Icône micro discrète et élégante
+    - Dictée en temps réel avec insertion directe dans le textarea
+    - Animation rouge pulsante pendant l'écoute
+    Coût : 0 token Gemini, 100% exécuté localement par SpeechRecognition.
     """
     cfg = get_speech_config(language)
     lang_code = cfg["lang_code"]
-    mic_label = cfg["mic_label"]
-    mic_listening = cfg["mic_listening"]
-    direction = cfg["dir"]
+    mic_tooltip = cfg["mic_tooltip"]
     clean_id = re.sub(r"[^a-zA-Z0-9_]", "_", widget_id)
 
     html_code = f"""
-    <div id="mic_wrapper_{clean_id}" style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; direction: {direction}; margin: 4px 0 8px 0;">
-      <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-        <button id="mic_btn_{clean_id}" 
-                onclick="toggleMic_{clean_id}()" 
-                title="Cliquez pour parler à Sanad au micro"
-                style="display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; font-size: 13px; font-weight: 500; color: #065f46; background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 18px; cursor: pointer; transition: all 0.2s ease;">
-          <span id="mic_icon_{clean_id}">🎙️</span>
-          <span id="mic_label_{clean_id}">{mic_label}</span>
-        </button>
-        <span id="mic_status_{clean_id}" style="font-size: 12px; color: #6b7280; font-style: italic;"></span>
-      </div>
-
-      <div id="mic_result_box_{clean_id}" style="display: none; margin-top: 6px; padding: 8px 12px; background: #f9fafb; border: 1px dashed #d1d5db; border-radius: 8px; font-size: 13px; color: #1f2937;">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-          <span style="font-size: 11px; font-weight: 600; color: #4b5563;">Transcription de votre question :</span>
-          <button id="mic_copy_btn_{clean_id}" onclick="copyMicText_{clean_id}()" style="padding: 2px 8px; font-size: 11px; background: #e0e7ff; color: #3730a3; border: none; border-radius: 4px; cursor: pointer;">
-            📋 Copier dans ma question
-          </button>
-        </div>
-        <div id="mic_text_{clean_id}" style="font-weight: 500; color: #111827;"></div>
-      </div>
-
+    <div id="mic_injector_container_{clean_id}" style="display:none; height:0; width:0; overflow:hidden;">
       <script>
         (function() {{
           const langCode = '{lang_code}';
-          let recognition = null;
-          let isListening = false;
-          let finalTranscript = '';
+          const micTooltip = "{html.escape(mic_tooltip)}";
 
-          function getRecognition() {{
+          function getParentDoc() {{
             try {{
-              const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
-              if (SpeechRec) return new SpeechRec();
+              if (window.parent && window.parent.document) return window.parent.document;
+            }} catch(e) {{}}
+            return document;
+          }}
+
+          function getSpeechRecClass() {{
+            try {{
+              if (window.SpeechRecognition) return window.SpeechRecognition;
+              if (window.webkitSpeechRecognition) return window.webkitSpeechRecognition;
               if (window.parent) {{
-                const pSpeechRec = window.parent.SpeechRecognition || window.parent.webkitSpeechRecognition;
-                if (pSpeechRec) return new pSpeechRec();
+                if (window.parent.SpeechRecognition) return window.parent.SpeechRecognition;
+                if (window.parent.webkitSpeechRecognition) return window.parent.webkitSpeechRecognition;
               }}
             }} catch(e) {{}}
             return null;
           }}
 
-          function setListeningUI(listening) {{
+          let recognition = null;
+          let isListening = false;
+          let micBtn = null;
+
+          function setupMic() {{
+            const pDoc = getParentDoc();
+            if (!pDoc) return;
+
+            // Trouver le bouton d'envoi st.chat_input
+            const submitBtn = pDoc.querySelector('button[data-testid="stChatInputSubmitButton"]');
+            if (!submitBtn) return;
+
+            // Vérifier s'il est déjà injecté
+            let existingMic = pDoc.getElementById("sanad_chat_input_mic_btn");
+            if (existingMic) {{
+              // Mettre à jour la langue active
+              existingMic.dataset.langCode = langCode;
+              return;
+            }}
+
+            micBtn = pDoc.createElement("button");
+            micBtn.id = "sanad_chat_input_mic_btn";
+            micBtn.type = "button";
+            micBtn.title = micTooltip;
+            micBtn.dataset.langCode = langCode;
+            micBtn.innerHTML = `{SVG_MIC}`;
+            micBtn.style.cssText = `
+              display: inline-flex;
+              align-items: center;
+              justify-content: center;
+              width: 32px;
+              height: 32px;
+              border-radius: 50%;
+              background: transparent;
+              border: none;
+              color: #6b7280;
+              cursor: pointer;
+              transition: all 0.2s ease;
+              margin-right: 4px;
+              margin-left: 2px;
+              padding: 0;
+              flex-shrink: 0;
+            `;
+
+            micBtn.onmouseenter = function() {{
+              if (!isListening) {{
+                micBtn.style.color = "#2563eb";
+                micBtn.style.background = "#eff6ff";
+              }}
+            }};
+
+            micBtn.onmouseleave = function() {{
+              if (!isListening) {{
+                micBtn.style.color = "#6b7280";
+                micBtn.style.background = "transparent";
+              }}
+            }};
+
+            // Injecter juste avant le bouton d'envoi
+            submitBtn.parentNode.insertBefore(micBtn, submitBtn);
+
+            micBtn.onclick = function(e) {{
+              e.preventDefault();
+              e.stopPropagation();
+
+              if (isListening && recognition) {{
+                recognition.stop();
+                setMicListeningState(false);
+                return;
+              }}
+
+              const RecClass = getSpeechRecClass();
+              if (!RecClass) {{
+                alert("La reconnaissance vocale par micro nécessite un navigateur compatible (Chrome, Edge, Safari).");
+                return;
+              }}
+
+              try {{
+                recognition = new RecClass();
+                recognition.lang = micBtn.dataset.langCode || langCode;
+                recognition.continuous = false;
+                recognition.interimResults = true;
+
+                recognition.onstart = function() {{
+                  setMicListeningState(true);
+                }};
+
+                recognition.onresult = function(event) {{
+                  let interim = '';
+                  let finalTranscript = '';
+                  for (let i = event.resultIndex; i < event.results.length; ++i) {{
+                    if (event.results[i].isFinal) {{
+                      finalTranscript += event.results[i][0].transcript;
+                    }} else {{
+                      interim += event.results[i][0].transcript;
+                    }}
+                  }}
+                  const txt = finalTranscript || interim;
+                  if (txt) {{
+                    insertTextIntoChatInput(txt);
+                  }}
+                }};
+
+                recognition.onerror = function() {{
+                  setMicListeningState(false);
+                }};
+
+                recognition.onend = function() {{
+                  setMicListeningState(false);
+                }};
+
+                recognition.start();
+              }} catch(err) {{
+                setMicListeningState(false);
+              }}
+            }};
+          }}
+
+          function setMicListeningState(listening) {{
             isListening = listening;
-            const btn = document.getElementById("mic_btn_{clean_id}");
-            const lbl = document.getElementById("mic_label_{clean_id}");
-            const st = document.getElementById("mic_status_{clean_id}");
+            if (!micBtn) return;
             if (listening) {{
-              if (lbl) lbl.textContent = "{mic_listening}";
-              if (btn) {{
-                btn.style.background = "#fee2e2";
-                btn.style.borderColor = "#fca5a5";
-                btn.style.color = "#991b1b";
-              }}
-              if (st) st.textContent = "Parlez maintenant distinctement...";
+              micBtn.style.color = "#dc2626";
+              micBtn.style.background = "#fee2e2";
+              micBtn.style.transform = "scale(1.15)";
+              micBtn.title = "🔴 Écoute en cours... Cliquez pour terminer";
             }} else {{
-              if (lbl) lbl.textContent = "{mic_label}";
-              if (btn) {{
-                btn.style.background = "#ecfdf5";
-                btn.style.borderColor = "#a7f3d0";
-                btn.style.color = "#065f46";
-              }}
-              if (st) st.textContent = "";
+              micBtn.style.color = "#6b7280";
+              micBtn.style.background = "transparent";
+              micBtn.style.transform = "scale(1.0)";
+              micBtn.title = micTooltip;
             }}
           }}
 
-          window.toggleMic_{clean_id} = function() {{
-            if (isListening && recognition) {{
-              recognition.stop();
-              setListeningUI(false);
-              return;
+          function insertTextIntoChatInput(text) {{
+            const pDoc = getParentDoc();
+            if (!pDoc) return;
+            const textarea = pDoc.querySelector('textarea[data-testid="stChatInputTextArea"]');
+            if (textarea) {{
+              textarea.value = text;
+              textarea.dispatchEvent(new Event('input', {{ bubbles: true }}));
+              textarea.focus();
             }}
+          }}
 
-            recognition = getRecognition();
-            if (!recognition) {{
-              alert("La reconnaissance vocale par micro n'est pas disponible dans ce contexte. Vous pouvez taper votre question directement.");
-              return;
-            }}
-
-            recognition.lang = langCode;
-            recognition.continuous = false;
-            recognition.interimResults = true;
-            finalTranscript = '';
-
-            recognition.onstart = function() {{
-              setListeningUI(true);
-            }};
-
-            recognition.onresult = function(event) {{
-              let interim = '';
-              for (let i = event.resultIndex; i < event.results.length; ++i) {{
-                if (event.results[i].isFinal) {{
-                  finalTranscript += event.results[i][0].transcript;
-                }} else {{
-                  interim += event.results[i][0].transcript;
-                }}
-              }}
-              const current = finalTranscript || interim;
-              const box = document.getElementById("mic_result_box_{clean_id}");
-              const txt = document.getElementById("mic_text_{clean_id}");
-              if (box && txt && current) {{
-                box.style.display = "block";
-                txt.textContent = current;
-              }}
-            }};
-
-            recognition.onerror = function(event) {{
-              setListeningUI(false);
-            }};
-
-            recognition.onend = function() {{
-              setListeningUI(false);
-              // Tenter d'injecter automatiquement le texte dans le chat Streamlit si accessible
-              try {{
-                if (finalTranscript && window.parent && window.parent.document) {{
-                  const textarea = window.parent.document.querySelector('textarea[data-testid="stChatInputTextArea"]');
-                  if (textarea) {{
-                    textarea.value = finalTranscript;
-                    textarea.dispatchEvent(new Event('input', {{ bubbles: true }}));
-                  }}
-                }}
-              }} catch(e) {{}}
-            }};
-
-            try {{
-              recognition.start();
-            }} catch(err) {{
-              setListeningUI(false);
-            }}
-          }};
-
-          window.copyMicText_{clean_id} = function() {{
-            const txt = document.getElementById("mic_text_{clean_id}");
-            const btn = document.getElementById("mic_copy_btn_{clean_id}");
-            if (txt && txt.textContent) {{
-              navigator.clipboard.writeText(txt.textContent).then(function() {{
-                if (btn) {{
-                  btn.textContent = "✅ Copié !";
-                  setTimeout(() => {{ btn.textContent = "📋 Copier dans ma question"; }}, 2000);
-                }}
-              }});
-            }}
-          }};
+          // Tenter d'injecter immédiatement et avec un observateur
+          setupMic();
+          const timer = setInterval(setupMic, 400);
+          setTimeout(() => clearInterval(timer), 6000);
         }})();
       </script>
     </div>
     """
     return html_code
+
+
+# Rétrocompatibilité pour les anciens appels
+def generate_mic_speech_html(language: str = "fr", widget_id: str = "sanad_mic") -> str:
+    """Conservé pour rétrocompatibilité : délègue à l'injecteur moderne."""
+    return generate_chat_mic_injector_html(language=language, widget_id=widget_id)
