@@ -23,6 +23,7 @@ from models.database import (
     clear_chat_history,
     create_or_get_google_user,
     create_user_session,
+    delete_course,
     delete_user_account,
     delete_user_session,
     get_chat_history,
@@ -1149,6 +1150,106 @@ print("debug")
         mic_html = generate_mic_speech_html(language="fr", widget_id="test_mic_1")
         self.assertIn("SpeechRecognition", mic_html)
         self.assertIn("fr-FR", mic_html)
+
+
+class TestCourseDeletion(unittest.TestCase):
+    """Tests sur la suppression sécurisée et étanche de cours (élèves & administrateurs)."""
+
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.test_db_path = Path(self.temp_dir.name) / "test_deletion.db"
+        os.environ["DATABASE_PATH"] = str(self.test_db_path)
+        init_db(self.test_db_path)
+
+        # Création d'un admin et de deux élèves
+        self.admin = create_or_get_google_user("admin@test.ma", "Directeur", role="admin")
+        self.student1 = create_or_get_google_user("student1@test.ma", "Élève 1", role="student")
+        self.student2 = create_or_get_google_user("student2@test.ma", "Élève 2", role="student")
+
+        # Fichier PDF fictif sur le disque
+        self.pdf_file = Path(self.temp_dir.name) / "cours_thales.pdf"
+        self.pdf_file.write_bytes(b"%PDF-1.4 Mock Course Content")
+
+        # Cours appartenant à l'élève 1
+        self.course1_id = save_course(
+            title="Thalès 3AC",
+            subject="Mathématiques",
+            language="fr",
+            file_path=str(self.pdf_file),
+            file_hash="hash_thales_delete_test",
+            file_name="cours_thales.pdf",
+            raw_text="Thalès cours complet",
+            user_id=self.student1["id"],
+        )
+        self.qid = save_quiz(self.course1_id, [{"question": "Q1", "options": ["A", "B"], "answer_index": 0}], user_id=self.student1["id"])
+        add_chat_message(self.course1_id, "user", "Explication Thalès", user_id=self.student1["id"])
+
+    def tearDown(self):
+        self.temp_dir.cleanup()
+        if "DATABASE_PATH" in os.environ:
+            del os.environ["DATABASE_PATH"]
+
+    def test_student_deletes_own_course_and_cascades(self):
+        # L'élève 1 supprime son propre cours
+        self.assertTrue(self.pdf_file.exists())
+        success = delete_course(self.course1_id, user_id=self.student1["id"])
+        self.assertTrue(success)
+
+        # Le cours n'existe plus en base
+        c = get_course_by_id(self.course1_id, user_id=self.student1["id"])
+        self.assertIsNone(c)
+
+        # Le fichier physique a été supprimé
+        self.assertFalse(self.pdf_file.exists())
+
+        # Les quiz et historiques de chat ont été nettoyés en cascade
+        messages = get_chat_history(self.course1_id, user_id=self.student1["id"])
+        self.assertEqual(len(messages), 0)
+        quiz = get_latest_quiz(self.course1_id, user_id=self.student1["id"])
+        self.assertIsNone(quiz)
+
+    def test_student_cannot_delete_other_student_course(self):
+        # L'élève 2 tente de supprimer le cours de l'élève 1
+        success = delete_course(self.course1_id, user_id=self.student2["id"])
+        self.assertFalse(success)
+
+        # Le cours et le fichier de l'élève 1 sont intacts
+        c = get_course_by_id(self.course1_id, user_id=self.student1["id"])
+        self.assertIsNotNone(c)
+        self.assertTrue(self.pdf_file.exists())
+
+    def test_student_cannot_delete_global_shared_course(self):
+        # Création d'un cours commun partagé (user_id=None)
+        global_pdf = Path(self.temp_dir.name) / "cours_global.pdf"
+        global_pdf.write_bytes(b"%PDF-1.4 Global Course")
+        global_cid = save_course(
+            title="Histoire-Géo Tronc Commun",
+            subject="Histoire-Géo",
+            language="fr",
+            file_path=str(global_pdf),
+            file_hash="hash_global_shared_delete_test",
+            file_name="cours_global.pdf",
+            user_id=None,
+        )
+
+        # L'élève tente de supprimer le cours commun avec son user_id
+        success = delete_course(global_cid, user_id=self.student1["id"])
+        self.assertFalse(success)
+
+        # Le cours global existe toujours
+        c = get_course_by_id(global_cid, user_id=self.student1["id"])
+        self.assertIsNotNone(c)
+        self.assertTrue(global_pdf.exists())
+
+    def test_admin_can_delete_any_course(self):
+        # L'administrateur supprime le cours avec user_id=None
+        success = delete_course(self.course1_id, user_id=None)
+        self.assertTrue(success)
+
+        # Le cours et son fichier sont bien supprimés
+        c = get_course_by_id(self.course1_id)
+        self.assertIsNone(c)
+        self.assertFalse(self.pdf_file.exists())
 
 
 if __name__ == "__main__":
