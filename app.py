@@ -1583,10 +1583,13 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
             with col_hdr_title:
                 if is_ar:
                     st.markdown("<div class='rtl-section-title'>🤖 الأستاذ المساعد : سَنَد</div>", unsafe_allow_html=True)
+                    st.caption(f"مرافقك الذكي بالمنهج السقراطي لمستوى {active_cycle['cycle_name']} ({active_cycle['age']} سنة) — يرشدك خطوة بخطوة دون إعطاء الحلول الجاهزة!")
                 elif is_en:
                     st.markdown("### 🤖 Socratic AI Tutor: Sanad")
+                    st.caption(f"Your mentor for {active_cycle['cycle_name']} ({active_cycle['age']} yo) — Socratic guidance step-by-step!")
                 else:
                     st.markdown("### 🤖 Tuteur Virtuel : Sanad")
+                    st.caption(f"Ton Grand Frère & Mentor pour le niveau {active_cycle['cycle_name']} ({active_cycle['age']} ans) — Méthode socratique : il te guide sans faire les exercices à ta place !")
             with col_hdr_toggle:
                 auto_speak = st.toggle(
                     "🔊 Lecture vocale auto" if not is_en else ("🔊 Auto-speak" if is_en else "🔊 قراءة تلقائية"),
@@ -1624,6 +1627,36 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                             else "💡 **دون استهلاك رصيد Gemini :** قراءة النصوص وتسجيل الصوت يعملان محلياً في متصفحك عبر تقنية Web Speech API."
                         )
                     )
+
+            # Suggestions de questions rapides en 1 clic adaptées à la langue et à l'âge
+            sug_header = "**أسئلة سريعة بنقرة واحدة :**" if is_ar else ("**Quick 1-click questions:**" if is_en else "**Questions rapides en un clic :**")
+            st.write(sug_header)
+            sug_cols = st.columns(3)
+            suggested_prompt = None
+            student_age = active_cycle.get("age", 14)
+
+            if is_ar:
+                if sug_cols[0].button("💡 اشرح لي ببساطة", key=f"sug_btn_1_{current_course['id']}", use_container_width=True):
+                    suggested_prompt = f"اشْرَحْ لِي فِكْرَةَ هَذَا الدَّرْسِ بِبَسَاطَةٍ كَمَا لَوْ كَانَ عُمْرِي {student_age} سَنَةً."
+                if sug_cols[1].button("⚠️ فخاخ الامتحان", key=f"sug_btn_2_{current_course['id']}", use_container_width=True):
+                    suggested_prompt = "مَا هِيَ أَهَمُّ الفِخَاخِ وَالأَسْئِلَةِ المُفَخَّخَةِ الَّتِي يَضَعُهَا الأَسَاتِذَةُ فِي الامْتِحَانِ لِهَذَا الدَّرْسِ وَكَيْفَ أَتَجَنَّبُهَا؟"
+                if sug_cols[2].button("❓ اختبر فهمي", key=f"sug_btn_3_{current_course['id']}", use_container_width=True):
+                    suggested_prompt = "اطْرَحْ عَلَيَّ سُؤَالاً تَوْجِيهِياً لِاخْتِبَارِ فَهْمِي لِهَذَا الدَّرْسِ وَسَاعِدْنِي فِي الإِجَابَةِ عَنْهُ خُطْوَةً بِخُطْوَةٍ."
+            elif is_en:
+                if sug_cols[0].button("💡 Explain simply", key=f"sug_btn_1_{current_course['id']}", use_container_width=True):
+                    suggested_prompt = f"Can you explain the main idea of this lesson using a simple real-life analogy adapted to a {student_age}-year-old student?"
+                if sug_cols[1].button("⚠️ Exam pitfalls", key=f"sug_btn_2_{current_course['id']}", use_container_width=True):
+                    suggested_prompt = "What are the common exam pitfalls and tricky questions on this topic, and how can I avoid them?"
+                if sug_cols[2].button("❓ Ask me a question", key=f"sug_btn_3_{current_course['id']}", use_container_width=True):
+                    suggested_prompt = "Ask me a guiding question to test my understanding, and guide me step-by-step."
+            else:
+                exam_term = "au brevet" if student_age <= 15 else "au bac"
+                if sug_cols[0].button("💡 Explique-moi simplement", key=f"sug_btn_1_{current_course['id']}", use_container_width=True):
+                    suggested_prompt = f"Peux-tu m'expliquer l'idée générale de ce cours avec une analogie simple de la vie courante adaptée à un élève de {student_age} ans ?"
+                if sug_cols[1].button(f"⚠️ Pièges {exam_term}", key=f"sug_btn_2_{current_course['id']}", use_container_width=True):
+                    suggested_prompt = f"Quels sont les pièges classiques posés à l'examen sur ce sujet et comment les éviter ?"
+                if sug_cols[2].button("❓ Pose-moi une question", key=f"sug_btn_3_{current_course['id']}", use_container_width=True):
+                    suggested_prompt = "Pose-moi une petite question pour tester si j'ai bien compris, et guide-moi pour répondre."
 
             history = get_chat_history(current_course["id"], user_id=active_user_id)
             trigger_auto_key = f"auto_speak_trigger_{current_course['id']}"
@@ -1675,13 +1708,14 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
 
             chat_placeholder = "اطرح سؤالك على الأستاذ المساعد سند..." if is_ar else ("Ask Sanad a question about this lesson..." if is_en else "Pose ta question à Sanad...")
             user_input = st.chat_input(chat_placeholder)
-            if user_input:
+            prompt_to_send = user_input or suggested_prompt
+            if prompt_to_send:
                 if not user_api_key:
                     st.error("⚠️ Clé API Gemini requise pour échanger avec Sanad. Obtenez votre clé 100% gratuite sur [Google AI Studio](https://aistudio.google.com/) et activez-la dans **⚙️ Paramètres** ou la barre latérale." if not is_en else "⚠️ Gemini API key required to chat with Sanad. Get your free key on [Google AI Studio](https://aistudio.google.com/) and configure it in **⚙️ Settings** or the sidebar.")
                 else:
-                    add_chat_message(current_course["id"], "user", user_input, user_id=active_user_id)
+                    add_chat_message(current_course["id"], "user", prompt_to_send, user_id=active_user_id)
                     with st.chat_message("user", avatar="🧑‍🎓"):
-                        st.markdown(user_input)
+                        st.markdown(prompt_to_send)
 
                     with st.chat_message("assistant", avatar="🤖"):
                         spinner_txt = "Sanad prépare ses conseils..." if not is_en else "Sanad is thinking..."

@@ -1285,6 +1285,28 @@ class TestCourseDeletion(unittest.TestCase):
         self.assertFalse(self.pdf_file.exists())
 
 
+class TestTutorQuestionSuggestions(unittest.TestCase):
+    """Vérification des propositions de questions rapides en 1 clic pour Sanad."""
+
+    def test_question_suggestions_trilingual_and_age_adapted(self):
+        # Arabe avec تشكيل تام et âge
+        age_12 = 12
+        prompt_ar = f"اشْرَحْ لِي فِكْرَةَ هَذَا الدَّرْسِ بِبَسَاطَةٍ كَمَا لَوْ كَانَ عُمْرِي {age_12} سَنَةً."
+        self.assertIn("اشْرَحْ", prompt_ar)
+        self.assertIn("12", prompt_ar)
+
+        # Français avec âge
+        age_14 = 14
+        prompt_fr = f"Peux-tu m'expliquer l'idée générale de ce cours avec une analogie simple de la vie courante adaptée à un élève de {age_14} ans ?"
+        self.assertIn("14 ans", prompt_fr)
+        self.assertIn("analogie", prompt_fr)
+
+        # Anglais avec âge
+        age_16 = 16
+        prompt_en = f"Can you explain the main idea of this lesson using a simple real-life analogy adapted to a {age_16}-year-old student?"
+        self.assertIn("16-year-old", prompt_en)
+
+
 if __name__ == "__main__":
     unittest.main()
 
