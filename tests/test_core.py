@@ -27,6 +27,7 @@ from models.database import (
     get_course_by_id,
     get_global_admin_kpis,
     get_latest_quiz,
+    get_pedagogical_cycle,
     get_quiz_stats,
     get_setting,
     get_user_by_email,
@@ -45,9 +46,11 @@ from models.database import (
     set_user_setting,
     update_course_metadata,
     update_course_summary,
+    update_user_age,
+    update_user_name,
     update_user_role,
 )
-from services.ai_engine import clean_json_output
+from services.ai_engine import clean_json_output, resolve_student_age
 from services.auth_manager import (
     check_active_user_session,
     extract_auth_code,
@@ -772,6 +775,191 @@ class TestOAuthRedirectAndCodeHandling(unittest.TestCase):
                 cred_path.write_bytes(original_content)
             elif cred_path.exists():
                 cred_path.unlink()
+
+
+class TestPedagogicalAdaptationAndUserProfiles(unittest.TestCase):
+    """Tests pour l'adaptation pédagogique multi-âges et la gestion des profils élèves."""
+
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.test_db_path = Path(self.temp_dir.name) / "test_pedagogy.db"
+        os.environ["DATABASE_PATH"] = str(self.test_db_path)
+        init_db(self.test_db_path)
+
+        # Création d'un admin et de deux élèves
+        self.admin = create_or_get_google_user("admin@test.ma", "Directeur Adnane", role="admin")
+        self.student_1 = create_or_get_google_user("student1@test.ma", "Adnane Junior", role="student")
+        self.student_2 = create_or_get_google_user("student2@test.ma", "Yassine Bac", role="student")
+
+    def tearDown(self):
+        self.temp_dir.cleanup()
+        if "DATABASE_PATH" in os.environ:
+            del os.environ["DATABASE_PATH"]
+
+    def test_pedagogical_cycle_mapping(self):
+        # Primaire (5 à 10 ans)
+        c5 = get_pedagogical_cycle(5)
+        c8 = get_pedagogical_cycle(8)
+        c10 = get_pedagogical_cycle(10)
+        self.assertEqual(c5["stage"], "primary")
+        self.assertEqual(c8["stage"], "primary")
+        self.assertEqual(c10["stage"], "primary")
+        self.assertIn("Primaire", c8["stage_label"])
+        self.assertIn("8 ans", c8["badge_text"])
+
+        # Collège (11 à 14 ans ou défaut)
+        c11 = get_pedagogical_cycle(11)
+        c14 = get_pedagogical_cycle(14)
+        c_default = get_pedagogical_cycle(None)
+        c_invalid = get_pedagogical_cycle("not_a_number")
+        self.assertEqual(c11["stage"], "middle")
+        self.assertEqual(c14["stage"], "middle")
+        self.assertEqual(c_default["stage"], "middle")
+        self.assertEqual(c_invalid["stage"], "middle")
+        self.assertIn("Collège", c14["stage_label"])
+
+        # Lycée (15 à 18 ans)
+        c15 = get_pedagogical_cycle(15)
+        c17 = get_pedagogical_cycle(17)
+        c18 = get_pedagogical_cycle(18)
+        self.assertEqual(c15["stage"], "high")
+        self.assertEqual(c17["stage"], "high")
+        self.assertEqual(c18["stage"], "high")
+        self.assertIn("Lycée", c17["stage_label"])
+
+        # Supérieur / Adulte (19 ans et +)
+        c19 = get_pedagogical_cycle(19)
+        c25 = get_pedagogical_cycle(25)
+        c40 = get_pedagogical_cycle(40)
+        self.assertEqual(c19["stage"], "higher")
+        self.assertEqual(c25["stage"], "higher")
+        self.assertEqual(c40["stage"], "higher")
+        self.assertIn("Supérieur", c25["stage_label"])
+
+        # Clamping
+        c_low = get_pedagogical_cycle(2)
+        self.assertEqual(c_low["age"], 5)
+        c_high = get_pedagogical_cycle(120)
+        self.assertEqual(c_high["age"], 100)
+
+    def test_update_user_name_and_oauth_preservation(self):
+        uid = self.student_1["id"]
+        # Vérification initiale has_custom_name = 0
+        u_init = get_user_by_id(uid)
+        self.assertEqual(u_init["has_custom_name"], 0)
+        self.assertEqual(u_init["name"], "Adnane Junior")
+
+        # Mise à jour du nom par l'élève
+        ok, msg = update_user_name(uid, "Adnane Personnalisé")
+        self.assertTrue(ok)
+        u_updated = get_user_by_id(uid)
+        self.assertEqual(u_updated["name"], "Adnane Personnalisé")
+        self.assertEqual(u_updated["has_custom_name"], 1)
+
+        # Nouvelle connexion Google avec un nom Google différent
+        user_reconnected = create_or_get_google_user("student1@test.ma", "Google Name From OAuth")
+        # Le nom personnalisé doit impérativement être conservé
+        self.assertEqual(user_reconnected["name"], "Adnane Personnalisé")
+
+        # Validation : refus des noms vides ou trop courts/longs
+        ok_empty, _ = update_user_name(uid, "   ")
+        self.assertFalse(ok_empty)
+        ok_short, _ = update_user_name(uid, "A")
+        self.assertFalse(ok_short)
+        ok_long, _ = update_user_name(uid, "A" * 65)
+        self.assertFalse(ok_long)
+
+    def test_update_user_age_and_validation(self):
+        uid = self.student_1["id"]
+        # Mise à jour valide
+        ok, msg = update_user_age(uid, 9)
+        self.assertTrue(ok)
+        u = get_user_by_id(uid)
+        self.assertEqual(u["age"], 9)
+
+        # Validation : non entier ou hors limites
+        ok_err1, _ = update_user_age(uid, "invalid")
+        self.assertFalse(ok_err1)
+        ok_err2, _ = update_user_age(uid, 4)
+        self.assertFalse(ok_err2)
+        ok_err3, _ = update_user_age(uid, 105)
+        self.assertFalse(ok_err3)
+
+    def test_resolve_student_age(self):
+        uid = self.student_1["id"]
+        update_user_age(uid, 8)
+
+        # Résolution via le profil en base
+        self.assertEqual(resolve_student_age(user_id=uid), 8)
+
+        # Résolution avec âge explicite qui prévaut sur le profil
+        self.assertEqual(resolve_student_age(user_id=uid, age=17), 17)
+
+        # Résolution sans user ni age -> défaut 14
+        self.assertEqual(resolve_student_age(None, None), 14)
+
+    def test_admin_kpis_accurate_courses_and_no_cartesian_product(self):
+        # 1. Ajout de 2 cours partagés pour l'établissement (user_id=None)
+        c1 = save_course("Maths 3AC Partagé", "Mathématiques", "fr", "/f/m.pdf", "hash_shared_math", "m.pdf", user_id=None)
+        c2 = save_course("PC 3AC Partagé", "Physique-Chimie", "fr", "/f/pc.pdf", "hash_shared_pc", "pc.pdf", user_id=None)
+
+        # 2. Student 1 ajoute un cours personnel avec un hash différent
+        c3 = save_course("SVT Perso", "SVT", "fr", "/f/svt.pdf", "hash_perso_svt", "svt.pdf", user_id=self.student_1["id"])
+
+        # 3. Student 1 réalise 3 tentatives de quiz
+        qid = save_quiz(c1, [{"question": "Q1", "options": ["A", "B"], "answer_index": 0}], user_id=self.student_1["id"])
+        save_quiz_attempt(c1, qid, score=1, total_questions=1, answers={0: 0}, user_id=self.student_1["id"])
+        save_quiz_attempt(c1, qid, score=1, total_questions=1, answers={0: 0}, user_id=self.student_1["id"])
+        save_quiz_attempt(c1, qid, score=1, total_questions=1, answers={0: 0}, user_id=self.student_1["id"])
+
+        # Récupération des KPIs d'administration
+        kpis = get_global_admin_kpis()
+
+        # Le nombre total de cours distincts doit être 3
+        self.assertEqual(kpis["total_courses"], 3)
+        self.assertEqual(kpis["total_students"], 2)
+        self.assertEqual(kpis["active_students"], 2)
+
+        # Vérification du résumé par élève sans produit cartésien
+        student_rows = {s["user_id"]: s for s in kpis["students_summary"]}
+        s1_summary = student_rows[self.student_1["id"]]
+        s2_summary = student_rows[self.student_2["id"]]
+
+        # Student 1 a accès aux 2 cours partagés + 1 personnel = 3 cours
+        self.assertEqual(s1_summary["course_count"], 3)
+        # Le nombre de tentatives doit rester exactement 3 (pas multiplié par 3 cours = 9)
+        self.assertEqual(s1_summary["attempt_count"], 3)
+        self.assertEqual(s1_summary["student_questions"], 3)
+        self.assertEqual(s1_summary["student_score"], 3)
+
+        # Student 2 a accès aux 2 cours partagés = 2 cours
+        self.assertEqual(s2_summary["course_count"], 2)
+        self.assertEqual(s2_summary["attempt_count"], 0)
+
+    def test_list_courses_deduplication_personal_over_global(self):
+        # Un cours de base global partagé
+        save_course("Histoire Maroc Base", "الاجتماعيات", "ar", "/f/hist.pdf", "hash_same_history", "hist.pdf", user_id=None)
+
+        # Student 1 a initialement accès au cours global
+        courses_s1_init = list_courses(user_id=self.student_1["id"])
+        self.assertEqual(len(courses_s1_init), 1)
+        self.assertIsNone(courses_s1_init[0]["user_id"])
+
+        # Student 1 enregistre sa propre copie personnalisée du même cours (même hash)
+        cid_perso = save_course("Mon Histoire Maroc Custom", "الاجتماعيات", "ar", "/f/hist_perso.pdf", "hash_same_history", "hist_perso.pdf", user_id=self.student_1["id"])
+
+        # list_courses pour Student 1 ne doit renvoyer qu'1 seul cours (dédoublonné), avec sa copie prioritaire
+        courses_s1 = list_courses(user_id=self.student_1["id"])
+        self.assertEqual(len(courses_s1), 1)
+        self.assertEqual(courses_s1[0]["id"], cid_perso)
+        self.assertEqual(courses_s1[0]["title"], "Mon Histoire Maroc Custom")
+        self.assertEqual(courses_s1[0]["user_id"], self.student_1["id"])
+
+        # Student 2 voit toujours le cours de base global sans collision
+        courses_s2 = list_courses(user_id=self.student_2["id"])
+        self.assertEqual(len(courses_s2), 1)
+        self.assertEqual(courses_s2[0]["title"], "Histoire Maroc Base")
+        self.assertIsNone(courses_s2[0]["user_id"])
 
 
 if __name__ == "__main__":

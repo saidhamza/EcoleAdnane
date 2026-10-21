@@ -7,9 +7,9 @@ Garantit la stricte parité linguistique (Arabe / Français) et la pédagogie so
 import json
 import logging
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
-from models.database import get_setting, set_setting
+from models.database import get_pedagogical_cycle, get_setting, get_user_by_id, set_setting
 from services.config_manager import (
     get_gemini_api_key,
     get_openai_api_key,
@@ -18,6 +18,23 @@ from services.config_manager import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def resolve_student_age(user_id: Optional[int] = None, age: Optional[int] = None) -> int:
+    """Résout l'âge de l'élève à partir de l'argument explicite ou du profil en base (défaut : 14)."""
+    if age is not None:
+        try:
+            return max(5, min(100, int(age)))
+        except (ValueError, TypeError):
+            pass
+    if user_id is not None:
+        try:
+            u = get_user_by_id(user_id)
+            if u and u.get("age"):
+                return max(5, min(100, int(u["age"])))
+        except Exception:
+            pass
+    return 14
 
 
 # ---------------------------------------------------------------------------
@@ -237,21 +254,107 @@ def generate_revision_sheet(
     subject: str,
     language: str,
     user_id: Optional[int] = None,
+    age: Optional[int] = None,
 ) -> str:
     """
-    Génère une 'Fiche Express' adaptée à un élève de 14 ans (3AC Maroc).
-    Structure : Définitions incontournables, Formules/Dates, Pièges d'examen normalisé, Astuce de rédaction.
+    Génère une 'Fiche Express' adaptée à l'âge de l'élève (Primaire, Collège, Lycée, Supérieur/Adulte).
+    Structure adaptée au niveau cognitif et scolaire.
     """
     excerpt = raw_text[:5000]
+    student_age = resolve_student_age(user_id=user_id, age=age)
+    cycle = get_pedagogical_cycle(student_age)
+    stage = cycle["stage"]
 
     if language == "ar":
-        sys_prompt = (
-            "أنت أستاذ مغربي متميز ومحبوب من تلاميذ السنة الثالثة إعدادي (3AC).\n"
-            "أسلوبك واضح، محفز، دقيق وخالٍ من التعقيد الأكاديمي.\n"
-            "أنت تكتب بطاقة مراجعة مركزة للامتحان الموحد (المحلي أو الجهوي).\n"
-            "قاعدة صارمة: اكتب حصرياً وبالكامل باللغة العربية الفصحى السلسة والمتقنة مع تشكيل الكلمات الضرورية."
-        )
-        user_prompt = f"""
+        if stage == "primary":
+            sys_prompt = (
+                f"أنت معلم متميز ومحبوب جداً من تلاميذ المرحلة الابتدائية (عمر التلميذ: {student_age} سنوات).\n"
+                "أسلوبك لطيف للغاية، واضح، مشجع، مبسط وخالٍ تماماً من التعقيدات الأكاديمية.\n"
+                "قاعدة صارمة: اكتب حصرياً وبالكامل باللغة العربية الفصحى السلسة والمحببة مع تشكيل الكلمات الضرورية."
+            )
+            user_prompt = f"""
+قم بإعداد "بطاقة مراجعة مبسطة وممتعة" (Fiche Express) تناسب تلميذاً عمره {student_age} سنوات لدرس من مادة: {subject}.
+محتوى الدرس:
+---
+{excerpt}
+---
+
+قم بتنسيق البطاقة بتنسيق Markdown الجميل مستخدماً العناوين والأيقونات التالية حصراً:
+
+## 🎯 الكلمات والمفاهيم المهمة (التي يجب أن أعرفها)
+(قدم 3 إلى 4 مفاهيم بأسلوب مبسط جداً وأمثلة ممتعة تناسب طفلاً عمره {student_age} سنوات)
+
+## 📌 القواعد الذهبية البسيطة
+(أهم نقطتين أو 3 نقاط بأسلوب ممتع ومباشر لتسهيل التذكر)
+
+## ⚠️ انتبه يا بطل ولا تقع في هذا الخطأ
+(خطأ شائع يقع فيه الأطفال يتم توضيحه بلطف وتشجيع)
+
+## 💡 سر التفوق والنجاح
+(نصيحة جميلة وتشجيع حار للطفل للتألق في القسم)
+"""
+        elif stage == "high":
+            sys_prompt = (
+                f"أنت أستاذ خبير ومتميز في المرحلة الثانوية التأهيلية لمواكبة تلميذ في سلك البكالوريا (عمره {student_age} سنة).\n"
+                "أسلوبك دقيق، أكاديمي، منهجي، يركز على الرقي المعرفي والاستعداد للامتحانات الإشهادية (الجهوي والوطني).\n"
+                "قاعدة صارمة: اكتب حصرياً وبالكامل باللغة العربية الفصحى الأكاديمية والمنهجية."
+            )
+            user_prompt = f"""
+قم بإعداد "بطاقة مراجعة مركزة" (Fiche Express) لسلك البكالوريا (تلميذ عمره {student_age} سنة) لدرس من مادة: {subject}.
+محتوى الدرس:
+---
+{excerpt}
+---
+
+قم بتنسيق البطاقة بتنسيق Markdown الجميل مستخدماً العناوين والأيقونات التالية حصراً:
+
+## 🎯 المفاهيم والمصطلحات المركزية والمحددات النظرية
+(3 إلى 5 تعريفات ومفاهيم دقيقة بمصطلحات المادة والمقرر التأهيلي)
+
+## 📌 القواعد والبرهنات والمنهجيات الأساسية
+(الصيغ الرياضية والعلمية أو الخطوات المنهجية المعتمدة في إطار الامتحان الوطني/الجهوي)
+
+## ⚠️ فخاخ ومزالق الامتحانات الإشهادية (البكالوريا)
+(2 إلى 3 فخاخ نموذجية في أسئلة الامتحان وطرق تفاديها بالبرهان والدقة)
+
+## 💡 توجيهات منهجية لضمان الامتياز في التحرير
+(نصيحة لتحرير إجابة نموذجية تستوفي عناصر سلم التنقيط والتميز)
+"""
+        elif stage == "higher":
+            sys_prompt = (
+                f"أنت موجه أكاديمي وأستاذ جامعي يواكب متعلماً راشداً أو طالباً في التعليم العالي (عمره {student_age} سنة).\n"
+                "أسلوبك رفيع، تحليلي، نقدي، يركز على الأسس النظرية والتطبيقات العملية والمهنية.\n"
+                "قاعدة صارمة: اكتب حصرياً باللغة العربية الفصحى الرصينة والمتقنة."
+            )
+            user_prompt = f"""
+قم بإعداد "بطاقة مراجعة وتلخيص تحليلي" (Fiche Express) لمتعلم في التعليم العالي/المستوى المتقدم (عمره {student_age} سنة) لموضوع: {subject}.
+محتوى المادة:
+---
+{excerpt}
+---
+
+قم بتنسيق البطاقة بتنسيق Markdown مستخدماً العناوين التالية حصراً:
+
+## 🎯 المفاهيم المحورية والأسس النظرية
+(3 إلى 5 مفاهيم مركزية محددة بدقة فلسفية وعلمية)
+
+## 📌 النماذج والقواعد التحليلية والتطبيقية
+(المناهج، الصيغ أو الأطر التحليلية ذات الصلة)
+
+## ⚠️ الأخطاء التحليلية والمنهجية الشائعة
+(الانزلاقات المنهجية التي يجب الحذر منها في هذا التخصص)
+
+## 💡 رؤية نقدية وتوجيهات للتعمق والامتياز
+(توجيهات لتعميق الفهم وربطه بالسياقات المهنية أو الأكاديمية)
+"""
+        else:  # middle (défaut 11-14 ans)
+            sys_prompt = (
+                f"أنت أستاذ مغربي متميز ومحبوب من تلاميذ المرحلة الإعدادية (عمر التلميذ: {student_age} سنة).\n"
+                "أسلوبك واضح، محفز، دقيق وخالٍ من التعقيد الأكاديمي.\n"
+                "أنت تكتب بطاقة مراجعة مركزة للامتحان الموحد (المحلي أو الجهوي).\n"
+                "قاعدة صارمة: اكتب حصرياً وبالكامل باللغة العربية الفصحى السلسة والمتقنة مع تشكيل الكلمات الضرورية."
+            )
+            user_prompt = f"""
 قم بإعداد "بطاقة مراجعة سريعة" (Fiche Express) لدرس من مادة: {subject}.
 محتوى الدرس:
 ---
@@ -261,7 +364,7 @@ def generate_revision_sheet(
 قم بتنسيق البطاقة بتنسيق Markdown الجميل مستخدماً العناوين والأيقونات التالية حصراً:
 
 ## 🎯 المفاهيم والتعاريف الأساسية (التي تتكرر في الامتحان)
-(قدم 3 إلى 5 تعاريف أو مفاهيم لا بد منها بأسلوب مبسط ومباشر يفهمه تلميذ عمره 14 سنة)
+(قدم 3 إلى 5 تعاريف أو مفاهيم لا بد منها بأسلوب مبسط ومباشر يفهمه تلميذ عمره {student_age} سنة)
 
 ## 📌 القواعد الذهبية / التواريخ والعناصر المفتاحية
 (قدم الصيغ أو الخطوات المنهجية أو التواريخ الأساسية حسب المادة بنقاط واضحة)
@@ -272,14 +375,97 @@ def generate_revision_sheet(
 ## 💡 نصيحة التحرير لضمان النقطة الكاملة
 (نصيحة عملية لكتابة الإجابة بشكل يرضي المصحح)
 """
+
     elif language == "en":
-        sys_prompt = (
-            "You are an inspiring and supportive English teacher in Morocco for 14-year-old students in 3rd Year Middle School (3AC).\n"
-            "Your style is clear, motivating, encouraging, and focused on exam success.\n"
-            "Strict rule: Write entirely in clear, simple and correct English."
-        )
-        user_prompt = f"""
-Prepare a concise and high-impact 'Revision Sheet' (Fiche Express) for this 3AC English lesson.
+        if stage == "primary":
+            sys_prompt = (
+                f"You are an inspiring, warm, and highly supportive primary school teacher for a {student_age}-year-old child.\n"
+                "Your style is playful, simple, clear, encouraging, and easy to understand.\n"
+                f"Strict rule: Write entirely in clear, simple English suited for a {student_age}-year-old learner."
+            )
+            user_prompt = f"""
+Prepare a fun and clear 'Revision Sheet' (Fiche Express) for a {student_age}-year-old child studying: {subject}.
+Course content:
+---
+{excerpt}
+---
+
+Format the sheet in clean Markdown using EXACTLY these section headers and icons:
+
+## 🎯 Super Words & Key Ideas to Remember
+(3 to 4 easy words or concepts with friendly examples for a {student_age}-year-old learner)
+
+## 📌 Golden Rules Made Easy
+(The 2 or 3 essential points explained simply and clearly)
+
+## ⚠️ Watch Out for This Little Trap!
+(A common mistake to avoid with gentle, cheerful guidance)
+
+## 💡 Star Tip to Do Great
+(A positive, encouraging tip for success in class)
+"""
+        elif stage == "high":
+            sys_prompt = (
+                f"You are a dedicated high school educator preparing a {student_age}-year-old student for secondary exams and the Baccalaureate.\n"
+                "Your style is rigorous, conceptually precise, analytical, and focused on exam mastery.\n"
+                "Strict rule: Write entirely in clear, correct, and academically rigorous English."
+            )
+            user_prompt = f"""
+Prepare an advanced 'Revision Sheet' (Fiche Express) for a {student_age}-year-old high school student studying: {subject}.
+Course content:
+---
+{excerpt}
+---
+
+Format the sheet in clean Markdown using EXACTLY these section headers and icons:
+
+## 🎯 Core Academic Vocabulary & Conceptual Foundations
+(3 to 5 precise terms and definitions required for secondary / Baccalaureate mastery)
+
+## 📌 Analytical Rules & Methodological Patterns
+(Formulas, grammatical rules, or analytical structures in clear bullet points)
+
+## ⚠️ Critical Exam Traps & Pitfalls to Avoid
+(2 to 3 sophisticated mistakes to avoid on standardized secondary exams)
+
+## 💡 Advanced Strategy for Top Marks
+(A methodological tip to craft high-scoring responses and excel on the exam)
+"""
+        elif stage == "higher":
+            sys_prompt = (
+                f"You are an academic mentor and expert educator assisting a university student or adult learner ({student_age} years old).\n"
+                "Your style is professional, intellectually thorough, concise, and focused on conceptual synthesis.\n"
+                "Strict rule: Write entirely in advanced, clear, and professional English."
+            )
+            user_prompt = f"""
+Prepare a thorough 'Conceptual Synthesis' (Fiche Express) for a higher education learner ({student_age} years old) on: {subject}.
+Course content:
+---
+{excerpt}
+---
+
+Format the sheet in clean Markdown using EXACTLY these section headers and icons:
+
+## 🎯 Theoretical Frameworks & Key Concepts
+(3 to 5 primary concepts defined with precision)
+
+## 📌 Methodologies & Applied Principles
+(Key models, frameworks, and practical applications)
+
+## ⚠️ Analytical Pitfalls & Nuances to Master
+(Subtle distinctions and methodological errors to avoid)
+
+## 💡 Synthesis & Critical Insights
+(Actionable takeaways and higher-order perspective)
+"""
+        else:  # middle (défaut 11-14 ans)
+            sys_prompt = (
+                f"You are an inspiring and supportive English teacher for {student_age}-year-old students in Middle School (3AC).\n"
+                "Your style is clear, motivating, encouraging, and focused on exam success.\n"
+                "Strict rule: Write entirely in clear, simple and correct English."
+            )
+            user_prompt = f"""
+Prepare a concise and high-impact 'Revision Sheet' (Fiche Express) for this lesson ({subject}).
 Course content:
 ---
 {excerpt}
@@ -288,24 +474,107 @@ Course content:
 Format the sheet in clean Markdown using EXACTLY these section headers and icons:
 
 ## 🎯 Essential Vocabulary & Key Terms
-(3 to 5 must-know words and expressions with clear, simple definitions or examples for a 14-year-old student)
+(3 to 5 must-know words and expressions with clear, simple definitions or examples for a {student_age}-year-old student)
 
 ## 📌 Grammar Rules & Sentence Patterns
 (Key tenses, sentence structures, or grammar rules with easy examples)
 
 ## ⚠️ Common Exam Traps & Mistakes to Avoid
-(2 to 3 typical mistakes students make in Moroccan 3AC English exams, and how to avoid them)
+(2 to 3 typical mistakes students make on exams, and how to avoid them)
 
 ## 💡 Top Writing & Reading Tip
 (A practical tip to write a great paragraph or ace reading comprehension on the exam)
 """
-    else:
-        sys_prompt = (
-            "Tu es un professeur de collège au Maroc, réputé pour ta pédagogie claire et motivante auprès des élèves de 14 ans (3AC Biof).\n"
-            "Tu rédiges une 'Fiche Express' spéciale pour réussir les examens normalisés (local et régional).\n"
-            "Règle absolue : Rédige STRICTEMENT en français avec un ton direct, bienveillant, clair et sans jargon inutile."
-        )
-        user_prompt = f"""
+
+    else:  # français
+        if stage == "primary":
+            sys_prompt = (
+                f"Tu es un enseignant bienveillant, chaleureux et très pédagogue pour des enfants de l'école primaire (l'élève a {student_age} ans).\n"
+                "Ton style est simple, imagé, doux, enthousiaste et très encourageant.\n"
+                f"Règle absolue : Rédige STRICTEMENT en français avec un vocabulaire accessible à un enfant de {student_age} ans, sans jargon abstrait."
+            )
+            user_prompt = f"""
+Rédige une "Fiche Express" adaptée et captivante pour un enfant de {student_age} ans pour ce cours de la matière : {subject}.
+Contenu du cours :
+---
+{excerpt}
+---
+
+Structure la fiche en Markdown clair et aéré en utilisant ces sections précises :
+
+## 🎯 Les Notions & Mots Magiques à Retenir
+(3 à 4 définitions très simples et illustrées avec des exemples du quotidien pour un enfant de {student_age} ans)
+
+## 📌 Les Règles d'Or Faciles
+(Les 2 ou 3 règles ou étapes clés expliquées pas à pas avec clarté)
+
+## ⚠️ Attention au Petit Piège !
+(Une erreur fréquente expliquée gentiment pour ne pas tomber dedans)
+
+## 💡 L'Astuce du Champion pour Réussir
+(Un conseil simple et très encourageant pour briller en classe)
+"""
+        elif stage == "high":
+            sys_prompt = (
+                f"Tu es un professeur de lycée d'excellence préparant un élève de {student_age} ans aux épreuves du Baccalauréat.\n"
+                "Ton ton est rigoureux, précis, stimulant, valorisant la démonstration, la synthèse et la rigueur conceptuelle.\n"
+                "Règle absolue : Rédige STRICTEMENT en français académique, clair et soigné."
+            )
+            user_prompt = f"""
+Rédige une "Fiche Express" approfondie pour un élève de lycée ({student_age} ans) pour ce cours de la matière : {subject}.
+Contenu du cours :
+---
+{excerpt}
+---
+
+Structure la fiche en Markdown clair et aéré en utilisant ces sections précises :
+
+## 🎯 Définitions & Notions Fondamentales du Bac
+(3 à 5 notions incontournables formulées avec précision académique et rigueur conceptuelle)
+
+## 📌 Formules, Démonstrations & Repères Méthodologiques
+(Les théorèmes, formules, repères ou mécanismes clés sous forme de synthèse claire)
+
+## ⚠️ Pièges Classiques des Épreuves du Baccalauréat
+(2 ou 3 pièges fréquents dans les sujets d'examen et la méthode rigoureuse pour les déjouer)
+
+## 💡 La Méthode de Rédaction pour Décrocher la Mention
+(Le conseil méthodologique pour structurer sa copie et satisfaire aux exigences du barème)
+"""
+        elif stage == "higher":
+            sys_prompt = (
+                f"Tu es un tuteur académique et expert pédagogique pour un étudiant de l'enseignement supérieur ou adulte apprenant ({student_age} ans).\n"
+                "Ton ton est professionnel, rigoureux, concis, orienté vers la maîtrise conceptuelle approfondie et l'application pratique.\n"
+                "Règle absolue : Rédige STRICTEMENT en français soigné, précis et analytique."
+            )
+            user_prompt = f"""
+Rédige une "Fiche Express" de synthèse analytique pour un apprenant du supérieur ({student_age} ans) sur le thème : {subject}.
+Contenu du cours :
+---
+{excerpt}
+---
+
+Structure la fiche en Markdown clair et aéré en utilisant ces sections précises :
+
+## 🎯 Notions Clés & Fondements Théoriques
+(3 à 5 notions centrales définies avec rigueur conceptuelle)
+
+## 📌 Modèles, Méthodes & Principes d'Application
+(Les méthodes, théorèmes ou frameworks clés avec leur logique de mise en œuvre)
+
+## ⚠️ Pièges Méthodologiques & Nuances Cruciales
+(Les confusions conceptuelles et erreurs d'application à éviter)
+
+## 💡 Synthèse Stratégique & Clés d'Excellence
+(Recommandations d'approfondissement et mise en perspective professionnelle ou académique)
+"""
+        else:  # middle (défaut 11-14 ans)
+            sys_prompt = (
+                f"Tu es un professeur de collège au Maroc, réputé pour ta pédagogie claire et motivante auprès des élèves de {student_age} ans (Collège Biof).\n"
+                "Tu rédiges une 'Fiche Express' spéciale pour réussir les examens normalisés (local et régional).\n"
+                "Règle absolue : Rédige STRICTEMENT en français avec un ton direct, bienveillant, clair et sans jargon inutile."
+            )
+            user_prompt = f"""
 Rédige une "Fiche Express" percutante pour ce cours de la matière : {subject}.
 Contenu du cours :
 ---
@@ -321,7 +590,7 @@ Structure la fiche en Markdown clair et aéré en utilisant ces sections précis
 (Les formules mathématiques/scientifiques, règles ou repères essentiels sous forme de puces percutantes)
 
 ## ⚠️ Les Pièges Fréquents à l'Examen Normalisé
-(2 ou 3 pièges classiques tendus lors des épreuves locales ou régionales du brevet 3AC, et comment les déjouer)
+(2 ou 3 pièges classiques tendus lors des épreuves de collège, et comment les déjouer)
 
 ## 💡 L'Astuce Rédaction pour Gagner des Points
 (Le conseil méthodologique ultime pour soigner sa copie et obtenir la note maximale)
@@ -340,19 +609,43 @@ def generate_quiz(
     language: str,
     num_questions: int = 5,
     user_id: Optional[int] = None,
+    age: Optional[int] = None,
 ) -> List[Dict[str, Any]]:
     """
-    Génère un quiz interactif au format JSON strict.
-    Questions adaptées au format d'examen normalisé 3AC Maroc.
+    Génère un quiz interactif au format JSON strict adapté à l'âge de l'élève.
+    Questions et explications calées sur le cycle pédagogique (Primaire, Collège, Lycée, Supérieur).
     """
     excerpt = raw_text[:4500]
+    student_age = resolve_student_age(user_id=user_id, age=age)
+    cycle = get_pedagogical_cycle(student_age)
+    stage = cycle["stage"]
 
     if language == "ar":
-        sys_prompt = (
-            "أنت خبير في إعداد الامتحانات الموحدة للسنة الثالثة إعدادي في المغرب (3AC).\n"
-            "مهمتك إعداد كويز تدريبي تفاعلي ممتع وتعليمي لتلميذ عمره 14 سنة.\n"
-            "قاعدة مطلقة: اكتب الأسئلة والخيارات والشروحات باللغة العربية الفصحى حصراً وبصيغة JSON صالحة."
-        )
+        if stage == "primary":
+            sys_prompt = (
+                f"أنت معلم صبور ومحبوب للأطفال في المرحلة الابتدائية (عمر التلميذ: {student_age} سنوات).\n"
+                "مهمتك إعداد كويز تدريبي تفاعلي ممتع وبسيط ومحفز جداً للطفل.\n"
+                "قاعدة مطلقة: اكتب الأسئلة والخيارات والشروحات باللغة العربية الفصحى المبسطة مع شروحات مشجعة ('أحسنت يا بطل') وبصيغة JSON صالحة."
+            )
+        elif stage == "high":
+            sys_prompt = (
+                f"أنت خبير في إعداد امتحانات البكالوريا والامتحانات الإشهادية في المغرب لتلميذ في سلك التأهيلي (عمره {student_age} سنة).\n"
+                "مهمتك إعداد كويز تدريبي تفاعلي ذي عمق تحليلي ومنهجي يختبر الفهم الدقيق والقدرة على البرهنة والتركيب.\n"
+                "قاعدة مطلقة: اكتب الأسئلة والخيارات والشروحات باللغة العربية الفصحى الأكاديمية الدقيقة وبصيغة JSON صالحة."
+            )
+        elif stage == "higher":
+            sys_prompt = (
+                f"أنت ممتحن وأستاذ في التعليم العالي لمستوى متقدم (عمر المتعلم: {student_age} سنة).\n"
+                "مهمتك إعداد تقييم تفاعلي يركز على التطبيقات النقدية والتحليل المفاهيمي وحل المشكلات المعقدة.\n"
+                "قاعدة مطلقة: اكتب باللغة العربية الفصحى الرصينة وبصيغة JSON صالحة."
+            )
+        else:  # middle (défaut 11-14 ans)
+            sys_prompt = (
+                f"أنت خبير في إعداد الامتحانات الموحدة للسنة الثالثة إعدادي في المغرب (3AC) لتلميذ عمره {student_age} سنة.\n"
+                "مهمتك إعداد كويز تدريبي تفاعلي ممتع وتعليمي يختبر المفاهيم الأساسية وفخاخ الامتحانات.\n"
+                "قاعدة مطلقة: اكتب الأسئلة والخيارات والشروحات باللغة العربية الفصحى حصراً وبصيغة JSON صالحة."
+            )
+
         user_prompt = f"""
 انطلاقاً من درس مادة: {subject}
 المحتوى:
@@ -360,7 +653,7 @@ def generate_quiz(
 {excerpt}
 ---
 
-قم بإنشاء {num_questions} أسئلة اختيار من متعدد (QCM) مناسبة للامتحان الموحد.
+قم بإنشاء {num_questions} أسئلة اختيار من متعدد (QCM) مناسبة لمستوى تلميذ عمره {student_age} سنة ({cycle['stage_label']}).
 أرجع فقط مصفوفة JSON صالحة تحتوي على قائمة من الأسئلة بهذه البنية الدقيقة:
 [
   {{
@@ -373,24 +666,44 @@ def generate_quiz(
     ],
     "answer_index": 0,
     "explanation": "شرح مبسط خطوة بخطوة يبين لماذا هذا الخيار هو الصحيح ويشجع التلميذ.",
-    "trap_alert": "تنبيه ذكي من فخ الامتحان الشائع المتعلق بهذا السؤال.",
+    "trap_alert": "تنبيه ذكي من فخ شائع متعلق بهذا السؤال.",
     "difficulty": "سهل أو متوسط أو متقدم"
   }}
 ]
 """
     elif language == "en":
-        sys_prompt = (
-            "You are an expert exam designer for 3rd Year Middle School (3AC) English in Morocco.\n"
-            "You create a fun, stimulating, and reassuring interactive training quiz for a 14-year-old learner.\n"
-            "Strict rule: Write questions, options, and explanations in clear English as valid JSON."
-        )
+        if stage == "primary":
+            sys_prompt = (
+                f"You are a cheerful and caring primary school teacher creating a fun quiz for a {student_age}-year-old child.\n"
+                "You create an easy, encouraging, and friendly multiple-choice quiz.\n"
+                "Strict rule: Write questions, options, and explanations in simple, encouraging English as valid JSON."
+            )
+        elif stage == "high":
+            sys_prompt = (
+                f"You are a secondary school exam designer preparing a {student_age}-year-old student for advanced high school and Baccalaureate exams.\n"
+                "You create an intellectually stimulating, rigorous training quiz testing deep comprehension and analytical skills.\n"
+                "Strict rule: Write questions, options, and explanations in academically precise English as valid JSON."
+            )
+        elif stage == "higher":
+            sys_prompt = (
+                f"You are a university examiner assessing a higher education learner ({student_age} years old).\n"
+                "You design an advanced assessment testing critical reasoning, conceptual models, and practical application.\n"
+                "Strict rule: Write in clear, professional English as valid JSON."
+            )
+        else:  # middle (défaut 11-14 ans)
+            sys_prompt = (
+                f"You are an expert exam designer for middle school English ({student_age}-year-old learner).\n"
+                "You create a fun, stimulating, and reassuring interactive training quiz.\n"
+                "Strict rule: Write questions, options, and explanations in clear English as valid JSON."
+            )
+
         user_prompt = f"""
-Based on this 3AC English lesson content:
+Based on this lesson content ({subject}) for a {student_age}-year-old student ({cycle['stage_label']}):
 ---
 {excerpt}
 ---
 
-Generate {num_questions} multiple-choice questions (QCM) typical of 3AC English exams (reading comprehension, grammar, vocabulary).
+Generate {num_questions} multiple-choice questions (QCM) appropriate for this age and level.
 Return ONLY a valid JSON array containing this exact structure:
 [
   {{
@@ -408,20 +721,40 @@ Return ONLY a valid JSON array containing this exact structure:
   }}
 ]
 """
-    else:
-        sys_prompt = (
-            "Tu es un concepteur d'épreuves d'examens normalisés de 3ème Année Collège au Maroc (3AC Biof).\n"
-            "Tu crées un quiz d'entraînement interactif stimulant et rassurant pour un élève de 14 ans.\n"
-            "Règle absolue : Rédige STRICTEMENT en français au format JSON valide."
-        )
+    else:  # français
+        if stage == "primary":
+            sys_prompt = (
+                f"Tu es un enseignant patient et bienveillant pour un enfant de {student_age} ans à l'école primaire.\n"
+                "Tu crées un quiz interactif simple, ludique et encourageant avec des phrases courtes et faciles.\n"
+                "Règle absolue : Rédige STRICTEMENT en français au format JSON valide avec des explications douces et valorisantes ('Super champion !')."
+            )
+        elif stage == "high":
+            sys_prompt = (
+                f"Tu es un concepteur d'épreuves du Baccalauréat pour un élève de lycée ({student_age} ans).\n"
+                "Tu crées un quiz interactif rigoureux, ciblé sur la maîtrise conceptuelle, la justification méthodique et la précision.\n"
+                "Règle absolue : Rédige STRICTEMENT en français académique soigné au format JSON valide."
+            )
+        elif stage == "higher":
+            sys_prompt = (
+                f"Tu es un enseignant-chercheur universitaire pour un étudiant du supérieur ou adulte apprenant ({student_age} ans).\n"
+                "Tu conçois une évaluation interactive exigeante, axée sur l'analyse critique et la résolution de cas concrets.\n"
+                "Règle absolue : Rédige STRICTEMENT en français au format JSON valide."
+            )
+        else:  # middle (défaut 11-14 ans)
+            sys_prompt = (
+                f"Tu es un concepteur d'épreuves de collège au Maroc (élève de {student_age} ans).\n"
+                "Tu crées un quiz d'entraînement interactif stimulant et rassurant pour consolider les notions clés.\n"
+                "Règle absolue : Rédige STRICTEMENT en français au format JSON valide."
+            )
+
         user_prompt = f"""
-À partir de ce cours de la matière : {subject}
+À partir de ce cours de la matière : {subject} (destiné à un apprenant de {student_age} ans, niveau {cycle['stage_label']})
 Contenu :
 ---
 {excerpt}
 ---
 
-Génère {num_questions} questions à choix multiples (QCM) types de l'examen normalisé.
+Génère {num_questions} questions à choix multiples (QCM) adaptées à cet âge.
 Renvoie UNIQUEMENT un tableau JSON valide contenant cette structure exacte :
 [
   {{
@@ -433,8 +766,8 @@ Renvoie UNIQUEMENT un tableau JSON valide contenant cette structure exacte :
       "Choix D"
     ],
     "answer_index": 0,
-    "explanation": "Explication pas à pas, claire et encourageante pour un élève de 14 ans.",
-    "trap_alert": "Le piège d'examen classique lié à cette question.",
+    "explanation": "Explication pas à pas, claire et encourageante adaptée à un apprenant de {student_age} ans.",
+    "trap_alert": "Le piège classique lié à cette question.",
     "difficulty": "Facile ou Moyen ou Avancé"
   }}
 ]
@@ -462,26 +795,26 @@ Renvoie UNIQUEMENT un tableau JSON valide contenant cette structure exacte :
             "question": f"ما هو المحور الأساسي لدرس {subject}؟",
             "options": ["المفهوم الرئيسي للدرس", "عنصر غير ذي صلة", "موضوع خارجي", "تطبيق عام"],
             "answer_index": 0,
-            "explanation": "المحور الأساسي يركز على التطبيقات والقواعد الجوهرية المقررة في منهاج 3AC.",
+            "explanation": f"المحور الأساسي يركز على التطبيقات والقواعد الجوهرية المقررة لمستوى {cycle['stage_label']}.",
             "trap_alert": "انتبه دائماً لقراءة السؤال كاملاً قبل التسرع في الإجابة.",
             "difficulty": "سهل"
         }]
     elif language == "en":
         return [{
             "question": f"What is the main learning objective of this {subject} lesson?",
-            "options": ["Mastering the key grammar and vocabulary of the unit", "An unrelated topic", "General knowledge", "Outside material"],
+            "options": ["Mastering the key concepts of the unit", "An unrelated topic", "General knowledge", "Outside material"],
             "answer_index": 0,
-            "explanation": "This lesson focuses on essential 3AC English curriculum competencies.",
+            "explanation": f"This lesson focuses on essential {cycle['stage_label']} curriculum competencies.",
             "trap_alert": "Always read the full sentence and context before choosing your answer.",
             "difficulty": "Easy"
         }]
     else:
         return [{
             "question": f"Quel est l'objectif principal abordé dans ce cours de {subject} ?",
-            "options": ["Maîtriser les notions clés du programme 3AC", "Un sujet hors-programme", "Une simple introduction", "Une généralité"],
+            "options": [f"Maîtriser les notions clés du programme ({cycle['stage_label']})", "Un sujet hors-programme", "Une simple introduction", "Une généralité"],
             "answer_index": 0,
-            "explanation": "Cet objectif est fondamental pour les épreuves de l'examen normalisé.",
-            "trap_alert": "Lis attentivement toutes les données de l'énoncé avant de répondre.",
+            "explanation": f"Ce cours aborde les notions fondamentales prévues pour le cycle {cycle['stage_label']}.",
+            "trap_alert": "Prenez le temps d'analyser chaque terme avant de répondre.",
             "difficulty": "Facile"
         }]
 
@@ -496,19 +829,40 @@ def socratic_tutor_response(
     subject: str,
     language: str,
     user_id: Optional[int] = None,
+    age: Optional[int] = None,
 ) -> str:
     """
-    Répond à l'élève en adoptant la méthode socratique :
-    - Ton bienveillant, encourageant, accessible pour un ado de 14 ans.
+    Répond à l'élève en adoptant la méthode socratique adaptée à son âge :
+    - Ton modulé selon l'âge (mentor chaleureux pour primaire, grand frère pour collège, coach pour lycée, pair pour adulte).
     - NE DONNE JAMAIS LA RÉPONSE DIRECTE d'un exercice ou d'un devoir.
     - Pose des questions guidées, donne des indices, félicite l'effort de réflexion.
     - Respecte strictement la langue du document (Arabe, Anglais ou Français).
     """
     context_excerpt = course_context[:4000]
+    student_age = resolve_student_age(user_id=user_id, age=age)
+    cycle = get_pedagogical_cycle(student_age)
+    stage = cycle["stage"]
 
     if language == "ar":
+        if stage == "primary":
+            persona = f"أنت 'سند'، الرفيق الذكي والأخ الأكبر اللطيف جداً والموجه لطفل عمره {student_age} سنوات في المرحلة الابتدائية."
+            tone_rule = "2. التودد والتشجيع الشديد: تحدث بلطف ودفء كبيرين (مثل: 'أحسنت يا بطل !', 'فكرة رائعة يا صغيري، لنجرب معاً...')."
+            method_rule = "1. المنهج السقراطي المبسط: لا تعطِ الإجابة المباشرة أبداً، بل ساعده بخطوات يسيرة وأمثلة من عالمه الصغير ليكتشف الحل بنفسه مع تعزيز ثقته بنفسه."
+        elif stage == "high":
+            persona = f"أنت 'سند'، الموجه الأكاديمي والمدرب المنهجي لتلميذ في سلك البكالوريا بالمغرب (عمره {student_age} سنة)."
+            tone_rule = "2. التحفيز الأكاديمي: تحدث بأسلوب محفز ومحترم ينمي التفكير المنطقي والتحليلي والاستعداد للامتحانات الإشهادية."
+            method_rule = "1. المنهج السقراطي المتقدم: وجه التلميذ بأسئلة تدفعه للبرهنة والتعليل والربط بين القواعد بدلاً من إعطائه الجواب الجاهز."
+        elif stage == "higher":
+            persona = f"أنت 'سند'، الشريك الأكاديمي والمستشار المعرفي لمتعلم في التعليم العالي أو التكوين المستمر (عمره {student_age} سنة)."
+            tone_rule = "2. الأسلوب المهني والأكاديمي: تحدث بأسلوب راقٍ ومحترم، يركز على الفهم العميق والتحليل النقدي."
+            method_rule = "1. الحوار السقراطي: ناقش الفرضيات ووجه التلميذ نحو استخلاص النتائج والحلول بنضج معرفي."
+        else:  # middle (défaut 11-14 ans)
+            persona = f"أنت 'سند'، الرفيق الذكي والأخ الأكبر الموجه لتلميذ عمره {student_age} سنة في المرحلة الإعدادية بالمغرب (3AC)."
+            tone_rule = "2. التبسيط والود: تحدث بلغة عربية فصحى دافئة ومحفزة جداً (مثل: 'ممتاز يا بطل'، 'فكرة ذكية، لنفكر معاً...', 'أنت قريب جداً!')."
+            method_rule = "1. المنهج السقراطي: لا تعطِ الإجابة المباشرة أبداً لواجبات التلميذ أو تمارينه! بدلاً من ذلك، وجهه بخطوات بسيطة واطرح عليه سؤالاً يقوده لاكتشاف الحل بنفسه."
+
         system_instruction = f"""
-أنت "سند"، الرفيق الذكي والأخ الأكبر الموجه لتلميذ عمره 14 سنة في السنة الثالثة إعدادي بالمغرب (3AC).
+{persona}
 أنت ترافقه في مراجعة مادة: {subject}.
 سياق الدرس النشط الذي يدرسه التلميذ حالياً:
 ---
@@ -516,14 +870,31 @@ def socratic_tutor_response(
 ---
 
 قواعدك التربوية الذهبية:
-1. المنهج السقراطي: لا تعطِ الإجابة المباشرة أو الجاهزة أبداً لواجبات التلميذ أو تمارينه! بدلاً من ذلك، وجهه بخطوات بسيطة واطرح عليه سؤالاً يقوده لاكتشاف الحل بنفسه.
-2. التبسيط والود: تحدث بلغة عربية فصحى دافئة ومحفزة جداً (مثل: "ممتاز يا بطل"، "فكرة ذكية، لنفكر معاً...", "أنت قريب جداً!").
-3. التوجيه نحو الامتحان الموحد: ذكر التلميذ إذا لزم الأمر بالصيغ المنهجية التي تطلب في الامتحان الجهوي والمحلي.
-4. الالتزام اللغوي المطلق: تحدث باللغة العربية فقط وبشكل كامل.
+{method_rule}
+{tone_rule}
+3. التوجيه المنهجي: ذكر التلميذ إذا لزم الأمر بالصيغ المنهجية التي تطلب في الفروض والامتحانات.
+4. الالتزام اللغوي المطلق: تحدث باللغة العربية الفصحى فقط وبشكل كامل.
 """
     elif language == "en":
+        if stage == "primary":
+            persona = f"You are 'Sanad', the warm, cheerful, and patient tutor and mentor for a {student_age}-year-old child in elementary school."
+            tone_rule = "2. Tone & Warmth: Be super cheerful, very patient, and encouraging ('Awesome effort champion!', 'Great try! Let\\'s look at this clue together...')."
+            method_rule = "1. Gentle Socratic Method: NEVER give the direct answer! Guide the child step by step with easy clues and simple everyday examples."
+        elif stage == "high":
+            persona = f"You are 'Sanad', the academic coach and mentor for a {student_age}-year-old high school student preparing for secondary exams and graduation."
+            tone_rule = "2. Academic Tone: Be motivating, intellectually stimulating, and focused on rigorous reasoning and exam methodology."
+            method_rule = "1. Socratic Inquiry: Guide the student through logical deductions and analytical clues rather than handing over the solution."
+        elif stage == "higher":
+            persona = f"You are 'Sanad', the collegiate learning partner and academic advisor for a university student or adult learner ({student_age} years old)."
+            tone_rule = "2. Professional Tone: Maintain a mature, collegial, and thoughtful tone focused on conceptual depth and practical mastery."
+            method_rule = "1. Socratic Dialogue: Challenge assumptions, ask clarifying questions, and help the learner formulate robust conclusions."
+        else:  # middle (défaut 11-14 ans)
+            persona = f"You are 'Sanad', the kind, supportive virtual tutor and mentor for a {student_age}-year-old student in Middle School."
+            tone_rule = "2. Tone & Warmth: Be warm, enthusiastic, and very encouraging (e.g. 'Great try champion!', 'Awesome question, let\\'s look at the clue...', 'You are almost there!')."
+            method_rule = "1. Socratic Method: NEVER give the direct answer to exercises or homework! Instead, guide the student step by step with a leading question or hint."
+
         system_instruction = f"""
-You are "Sanad", the kind, supportive virtual tutor and mentor for a 14-year-old student in 3rd Year Middle School (3AC) in Morocco.
+{persona}
 You are helping the student study: {subject} (English).
 Here is the active lesson content they are currently studying:
 ---
@@ -531,14 +902,31 @@ Here is the active lesson content they are currently studying:
 ---
 
 Your golden pedagogical rules:
-1. Socratic Method: NEVER give the direct answer to exercises or homework! Instead, guide the student step by step with a leading question or hint so they discover the answer themselves.
-2. Tone & Warmth: Be warm, enthusiastic, and very encouraging (e.g. "Great try champion!", "Awesome question, let's look at the clue...", "You are almost there!").
-3. Moroccan 3AC Focus: Mention practical tips for the 3AC English exam when relevant.
-4. Language Rule: Speak entirely in clear, simple, accessible English suited for a 14-year-old 3AC student.
+{method_rule}
+{tone_rule}
+3. Exam Focus: Mention practical tips for school exams when relevant.
+4. Language Rule: Speak entirely in clear, simple, accessible English suited for a {student_age}-year-old learner.
 """
-    else:
+    else:  # français
+        if stage == "primary":
+            persona = f"Tu es 'Sanad', le grand frère et tuteur virtuel très doux, bienveillant et joyeux pour un enfant de {student_age} ans à l'école primaire."
+            tone_rule = "2. Ton & Motivation : Sois très doux, joyeux et enthousiaste (ex: 'Bravo champion !', 'Super idée, regarde ce petit indice magique...')."
+            method_rule = "1. Méthode Socratique Douce : Ne donne JAMAIS directement la réponse ! Donne un petit indice imagé ou pose une question très simple pour que l'enfant découvre par lui-même avec le sourire."
+        elif stage == "high":
+            persona = f"Tu es 'Sanad', le coach méthodologique et mentor bienveillant pour un élève de lycée ({student_age} ans) préparant le Baccalauréat."
+            tone_rule = "2. Rigueur & Motivation : Adopte un ton stimulant et formateur, exigeant sur la méthode et la démonstration tout en restant très bienveillant."
+            method_rule = "1. Méthode Socratique Exigeante : Amène l'élève à justifier ses déductions, à soigner son argumentation et à déceler lui-même ses erreurs sans lui donner la réponse brute."
+        elif stage == "higher":
+            persona = f"Tu es 'Sanad', le partenaire d'apprentissage et tuteur académique pour un étudiant de l'enseignement supérieur ou adulte apprenant ({student_age} ans)."
+            tone_rule = "2. Posture Collégiale : Échange d'égal à égal avec maturité, rigueur intellectuelle et esprit de synthèse."
+            method_rule = "1. Dialogue Socratique d'Approfondissement : Pousse l'apprenant à questionner les concepts, à structurer ses analyses et à relier théorie et pratique."
+        else:  # middle (défaut 11-14 ans)
+            persona = f"Tu es 'Sanad', le tuteur virtuel bienveillant et grand frère d'un élève de {student_age} ans en collège (3AC Biof)."
+            tone_rule = "2. Ton & Motivation : Sois chaleureux, enthousiaste et très encourageant (ex: 'Bien joué champion !', 'Très bonne question !', 'Tu y es presque, regarde cette étape...')."
+            method_rule = "1. Méthode Socratique : Ne donne JAMAIS directement la réponse aux devoirs ou exercices ! Guide l'élève pas à pas en lui posant une question intermédiaire ou en lui donnant un indice ciblé."
+
         system_instruction = f"""
-Tu es "Sanad", le tuteur virtuel bienveillant et grand frère d'un élève de 14 ans en 3ème Année Collège au Maroc (3AC Biof).
+{persona}
 Tu l'accompagnes pour réviser la matière : {subject}.
 Voici le contenu du cours actif qu'il étudie :
 ---
@@ -546,9 +934,9 @@ Voici le contenu du cours actif qu'il étudie :
 ---
 
 Tes règles d'or pédagogiques :
-1. Méthode Socratique : Ne donne JAMAIS directement la réponse aux devoirs ou exercices ! Guide l'élève pas à pas en lui posant une question intermédiaire ou en lui donnant un indice ciblé pour qu'il trouve par lui-même.
-2. Ton & Motivation : Sois chaleureux, enthousiaste et très encourageant (ex: "Bien joué champion !", "Très bonne question !", "Tu y es presque, regarde cette étape...").
-3. Astuces Brevet 3AC : Donne des repères pratiques pour les examens normalisés (local et régional).
+{method_rule}
+{tone_rule}
+3. Repères Pratiques : Donne des astuces méthodologiques concrètes pour les contrôles et examens.
 4. Langue stricte : Réponds STRICTEMENT en français.
 """
 

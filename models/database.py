@@ -53,6 +53,8 @@ def init_db(db_path: Optional[Path] = None) -> None:
                     avatar_url TEXT,
                     role TEXT NOT NULL CHECK(role IN ('admin', 'student')),
                     is_blocked INTEGER NOT NULL DEFAULT 0,
+                    has_custom_name INTEGER NOT NULL DEFAULT 0,
+                    age INTEGER DEFAULT 14,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
 
@@ -148,6 +150,10 @@ def init_db(db_path: Optional[Path] = None) -> None:
             if "is_blocked" not in user_cols:
                 cur.execute("ALTER TABLE users ADD COLUMN is_blocked INTEGER NOT NULL DEFAULT 0")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_users_blocked ON users(is_blocked)")
+            if "has_custom_name" not in user_cols:
+                cur.execute("ALTER TABLE users ADD COLUMN has_custom_name INTEGER NOT NULL DEFAULT 0")
+            if "age" not in user_cols:
+                cur.execute("ALTER TABLE users ADD COLUMN age INTEGER DEFAULT 14")
 
             for tbl in ["courses", "quizzes", "quiz_attempts", "chat_messages"]:
                 cur.execute(f"PRAGMA table_info({tbl})")
@@ -211,6 +217,13 @@ def init_db(db_path: Optional[Path] = None) -> None:
 
                 CREATE VIEW IF NOT EXISTS quiz_results AS SELECT * FROM quiz_attempts;
                 CREATE VIEW IF NOT EXISTS chat_history AS SELECT * FROM chat_messages;
+            """)
+
+            # 4. Rétablir les cours indûment rattachés à des administrateurs comme cours partagés de l'établissement
+            cur.execute("""
+                UPDATE courses 
+                SET user_id = NULL 
+                WHERE user_id IN (SELECT id FROM users WHERE role = 'admin')
             """)
     finally:
         conn.close()
@@ -282,16 +295,19 @@ def create_or_get_google_user(
                     raise PermissionError("⛔ Ce compte a été suspendu par l'administrateur. Veuillez contacter votre établissement.")
 
                 # Mise à jour des informations si elles ont changé
-                if name or avatar_url:
+                # Si l'utilisateur a personnalisé son nom (has_custom_name == 1), on ne l'écrase pas avec le nom Google
+                custom_name_flag = user_dict.get("has_custom_name", 0)
+                update_name = user_dict["name"] if custom_name_flag == 1 else (name or user_dict["name"])
+                if (update_name != user_dict["name"]) or avatar_url:
                     cur.execute(
                         """
                         UPDATE users 
-                        SET name = COALESCE(?, name), avatar_url = COALESCE(?, avatar_url)
+                        SET name = ?, avatar_url = COALESCE(?, avatar_url)
                         WHERE id = ?
                         """,
-                        (name, avatar_url, user_dict["id"]),
+                        (update_name, avatar_url, user_dict["id"]),
                     )
-                    user_dict["name"] = name or user_dict["name"]
+                    user_dict["name"] = update_name
                     user_dict["avatar_url"] = avatar_url or user_dict.get("avatar_url")
                 return user_dict
 
@@ -301,21 +317,15 @@ def create_or_get_google_user(
                 total_users = cur.fetchone()[0]
                 role = "admin" if total_users == 0 else "student"
 
+            default_age = 14
             cur.execute(
                 """
-                INSERT INTO users (email, name, avatar_url, role, is_blocked)
-                VALUES (?, ?, ?, ?, 0)
+                INSERT INTO users (email, name, avatar_url, role, is_blocked, has_custom_name, age)
+                VALUES (?, ?, ?, ?, 0, 0, ?)
                 """,
-                (clean_email, name, avatar_url, role),
+                (clean_email, name, avatar_url, role, default_age),
             )
             new_id = cur.lastrowid
-
-            # Si c'est le premier administrateur et qu'il y a des données orphelines, les lui rattacher
-            if role == "admin":
-                cur.execute("UPDATE courses SET user_id = ? WHERE user_id IS NULL", (new_id,))
-                cur.execute("UPDATE quizzes SET user_id = ? WHERE user_id IS NULL", (new_id,))
-                cur.execute("UPDATE quiz_attempts SET user_id = ? WHERE user_id IS NULL", (new_id,))
-                cur.execute("UPDATE chat_messages SET user_id = ? WHERE user_id IS NULL", (new_id,))
 
             return {
                 "id": new_id,
@@ -324,6 +334,8 @@ def create_or_get_google_user(
                 "avatar_url": avatar_url,
                 "role": role,
                 "is_blocked": 0,
+                "has_custom_name": 0,
+                "age": default_age,
                 "created_at": datetime.now().isoformat(),
             }
     finally:
@@ -481,6 +493,107 @@ def delete_user_account(
         conn.close()
 
 
+def update_user_name(user_id: int, new_name: str) -> Tuple[bool, str]:
+    """Met à jour le nom d'affichage d'un utilisateur et verrouille sa personnalisation face à OAuth."""
+    clean_name = new_name.strip()
+    if not clean_name:
+        return False, "Le nom ne peut pas être vide."
+    if len(clean_name) < 2 or len(clean_name) > 60:
+        return False, "Le nom doit comporter entre 2 et 60 caractères."
+
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
+            cur.execute("UPDATE users SET name = ?, has_custom_name = 1 WHERE id = ?", (clean_name, user_id))
+            if cur.rowcount == 0:
+                return False, "Utilisateur introuvable."
+            return True, "Nom d'affichage mis à jour avec succès !"
+    finally:
+        conn.close()
+
+
+def get_pedagogical_cycle(age: Optional[int]) -> Dict[str, Any]:
+    """
+    Détermine le cycle scolaire et le profil pédagogique en fonction de l'âge de l'élève.
+    - 5 à 10 ans : Primaire (CP à CM2 / 1AEP à 6AEP)
+    - 11 à 14 ans : Collège (1AC à 3AC / 6ème à 3ème) [Défaut 14 ans]
+    - 15 à 18 ans : Lycée (Tronc commun à Baccalauréat)
+    - 19 ans et + : Enseignement Supérieur / Formation Adulte
+    """
+    safe_age = 14
+    if age is not None:
+        try:
+            safe_age = int(age)
+        except (ValueError, TypeError):
+            safe_age = 14
+
+    if safe_age < 5:
+        safe_age = 5
+    elif safe_age > 100:
+        safe_age = 100
+
+    if safe_age <= 10:
+        return {
+            "age": safe_age,
+            "stage": "primary",
+            "stage_label": "Primaire",
+            "cycle_name": "Cycle Primaire (CP - CM2)",
+            "badge_text": f"🎒 Primaire ({safe_age} ans)",
+            "tone": "simple, ludique, visuel, très encourageant",
+        }
+    elif safe_age <= 14:
+        return {
+            "age": safe_age,
+            "stage": "middle",
+            "stage_label": "Collège (3AC)",
+            "cycle_name": "Cycle Collégial (1AC - 3AC)",
+            "badge_text": f"🎒 Collège ({safe_age} ans)",
+            "tone": "structuré, clair, motivant, orienté réussite aux examens du collège",
+        }
+    elif safe_age <= 18:
+        return {
+            "age": safe_age,
+            "stage": "high",
+            "stage_label": "Lycée (Baccalauréat)",
+            "cycle_name": "Cycle Secondaire Qualifiant (Lycée)",
+            "badge_text": f"🏛️ Lycée ({safe_age} ans)",
+            "tone": "académique, rigoureux, analytique, préparation aux épreuves du Baccalauréat",
+        }
+    else:
+        return {
+            "age": safe_age,
+            "stage": "higher",
+            "stage_label": "Supérieur / Adulte",
+            "cycle_name": "Enseignement Supérieur & Formation Continue",
+            "badge_text": f"🎓 Supérieur ({safe_age} ans)",
+            "tone": "universitaire, professionnel, critique, approfondissement conceptuel",
+        }
+
+
+def update_user_age(user_id: int, age: int) -> Tuple[bool, str]:
+    """Met à jour l'âge de l'élève pour adapter les contenus générés par l'IA."""
+    try:
+        val = int(age)
+    except (ValueError, TypeError):
+        return False, "L'âge doit être un nombre entier valide."
+
+    if val < 5 or val > 100:
+        return False, "L'âge doit être compris entre 5 et 100 ans."
+
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
+            cur.execute("UPDATE users SET age = ? WHERE id = ?", (val, user_id))
+            if cur.rowcount == 0:
+                return False, "Utilisateur introuvable."
+            cycle = get_pedagogical_cycle(val)
+            return True, f"Âge enregistré ({val} ans — {cycle['cycle_name']}) !"
+    finally:
+        conn.close()
+
+
 def get_global_admin_kpis() -> Dict[str, Any]:
     """Calcule les indicateurs globaux de supervision pour le tableau de bord administrateur."""
     conn = get_connection()
@@ -498,7 +611,7 @@ def get_global_admin_kpis() -> Dict[str, Any]:
         cur.execute("SELECT COUNT(*) FROM users WHERE role = 'admin'")
         total_admins = cur.fetchone()[0]
 
-        cur.execute("SELECT COUNT(*) FROM courses")
+        cur.execute("SELECT COUNT(DISTINCT file_hash) FROM courses")
         total_courses = cur.fetchone()[0]
 
         cur.execute("SELECT COUNT(*) FROM quizzes")
@@ -517,7 +630,7 @@ def get_global_admin_kpis() -> Dict[str, Any]:
         t_q = row["total_questions"]
         avg_success = round((t_score / t_q * 100), 1) if t_q > 0 else 0.0
 
-        # Résumé par élève
+        # Résumé par élève (requêtes indépendantes sans produit cartésien)
         cur.execute("""
             SELECT 
                 u.id as user_id,
@@ -526,15 +639,26 @@ def get_global_admin_kpis() -> Dict[str, Any]:
                 u.role,
                 COALESCE(u.is_blocked, 0) as is_blocked,
                 u.created_at,
-                COUNT(DISTINCT c.id) as course_count,
-                COUNT(DISTINCT qa.id) as attempt_count,
-                COALESCE(SUM(qa.score), 0) as student_score,
-                COALESCE(SUM(qa.total_questions), 0) as student_questions
+                COALESCE(u.age, 14) as age,
+                (
+                    SELECT COUNT(DISTINCT file_hash) 
+                    FROM courses 
+                    WHERE user_id = u.id OR user_id IS NULL
+                ) as course_count,
+                COALESCE(q_agg.attempt_count, 0) as attempt_count,
+                COALESCE(q_agg.student_score, 0) as student_score,
+                COALESCE(q_agg.student_questions, 0) as student_questions
             FROM users u
-            LEFT JOIN courses c ON u.id = c.user_id
-            LEFT JOIN quiz_attempts qa ON u.id = qa.user_id
+            LEFT JOIN (
+                SELECT 
+                    user_id,
+                    COUNT(id) as attempt_count,
+                    SUM(score) as student_score,
+                    SUM(total_questions) as student_questions
+                FROM quiz_attempts
+                GROUP BY user_id
+            ) q_agg ON u.id = q_agg.user_id
             WHERE u.role = 'student'
-            GROUP BY u.id
             ORDER BY u.created_at DESC
         """)
         students_summary = []
@@ -543,6 +667,7 @@ def get_global_admin_kpis() -> Dict[str, Any]:
             sq = d.get("student_questions", 0)
             ss = d.get("student_score", 0)
             d["average_rate"] = round((ss / sq * 100), 1) if sq > 0 else 0.0
+            d["cycle"] = get_pedagogical_cycle(d.get("age", 14))
             students_summary.append(d)
 
         return {
@@ -749,26 +874,36 @@ def list_courses(
     subject: Optional[str] = None,
     language: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
-    """Liste les cours cloisonnés par utilisateur avec filtres optionnels."""
+    """Liste les cours cloisonnés par utilisateur avec filtres optionnels et déduplication par hash."""
     conn = get_connection()
     try:
         cur = conn.cursor()
-        query = "SELECT * FROM courses WHERE 1=1"
         params: List[Any] = []
 
         if user_id is not None:
-            query += " AND (user_id = ? OR user_id IS NULL)"
-            params.append(user_id)
+            # Priorise le cours personnel de l'élève, et complète avec les cours partagés non encore dupliqués
+            query = """
+                SELECT c.* FROM (
+                    SELECT * FROM courses WHERE user_id = ?
+                    UNION ALL
+                    SELECT * FROM courses WHERE user_id IS NULL AND file_hash NOT IN (
+                        SELECT file_hash FROM courses WHERE user_id = ?
+                    )
+                ) c WHERE 1=1
+            """
+            params.extend([user_id, user_id])
+        else:
+            query = "SELECT c.* FROM courses c WHERE 1=1"
 
         if subject and subject != "Toutes":
-            query += " AND subject = ?"
+            query += " AND c.subject = ?"
             params.append(subject)
 
         if language and language != "Toutes":
-            query += " AND language = ?"
+            query += " AND c.language = ?"
             params.append(language)
 
-        query += " ORDER BY updated_at DESC, id DESC"
+        query += " ORDER BY c.updated_at DESC, c.id DESC"
         cur.execute(query, params)
         rows = cur.fetchall()
 

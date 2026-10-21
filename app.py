@@ -28,6 +28,7 @@ from models.database import (
     get_course_by_id,
     get_global_admin_kpis,
     get_latest_quiz,
+    get_pedagogical_cycle,
     get_quiz_stats,
     get_user_by_id,
     get_user_count,
@@ -40,6 +41,8 @@ from models.database import (
     set_user_blocked_status,
     update_course_metadata,
     update_course_summary,
+    update_user_age,
+    update_user_name,
     update_user_role,
 )
 from services.ai_engine import (
@@ -567,7 +570,8 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
 
     # Barre Latérale : Profil et Navigation
     st.sidebar.markdown("## 🎓 **Ecole Adnane**")
-    role_badge = "👑 Administrateur" if is_admin else "🎒 Élève (3AC)"
+    user_cycle = get_pedagogical_cycle(current_user.get("age"))
+    role_badge = "👑 Administrateur" if is_admin else user_cycle["badge_text"]
     st.sidebar.markdown(f"**{current_user['name']}**  \n`{current_user['email']}`  \n`{role_badge}`")
 
     st.sidebar.divider()
@@ -581,8 +585,9 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
         all_students = list_users(role="student")
         student_options: Dict[str, str] = {"global": "📊 Vue Globale (Supervision)"}
         for s in all_students:
+            s_cycle = get_pedagogical_cycle(s.get("age"))
             blocked_tag = " [SUSPENDU]" if s.get("is_blocked") else ""
-            student_options[str(s["id"])] = f"🎒 {s['name']} ({s['email']}){blocked_tag}"
+            student_options[str(s["id"])] = f"{s_cycle['badge_text']} — {s['name']} ({s['email']}){blocked_tag}"
 
         chosen_space = st.sidebar.selectbox(
             "Espace de travail :",
@@ -677,8 +682,9 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                         "ID": s["user_id"],
                         "Nom": s["name"],
                         "Email": s["email"],
+                        "Âge & Niveau": f"{s.get('age', 14)} ans ({s.get('cycle', {}).get('stage_label', 'Collège')})",
                         "Statut": "🔴 Suspendu" if s.get("is_blocked") == 1 else "🟢 Actif",
-                        "Cours ajoutés": s["course_count"],
+                        "Cours disponibles": s["course_count"],
                         "Quiz terminés": s["attempt_count"],
                         "Moyenne Quiz": f"{s['average_rate']}%",
                         "Date d'inscription": str(s.get("created_at", ""))[:16],
@@ -755,12 +761,29 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
             is_u_admin = (u["role"] == "admin")
 
             status_badge = "🔴 Suspendu" if is_u_blocked else "🟢 Actif"
-            role_badge = "👑 Administrateur" if is_u_admin else "🎒 Élève"
+            u_cycle = get_pedagogical_cycle(u.get("age"))
+            role_badge = "👑 Administrateur" if is_u_admin else u_cycle["badge_text"]
             self_tag = " *(Votre compte)*" if is_self else ""
 
             expander_title = f"{role_badge} — **{u['name']}** (`{u['email']}`) | {status_badge}{self_tag}"
             with st.expander(expander_title, expanded=False):
-                col_u1, col_u2, col_u3 = st.columns([2, 2, 3])
+                col_u0, col_u1, col_u2, col_u3 = st.columns([2.5, 2, 2, 2.5])
+
+                # 0. Nom et Âge
+                with col_u0:
+                    st.markdown("##### 👤 Profil & Âge")
+                    edit_name_val = st.text_input("Nom :", value=u["name"], key=f"admin_edit_name_{u_id}")
+                    current_age_val = int(u.get("age") or 14)
+                    edit_age_val = st.number_input("Âge :", min_value=5, max_value=99, value=current_age_val, key=f"admin_edit_age_{u_id}")
+                    if edit_name_val != u["name"] or edit_age_val != current_age_val:
+                        if st.button("💾 Enregistrer profil", key=f"btn_save_prof_{u_id}", type="primary"):
+                            ok_n, msg_n = update_user_name(u_id, edit_name_val)
+                            ok_a, msg_a = update_user_age(u_id, int(edit_age_val))
+                            if ok_n and ok_a:
+                                st.success("Profil mis à jour !")
+                                st.rerun()
+                            else:
+                                st.error(f"{msg_n} {msg_a}")
 
                 # 1. Rôle
                 with col_u1:
@@ -1004,14 +1027,17 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
         is_en = current_course["language"] == "en"
         badge_cls = get_subject_badge_class(current_course["subject"])
 
+        active_user_dict = active_student_info if (is_admin and active_student_info) else current_user
+        active_cycle = get_pedagogical_cycle(active_user_dict.get("age"))
+
         if is_ar:
-            level_label = "المستوى : السنة الثالثة إعدادي (3AC)"
+            level_label = f"المستوى : {active_cycle['cycle_name']} ({active_cycle['age']} سنة)"
             lang_badge_text = "العربية (AR)"
         elif is_en:
-            level_label = "Level: 3rd Year Middle School (3AC)"
+            level_label = f"Level: {active_cycle['cycle_name']} ({active_cycle['age']} yo)"
             lang_badge_text = "English (EN)"
         else:
-            level_label = "Niveau : 3AC Collège"
+            level_label = f"Niveau : {active_cycle['cycle_name']} ({active_cycle['age']} ans)"
             lang_badge_text = "Français (FR)"
 
         header_html = f"""
@@ -1364,8 +1390,8 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
             if target_choice == "👥 Tous les élèves inscrits":
                 target_ids = [s["id"] for s in all_s]
                 if not target_ids:
-                    st.warning("⚠️ Aucun élève n'est encore inscrit. Les cours seront ajoutés sous votre compte administrateur.")
-                    target_ids = [logged_in_user_id]
+                    st.info("ℹ️ Aucun élève n'est encore inscrit. Les cours seront enregistrés comme cours communs partagés de l'établissement.")
+                    target_ids = [None]
                 else:
                     st.caption(f"Le cours sera injecté dans l'espace de {len(target_ids)} élève(s).")
             else:
@@ -1507,6 +1533,49 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
             st.info(f"👀 **Espace de supervision :** Paramètres et sauvegarde de **{active_student_info['name']}**.")
 
         st.title("⚙️ Paramètres & Sauvegardes Personnelles")
+
+        # -------------------------------------------------------------------
+        # 1. PROFIL DE L'APPRENANT : NOM & ÂGE (ADAPTATION UNIVERSELLE)
+        # -------------------------------------------------------------------
+        st.markdown("### 👤 Mon Profil & Niveau Scolaire")
+        st.markdown(
+            "Indiquez votre nom d'affichage et votre âge. "
+            "L'intelligence artificielle Sanad adapte automatiquement ses explications, "
+            "ses résumés et la difficulté de ses quiz à votre niveau (Primaire, Collège, Lycée ou Supérieur/Adulte)."
+        )
+
+        target_user = active_student_info if (is_admin and active_student_info) else current_user
+        current_name = target_user.get("name") or ""
+        current_age = int(target_user.get("age") or 14)
+
+        col_p1, col_p2, col_p3 = st.columns([2.5, 1.5, 1.5])
+        with col_p1:
+            new_prof_name = st.text_input("Nom d'affichage :", value=current_name, key="prof_edit_name_input")
+        with col_p2:
+            new_prof_age = st.number_input("Âge de l'élève :", min_value=5, max_value=99, value=current_age, key="prof_edit_age_input")
+        with col_p3:
+            st.write("")
+            st.write("")
+            save_prof_btn = st.button("💾 Mettre à jour mon profil", type="primary", use_container_width=True, key="btn_save_prof_settings")
+
+        ped_cycle = get_pedagogical_cycle(int(new_prof_age))
+        st.info(f"🎯 **Niveau & Cycle :** {ped_cycle['cycle_name']} — *Style d'apprentissage : {ped_cycle['tone']}*")
+
+        if save_prof_btn:
+            ok_name, msg_name = update_user_name(active_user_id, new_prof_name)
+            ok_age, msg_age = update_user_age(active_user_id, int(new_prof_age))
+            if ok_name and ok_age:
+                if active_user_id == logged_in_user_id:
+                    st.session_state["name"] = new_prof_name
+                    if "user" in st.session_state and isinstance(st.session_state["user"], dict):
+                        st.session_state["user"]["name"] = new_prof_name
+                        st.session_state["user"]["age"] = int(new_prof_age)
+                st.success("Profil mis à jour avec succès ! Les contenus générés par l'IA s'adapteront à votre nouvel âge.")
+                st.rerun()
+            else:
+                st.error(f"{msg_name} {msg_age}")
+
+        st.divider()
 
         st.markdown("### 🔑 Clé API Google Gemini Personnelle")
         st.markdown(
