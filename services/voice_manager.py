@@ -158,23 +158,23 @@ def generate_tts_player_html(
         btn_content = SVG_SPEAKER
         btn_style = (
             "display: inline-flex; align-items: center; justify-content: center; "
-            "width: 28px; height: 28px; border-radius: 50%; "
+            "width: 32px; height: 32px; border-radius: 8px; "
             "color: #2563eb; background: #eff6ff; border: 1px solid #bfdbfe; "
-            "cursor: pointer; transition: all 0.2s ease; padding: 0; box-shadow: 0 1px 2px rgba(0,0,0,0.04);"
+            "cursor: pointer; transition: all 0.2s ease; padding: 0; box-shadow: 0 1px 2px rgba(0,0,0,0.05);"
         )
     else:
         btn_content = f"{SVG_SPEAKER} <span id='label_{clean_id}' style='margin-left: 5px;'>{cfg['play_label']}</span>"
         btn_style = (
             "display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; "
             "font-size: 12px; font-weight: 500; color: #1e3a8a; background: #eff6ff; "
-            "border: 1px solid #bfdbfe; border-radius: 16px; cursor: pointer; transition: all 0.2s ease;"
+            "border: 1px solid #bfdbfe; border-radius: 8px; cursor: pointer; transition: all 0.2s ease;"
         )
 
     html_code = f"""
-    <div id="wrapper_{clean_id}" style="display: inline-block; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; direction: {direction};">
+    <div id="wrapper_{clean_id}" style="display: flex; align-items: center; margin: 0 0 4px 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; direction: {direction};">
       <style>
         #btn_{clean_id}:hover {{
-          transform: scale(1.08);
+          transform: scale(1.06);
           background: #dbeafe !important;
           border-color: #93c5fd !important;
         }}
@@ -231,6 +231,7 @@ def generate_tts_player_html(
               btn.style.background = "#eff6ff";
               btn.style.borderColor = "#bfdbfe";
               btn.style.color = "#2563eb";
+              btn.style.borderRadius = "8px";
             }}
             if (icn) {{
               if (isCompact) {{
@@ -251,6 +252,7 @@ def generate_tts_player_html(
               btn.style.background = "#fee2e2";
               btn.style.borderColor = "#fca5a5";
               btn.style.color = "#dc2626";
+              btn.style.borderRadius = "8px";
             }}
             if (icn) {{
               if (isCompact) {{
@@ -480,6 +482,15 @@ def generate_chat_mic_injector_html(language: str = "fr", widget_id: str = "chat
 
                 recognition.onend = function() {{
                   setMicListeningState(false);
+                  const pDoc = getParentDoc();
+                  if (pDoc) {{
+                    const textarea = pDoc.querySelector('textarea[data-testid="stChatInputTextArea"]');
+                    const submitBtn = pDoc.querySelector('button[data-testid="stChatInputSubmitButton"]');
+                    if (textarea && textarea.value && textarea.value.trim().length > 0 && submitBtn) {{
+                      submitBtn.disabled = false;
+                      submitBtn.removeAttribute('disabled');
+                    }}
+                  }}
                 }};
 
                 recognition.start();
@@ -508,12 +519,43 @@ def generate_chat_mic_injector_html(language: str = "fr", widget_id: str = "chat
           function insertTextIntoChatInput(text) {{
             const pDoc = getParentDoc();
             if (!pDoc) return;
+            const pWin = window.parent || window;
             const textarea = pDoc.querySelector('textarea[data-testid="stChatInputTextArea"]');
-            if (textarea) {{
+            if (!textarea) return;
+
+            // Utiliser le setter natif du prototype HTMLTextAreaElement de la fenêtre parent
+            try {{
+              const proto = (pWin.HTMLTextAreaElement && pWin.HTMLTextAreaElement.prototype)
+                            || window.HTMLTextAreaElement.prototype;
+              const desc = Object.getOwnPropertyDescriptor(proto, 'value');
+              if (desc && desc.set) {{
+                desc.set.call(textarea, text);
+              }} else {{
+                textarea.value = text;
+              }}
+            }} catch(e) {{
               textarea.value = text;
-              textarea.dispatchEvent(new Event('input', {{ bubbles: true }}));
-              textarea.focus();
             }}
+
+            // Mettre à jour le valueTracker interne de React si présent
+            if (textarea._valueTracker) {{
+              textarea._valueTracker.setValue('');
+            }}
+
+            // Événements dans le contexte parent pour notifier le state React
+            const EventClass = pWin.Event || Event;
+            textarea.dispatchEvent(new EventClass('input', {{ bubbles: true, cancelable: true }}));
+            textarea.dispatchEvent(new EventClass('change', {{ bubbles: true, cancelable: true }}));
+
+            // Activer directement le bouton envoyer
+            const submitBtn = pDoc.querySelector('button[data-testid="stChatInputSubmitButton"]');
+            if (submitBtn) {{
+              submitBtn.disabled = false;
+              submitBtn.removeAttribute('disabled');
+              submitBtn.style.pointerEvents = 'auto';
+            }}
+
+            textarea.focus();
           }}
 
           // Tenter d'injecter immédiatement et avec un observateur

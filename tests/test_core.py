@@ -1117,7 +1117,7 @@ print("debug")
         self.assertEqual(cfg_default["lang_code"], "fr-FR")
 
     def test_generate_tts_player_html_structure(self):
-        # Mode compact (par défaut, sans texte)
+        # Mode compact (par défaut, sans texte, carré arrondi 8px)
         html_code = generate_tts_player_html("Bravo champion, continue ainsi !", language="fr", player_id="test_player_1", compact=True)
         self.assertIn("speechSynthesis", html_code)
         self.assertIn("SpeechSynthesisUtterance", html_code)
@@ -1125,6 +1125,8 @@ print("debug")
         self.assertIn("btn_test_player_1", html_code)
         self.assertIn("Bravo champion", html_code)
         self.assertIn("isCompact = true", html_code)
+        self.assertIn("border-radius: 8px", html_code)
+        self.assertIn("width: 32px; height: 32px", html_code)
 
         # Mode avec auto_play
         html_auto = generate_tts_player_html("Explication Sanad", language="fr", player_id="test_auto_1", auto_play=True)
@@ -1140,6 +1142,8 @@ print("debug")
         self.assertIn("stChatInputSubmitButton", mic_injector)
         self.assertIn("sanad_chat_input_mic_btn", mic_injector)
         self.assertIn("stChatInputTextArea", mic_injector)
+        self.assertIn("HTMLTextAreaElement", mic_injector)
+        self.assertIn("submitBtn.disabled = false", mic_injector)
 
     def test_generate_mic_speech_html_structure(self):
         mic_html = generate_mic_speech_html(language="fr", widget_id="test_mic_1")

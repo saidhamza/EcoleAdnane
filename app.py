@@ -1595,28 +1595,21 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                 content = msg["content"]
                 with st.chat_message("user" if role == "user" else "assistant", avatar="🧑‍🎓" if role == "user" else "🤖"):
                     if role == "assistant":
-                        col_bot_lbl, col_bot_voice = st.columns([0.90, 0.10])
-                        with col_bot_lbl:
-                            if is_ar:
-                                st.markdown("<div style='font-size:12px; font-weight:600; color:#4b5563; padding-top:4px;'>الأستاذ سَنَد</div>", unsafe_allow_html=True)
-                            else:
-                                st.markdown("<div style='font-size:12px; font-weight:600; color:#4b5563; padding-top:4px;'>Sanad</div>", unsafe_allow_html=True)
-                        with col_bot_voice:
-                            should_auto_play = bool(
-                                auto_speak
-                                and (i == len(history) - 1)
-                                and has_auto_trigger
-                            )
-                            tts_html = generate_tts_player_html(
-                                content,
-                                language=current_course.get("language", "fr"),
-                                player_id=f"voice_msg_{current_course['id']}_{i}",
-                                rate=voice_speed,
-                                compact=True,
-                                auto_play=should_auto_play,
-                            )
-                            if tts_html:
-                                st.components.v1.html(tts_html, height=32)
+                        should_auto_play = bool(
+                            auto_speak
+                            and (i == len(history) - 1)
+                            and has_auto_trigger
+                        )
+                        tts_html = generate_tts_player_html(
+                            content,
+                            language=current_course.get("language", "fr"),
+                            player_id=f"voice_msg_{current_course['id']}_{i}",
+                            rate=voice_speed,
+                            compact=True,
+                            auto_play=should_auto_play,
+                        )
+                        if tts_html:
+                            st.components.v1.html(tts_html, height=36)
 
                         if is_ar:
                             st.markdown(f"<div class='rtl-box'>{content}</div>", unsafe_allow_html=True)
