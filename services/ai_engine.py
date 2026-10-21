@@ -168,6 +168,25 @@ def classify_and_extract_metadata(
   "estimated_level": "السنة الثالثة إعدادي (3AC)"
 }}
 """
+    elif detected_lang == "en":
+        sys_prompt = (
+            "You are a Moroccan pedagogical expert specializing in the official 3rd Year Middle School (3AC) curriculum.\n"
+            "Your task is to analyze text from a 3AC English lesson and determine the exact lesson title, subject ('Anglais'), and key vocabulary/grammar concepts.\n"
+            "Output strictly valid JSON with all fields in English."
+        )
+        user_prompt = f"""
+Analyze the following text extracted from a 3AC English course:
+---
+{excerpt}
+---
+Return ONLY a valid JSON object with this exact structure:
+{{
+  "title": "Clear and precise title of the English lesson",
+  "subject": "Anglais",
+  "key_concepts": ["concept 1", "concept 2", "concept 3", "concept 4"],
+  "estimated_level": "3AC Middle School"
+}}
+"""
     else:
         sys_prompt = (
             "Tu es un expert pédagogique marocain spécialisé dans le programme officiel de 3ème Année Collège (3AC / Biof).\n"
@@ -253,6 +272,33 @@ def generate_revision_sheet(
 ## 💡 نصيحة التحرير لضمان النقطة الكاملة
 (نصيحة عملية لكتابة الإجابة بشكل يرضي المصحح)
 """
+    elif language == "en":
+        sys_prompt = (
+            "You are an inspiring and supportive English teacher in Morocco for 14-year-old students in 3rd Year Middle School (3AC).\n"
+            "Your style is clear, motivating, encouraging, and focused on exam success.\n"
+            "Strict rule: Write entirely in clear, simple and correct English."
+        )
+        user_prompt = f"""
+Prepare a concise and high-impact 'Revision Sheet' (Fiche Express) for this 3AC English lesson.
+Course content:
+---
+{excerpt}
+---
+
+Format the sheet in clean Markdown using EXACTLY these section headers and icons:
+
+## 🎯 Essential Vocabulary & Key Terms
+(3 to 5 must-know words and expressions with clear, simple definitions or examples for a 14-year-old student)
+
+## 📌 Grammar Rules & Sentence Patterns
+(Key tenses, sentence structures, or grammar rules with easy examples)
+
+## ⚠️ Common Exam Traps & Mistakes to Avoid
+(2 to 3 typical mistakes students make in Moroccan 3AC English exams, and how to avoid them)
+
+## 💡 Top Writing & Reading Tip
+(A practical tip to write a great paragraph or ace reading comprehension on the exam)
+"""
     else:
         sys_prompt = (
             "Tu es un professeur de collège au Maroc, réputé pour ta pédagogie claire et motivante auprès des élèves de 14 ans (3AC Biof).\n"
@@ -332,6 +378,36 @@ def generate_quiz(
   }}
 ]
 """
+    elif language == "en":
+        sys_prompt = (
+            "You are an expert exam designer for 3rd Year Middle School (3AC) English in Morocco.\n"
+            "You create a fun, stimulating, and reassuring interactive training quiz for a 14-year-old learner.\n"
+            "Strict rule: Write questions, options, and explanations in clear English as valid JSON."
+        )
+        user_prompt = f"""
+Based on this 3AC English lesson content:
+---
+{excerpt}
+---
+
+Generate {num_questions} multiple-choice questions (QCM) typical of 3AC English exams (reading comprehension, grammar, vocabulary).
+Return ONLY a valid JSON array containing this exact structure:
+[
+  {{
+    "question": "Clear and focused question in English?",
+    "options": [
+      "Option A",
+      "Option B",
+      "Option C",
+      "Option D"
+    ],
+    "answer_index": 0,
+    "explanation": "Step-by-step, encouraging explanation in simple English showing why this option is correct.",
+    "trap_alert": "A smart tip warning about a common exam mistake related to this question.",
+    "difficulty": "Easy or Medium or Advanced"
+  }}
+]
+"""
     else:
         sys_prompt = (
             "Tu es un concepteur d'épreuves d'examens normalisés de 3ème Année Collège au Maroc (3AC Biof).\n"
@@ -390,6 +466,15 @@ Renvoie UNIQUEMENT un tableau JSON valide contenant cette structure exacte :
             "trap_alert": "انتبه دائماً لقراءة السؤال كاملاً قبل التسرع في الإجابة.",
             "difficulty": "سهل"
         }]
+    elif language == "en":
+        return [{
+            "question": f"What is the main learning objective of this {subject} lesson?",
+            "options": ["Mastering the key grammar and vocabulary of the unit", "An unrelated topic", "General knowledge", "Outside material"],
+            "answer_index": 0,
+            "explanation": "This lesson focuses on essential 3AC English curriculum competencies.",
+            "trap_alert": "Always read the full sentence and context before choosing your answer.",
+            "difficulty": "Easy"
+        }]
     else:
         return [{
             "question": f"Quel est l'objectif principal abordé dans ce cours de {subject} ?",
@@ -417,7 +502,7 @@ def socratic_tutor_response(
     - Ton bienveillant, encourageant, accessible pour un ado de 14 ans.
     - NE DONNE JAMAIS LA RÉPONSE DIRECTE d'un exercice ou d'un devoir.
     - Pose des questions guidées, donne des indices, félicite l'effort de réflexion.
-    - Respecte strictement la langue du document (100% Arabe ou 100% Français).
+    - Respecte strictement la langue du document (Arabe, Anglais ou Français).
     """
     context_excerpt = course_context[:4000]
 
@@ -435,6 +520,21 @@ def socratic_tutor_response(
 2. التبسيط والود: تحدث بلغة عربية فصحى دافئة ومحفزة جداً (مثل: "ممتاز يا بطل"، "فكرة ذكية، لنفكر معاً...", "أنت قريب جداً!").
 3. التوجيه نحو الامتحان الموحد: ذكر التلميذ إذا لزم الأمر بالصيغ المنهجية التي تطلب في الامتحان الجهوي والمحلي.
 4. الالتزام اللغوي المطلق: تحدث باللغة العربية فقط وبشكل كامل.
+"""
+    elif language == "en":
+        system_instruction = f"""
+You are "Sanad", the kind, supportive virtual tutor and mentor for a 14-year-old student in 3rd Year Middle School (3AC) in Morocco.
+You are helping the student study: {subject} (English).
+Here is the active lesson content they are currently studying:
+---
+{context_excerpt}
+---
+
+Your golden pedagogical rules:
+1. Socratic Method: NEVER give the direct answer to exercises or homework! Instead, guide the student step by step with a leading question or hint so they discover the answer themselves.
+2. Tone & Warmth: Be warm, enthusiastic, and very encouraging (e.g. "Great try champion!", "Awesome question, let's look at the clue...", "You are almost there!").
+3. Moroccan 3AC Focus: Mention practical tips for the 3AC English exam when relevant.
+4. Language Rule: Speak entirely in clear, simple, accessible English suited for a 14-year-old 3AC student.
 """
     else:
         system_instruction = f"""

@@ -25,6 +25,9 @@ SUBJECTS_FR = [
     "Physique-Chimie",
     "SVT",
     "Français",
+]
+
+SUBJECTS_EN = [
     "Anglais",
 ]
 
@@ -33,6 +36,8 @@ SUBJECTS_AR = [
     "الاجتماعيات",
     "اللغة العربية",
 ]
+
+ALL_SUBJECTS = SUBJECTS_FR + SUBJECTS_AR + SUBJECTS_EN
 
 # Mots-clés représentatifs du programme 3AC Maroc
 KEYWORDS_3AC = {
@@ -70,8 +75,13 @@ KEYWORDS_3AC = {
         "subordonnée", "cause", "conséquence", "but", "opposition", "concession", "condition"
     ],
     "Anglais": [
-        "simple present", "simple past", "present perfect", "reading comprehension",
-        "vocabulary", "adjective", "adverb", "pronoun", "grammar", "dialogue", "listening"
+        "english", "grammar", "vocabulary", "simple present", "simple past", "present perfect",
+        "past simple", "past continuous", "reading comprehension", "listening", "speaking", "writing",
+        "adjective", "adverb", "pronoun", "preposition", "dialogue", "conversation",
+        "irregular verbs", "modal verbs", "should", "must", "can", "could", "would",
+        "comparative", "superlative", "passive voice", "reported speech", "conditional",
+        "unit 1", "unit 2", "unit 3", "unit 4", "unit 5", "unit 6", "unit 7", "unit 8",
+        "focus", "window on the world", "ticket to english", "student's book", "workbook"
     ],
 
     # Matières en Arabe
@@ -109,10 +119,27 @@ def is_arabic_char(char: str) -> bool:
     return False
 
 
+FRENCH_STOPWORDS = {
+    "le", "la", "les", "un", "une", "des", "du", "de", "dans", "pour", "avec",
+    "est", "sont", "et", "qui", "que", "ce", "cette", "ces", "sur", "au", "aux",
+    "par", "nous", "vous", "ils", "elles", "pas", "plus", "cours", "matière", "matiere",
+    "théorème", "theoreme", "calcul", "exercices", "exercice", "partie", "chapitre"
+}
+
+ENGLISH_STOPWORDS = {
+    "the", "is", "are", "was", "were", "of", "in", "on", "at", "with", "for",
+    "from", "this", "that", "these", "those", "have", "has", "had", "they", "their",
+    "them", "what", "when", "where", "which", "why", "how", "and", "but", "not",
+    "english", "grammar", "vocabulary", "lesson", "unit", "exercise", "exercises",
+    "reading", "writing", "speaking", "listening", "verb", "verbs", "tense", "tenses",
+    "present", "past", "future", "simple", "continuous", "perfect"
+}
+
+
 def detect_language(text: str) -> str:
     """
     Détecte rigoureusement la langue dominante du texte.
-    Retourne 'ar' pour l'Arabe ou 'fr' pour le Français.
+    Retourne 'ar' pour l'Arabe, 'en' pour l'Anglais ou 'fr' pour le Français.
     """
     if not text or not text.strip():
         return "fr"
@@ -129,6 +156,15 @@ def detect_language(text: str) -> str:
     # Si plus de 30% des caractères alphabétiques sont arabes, ou majorité arabe
     if arabic_ratio >= 0.30 or arabic_chars > latin_chars:
         return "ar"
+
+    # Distinction entre Anglais et Français pour les textes en alphabet latin
+    all_words = re.findall(r"\b[a-zA-Zà-ÿ]+\b", text.lower())
+    french_accents = sum(1 for c in text if c in "éèêëàâäôöûüîïçÉÈÊËÀÂÄÔÖÛÜÎÏÇ")
+    fr_score = sum(1 for w in all_words if w in FRENCH_STOPWORDS) + french_accents
+    en_score = sum(1 for w in all_words if w in ENGLISH_STOPWORDS)
+
+    if en_score > fr_score and en_score >= 2:
+        return "en"
     return "fr"
 
 
@@ -181,7 +217,12 @@ def classify_subject_heuristic(text: str, language: str) -> Tuple[str, float]:
     Retourne (nom_matière, score_confiance).
     """
     text_lower = text.lower()
-    subject_candidates = SUBJECTS_AR if language == "ar" else SUBJECTS_FR
+    if language == "ar":
+        subject_candidates = SUBJECTS_AR
+    elif language == "en":
+        subject_candidates = SUBJECTS_EN
+    else:
+        subject_candidates = SUBJECTS_FR + SUBJECTS_EN
 
     best_subject = subject_candidates[0]
     best_score = 0
@@ -221,4 +262,8 @@ def extract_fallback_title(filename: str, text: str, language: str) -> str:
         # Limiter à 60 caractères
         return first_line[:60].strip()
 
-    return "Cours 3AC" if language == "fr" else "درس الثالثة إعدادي"
+    if language == "en":
+        return "3AC English Lesson"
+    elif language == "ar":
+        return "درس الثالثة إعدادي"
+    return "Cours 3AC"

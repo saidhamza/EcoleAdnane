@@ -78,7 +78,7 @@ from services.downloader import (
     save_user_credentials,
     sync_google_classroom,
 )
-from services.pdf_parser import SUBJECTS_AR, SUBJECTS_FR
+from services.pdf_parser import ALL_SUBJECTS, SUBJECTS_AR, SUBJECTS_EN, SUBJECTS_FR
 
 # Initialisation de la base SQLite et migrations
 init_db()
@@ -768,11 +768,18 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
 
         col_f1, col_f2, col_f3 = st.columns([2, 2, 2])
         with col_f1:
-            all_subjects = ["Toutes"] + SUBJECTS_FR + SUBJECTS_AR
+            all_subjects = ["Toutes"] + SUBJECTS_FR + SUBJECTS_EN + SUBJECTS_AR
             selected_subject = st.selectbox("Filtrer par matière :", all_subjects)
         with col_f2:
-            selected_lang = st.selectbox("Langue :", ["Toutes", "Français", "العربية"])
-            lang_filter = "fr" if selected_lang == "Français" else ("ar" if selected_lang == "العربية" else None)
+            selected_lang = st.selectbox("Langue :", ["Toutes", "Français", "English", "العربية"])
+            if selected_lang == "Français":
+                lang_filter = "fr"
+            elif selected_lang == "English":
+                lang_filter = "en"
+            elif selected_lang == "العربية":
+                lang_filter = "ar"
+            else:
+                lang_filter = None
         with col_f3:
             courses_list = list_courses(
                 user_id=active_user_id,
@@ -794,7 +801,7 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                 )
             return
 
-        course_options = {c["id"]: f"{'🇲🇦 [AR]' if c['language'] == 'ar' else '🇫🇷 [FR]'} {c['subject']} - {c['title']}" for c in courses_list}
+        course_options = {c["id"]: f"{'🇲🇦 [AR]' if c['language'] == 'ar' else ('🇬🇧 [EN]' if c['language'] == 'en' else '🇫🇷 [FR]')} {c['subject']} - {c['title']}" for c in courses_list}
         selected_course_id = st.selectbox(
             "Sélectionnez le cours à réviser :",
             options=list(course_options.keys()),
@@ -807,10 +814,18 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
             return
 
         is_ar = current_course["language"] == "ar"
+        is_en = current_course["language"] == "en"
         badge_cls = get_subject_badge_class(current_course["subject"])
 
-        level_label = "المستوى : السنة الثالثة إعدادي (3AC)" if is_ar else "Niveau : 3AC Collège"
-        lang_badge_text = "العربية (AR)" if is_ar else "Français (FR)"
+        if is_ar:
+            level_label = "المستوى : السنة الثالثة إعدادي (3AC)"
+            lang_badge_text = "العربية (AR)"
+        elif is_en:
+            level_label = "Level: 3rd Year Middle School (3AC)"
+            lang_badge_text = "English (EN)"
+        else:
+            level_label = "Niveau : 3AC Collège"
+            lang_badge_text = "Français (FR)"
 
         header_html = f"""
         <div class="course-header-box {'rtl-box' if is_ar else ''}">
@@ -833,16 +848,26 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
             if is_ar:
                 chips = " ".join([f"<span class='concept-tag'>{c}</span>" for c in current_course["key_concepts"]])
                 st.markdown(f"<div dir='rtl' style='text-align:right; margin-top:8px; margin-bottom:12px;'><strong>المفاهيم الأساسية :</strong> {chips}</div>", unsafe_allow_html=True)
+            elif is_en:
+                chips = " ".join([f"<span class='concept-tag'>#{c}</span>" for c in current_course["key_concepts"]])
+                st.markdown(f"**Key Concepts:** {chips}", unsafe_allow_html=True)
             else:
                 chips = " ".join([f"<span class='concept-tag'>#{c}</span>" for c in current_course["key_concepts"]])
                 st.markdown(f"**Notions clés :** {chips}", unsafe_allow_html=True)
 
-        edit_header_label = "✏️ تصحيح مادة الدرس أو العنوان أو اللغة" if is_ar else "✏️ Modifier la matière, le titre ou la langue de ce cours"
+        if is_ar:
+            edit_header_label = "✏️ تصحيح مادة الدرس أو العنوان أو اللغة"
+        elif is_en:
+            edit_header_label = "✏️ Edit course subject, title or language"
+        else:
+            edit_header_label = "✏️ Modifier la matière, le titre ou la langue de ce cours"
+
         with st.expander(edit_header_label):
             col_ed1, col_ed2, col_ed3 = st.columns([3, 2, 2])
             with col_ed1:
+                title_label = "عنوان الدرس" if is_ar else ("Lesson Title" if is_en else "Titre du cours")
                 new_title = st.text_input(
-                    "عنوان الدرس" if is_ar else "Titre du cours",
+                    title_label,
                     value=current_course["title"],
                     key=f"edit_title_{current_course['id']}",
                 )
@@ -856,9 +881,14 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                     "🇫🇷 Physique-Chimie",
                     "🇫🇷 SVT",
                     "🇫🇷 Français",
-                    "🇫🇷 Anglais",
+                    "🇬🇧 Anglais",
                 ]
-                current_prefix = "🇲🇦 " if is_ar else "🇫🇷 "
+                if is_ar:
+                    current_prefix = "🇲🇦 "
+                elif is_en or current_course["subject"] == "Anglais":
+                    current_prefix = "🇬🇧 "
+                else:
+                    current_prefix = "🇫🇷 "
                 current_match = current_prefix + current_course["subject"]
                 default_idx = (
                     all_subjects_display.index(current_match)
@@ -866,31 +896,42 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                     else 0
                 )
                 chosen_subject_labeled = st.selectbox(
-                    "المادة" if is_ar else "Matière",
+                    "المادة" if is_ar else ("Subject" if is_en else "Matière"),
                     all_subjects_display,
                     index=default_idx,
                     key=f"edit_subj_{current_course['id']}",
                 )
-                cleaned_subj = chosen_subject_labeled.replace("🇲🇦 ", "").replace("🇫🇷 ", "")
+                cleaned_subj = chosen_subject_labeled.replace("🇲🇦 ", "").replace("🇫🇷 ", "").replace("🇬🇧 ", "")
                 is_ar_choice = "🇲🇦" in chosen_subject_labeled or cleaned_subj in SUBJECTS_AR
+                is_en_choice = "🇬🇧" in chosen_subject_labeled or cleaned_subj in SUBJECTS_EN
 
             with col_ed3:
-                lang_options = ["🇲🇦 العربية (ar)", "🇫🇷 Français (fr)"]
-                lang_default_idx = 0 if is_ar_choice else 1
+                lang_options = ["🇲🇦 العربية (ar)", "🇫🇷 Français (fr)", "🇬🇧 English (en)"]
+                if is_ar_choice:
+                    lang_default_idx = 0
+                elif is_en_choice:
+                    lang_default_idx = 2
+                else:
+                    lang_default_idx = 1
                 chosen_lang_label = st.selectbox(
-                    "اللغة" if is_ar else "Langue du cours",
+                    "اللغة" if is_ar else ("Language" if is_en else "Langue du cours"),
                     lang_options,
                     index=lang_default_idx,
                     key=f"edit_lang_{current_course['id']}",
                 )
-                final_lang = "ar" if "العربية" in chosen_lang_label else "fr"
+                if "العربية" in chosen_lang_label:
+                    final_lang = "ar"
+                elif "English" in chosen_lang_label:
+                    final_lang = "en"
+                else:
+                    final_lang = "fr"
 
             btn_save_col1, _ = st.columns([2, 5])
             with btn_save_col1:
-                btn_save_txt = "💾 حفظ التعديل" if is_ar else "💾 Enregistrer les modifications"
+                btn_save_txt = "💾 حفظ التعديل" if is_ar else ("💾 Save Changes" if is_en else "💾 Enregistrer les modifications")
                 if st.button(btn_save_txt, type="primary", use_container_width=True, key=f"btn_save_m_{current_course['id']}"):
                     update_course_metadata(current_course["id"], new_title, cleaned_subj, final_lang, user_id=active_user_id)
-                    st.success("Modifications enregistrées !")
+                    st.success("Modifications enregistrées !" if not is_en else "Changes saved successfully!")
                     st.rerun()
 
         st.write("")
@@ -901,6 +942,13 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                 "⚡ بطاقة المراجعة",
                 "🎯 تدريب الامتحان",
                 "🤖 الأستاذ سند",
+            ])
+        elif is_en:
+            tab_doc, tab_fiche, tab_quiz, tab_tuteur = st.tabs([
+                "📄 Course Document",
+                "⚡ Revision Sheet",
+                "🎯 Exam Quiz",
+                "🤖 AI Tutor (Sanad)",
             ])
         else:
             tab_doc, tab_fiche, tab_quiz, tab_tuteur = st.tabs([
@@ -916,18 +964,20 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                 with open(file_path, "rb") as f:
                     pdf_data = f.read()
 
+                dl_label = "📥 تحميل ملف PDF الأصلي" if is_ar else ("📥 Download Original PDF" if is_en else "📥 Télécharger le PDF original")
                 st.download_button(
-                    label="📥 تحميل ملف PDF الأصلي" if is_ar else "📥 Télécharger le PDF original",
+                    label=dl_label,
                     data=pdf_data,
                     file_name=current_course.get("file_name", "cours.pdf"),
                     mime="application/pdf",
                 )
             else:
-                st.warning("Fichier PDF non trouvé sur le disque.")
+                st.warning("Fichier PDF non trouvé sur le disque." if not is_en else "PDF file not found on disk.")
 
             st.write("---")
-            with st.expander("📝 عرض النص المستخرج من الوثيقة" if is_ar else "📝 Voir le texte extrait du document"):
-                raw = current_course.get("raw_text") or "Aucun texte."
+            exp_text_title = "📝 عرض النص المستخرج من الوثيقة" if is_ar else ("📝 View Extracted Text" if is_en else "📝 Voir le texte extrait du document")
+            with st.expander(exp_text_title):
+                raw = current_course.get("raw_text") or ("Aucun texte." if not is_en else "No text found.")
                 if is_ar:
                     st.markdown(f"<div class='rtl-box'>{raw[:4000]}...</div>", unsafe_allow_html=True)
                 else:
@@ -936,12 +986,12 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
         with tab_fiche:
             fiche_md = current_course.get("summary_markdown")
             if not fiche_md:
-                btn_gen_fiche = "⚡ توليد بطاقة المراجعة المركزة بالذكاء الاصطناعي" if is_ar else "⚡ Générer la Fiche Express avec l'IA"
+                btn_gen_fiche = "⚡ توليد بطاقة المراجعة المركزة بالذكاء الاصطناعي" if is_ar else ("⚡ Generate AI Revision Sheet" if is_en else "⚡ Générer la Fiche Express avec l'IA")
                 if st.button(btn_gen_fiche, type="primary"):
                     if not user_api_key:
-                        st.error("Veuillez d'abord activer une clé API Gemini (dans la barre latérale ou auprès de l'administrateur).")
+                        st.error("Veuillez d'abord activer une clé API Gemini (dans la barre latérale ou auprès de l'administrateur)." if not is_en else "Please configure your Gemini API key first.")
                     else:
-                        with st.spinner("Génération de la fiche express..."):
+                        with st.spinner("Génération de la fiche express..." if not is_en else "Generating revision sheet..."):
                             generated_summary = generate_revision_sheet(
                                 raw_text=current_course.get("raw_text") or "",
                                 subject=current_course["subject"],
@@ -957,11 +1007,12 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                     st.markdown(fiche_md)
 
                 st.write("---")
-                if st.button("🔄 Régénérer la Fiche Express"):
+                regen_label = "🔄 إعادة توليد بطاقة المراجعة" if is_ar else ("🔄 Regenerate Revision Sheet" if is_en else "🔄 Régénérer la Fiche Express")
+                if st.button(regen_label):
                     if not user_api_key:
-                        st.error("Veuillez d'abord configurer votre clé API Gemini.")
+                        st.error("Veuillez d'abord configurer votre clé API Gemini." if not is_en else "Please configure your Gemini API key first.")
                     else:
-                        with st.spinner("Régénération..."):
+                        with st.spinner("Régénération..." if not is_en else "Regenerating..."):
                             generated_summary = generate_revision_sheet(
                                 raw_text=current_course.get("raw_text") or "",
                                 subject=current_course["subject"],
@@ -974,12 +1025,12 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
         with tab_quiz:
             latest_quiz = get_latest_quiz(current_course["id"], user_id=active_user_id)
 
-            btn_new_quiz = "🎯 توليد اختبار تدريبي جديد (5 أسئلة)" if is_ar else "🎯 Générer un nouveau quiz d'examen (5 questions)"
+            btn_new_quiz = "🎯 توليد اختبار تدريبي جديد (5 أسئلة)" if is_ar else ("🎯 Generate Exam Practice Quiz (5 questions)" if is_en else "🎯 Générer un nouveau quiz d'examen (5 questions)")
             if st.button(btn_new_quiz, type="secondary"):
                 if not user_api_key:
-                    st.error("Veuillez d'abord activer une clé API Gemini (dans la barre latérale ou auprès de l'administrateur).")
+                    st.error("Veuillez d'abord activer une clé API Gemini (dans la barre latérale ou auprès de l'administrateur)." if not is_en else "Please configure your Gemini API key first.")
                 else:
-                    with st.spinner("Génération des questions d'examen..."):
+                    with st.spinner("Génération des questions d'examen..." if not is_en else "Generating exam quiz questions..."):
                         quiz_questions = generate_quiz(
                             raw_text=current_course.get("raw_text") or "",
                             subject=current_course["subject"],
@@ -1017,17 +1068,20 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                     if is_submitted:
                         user_ans = answers_chosen.get(idx)
                         if user_ans == ans_idx:
-                            st.success(f"✅ Excellente réponse ! ({options[ans_idx]})")
+                            st.success(f"✅ Excellente réponse ! ({options[ans_idx]})" if not is_en else f"✅ Excellent answer! ({options[ans_idx]})")
                         else:
-                            st.error(f"❌ La bonne réponse était : **{options[ans_idx]}**")
+                            st.error(f"❌ La bonne réponse était : **{options[ans_idx]}**" if not is_en else f"❌ The correct answer was: **{options[ans_idx]}**")
 
                         if explanation:
-                            st.markdown(f"<div class='explanation-card'><strong>💡 Explication :</strong> {explanation}</div>", unsafe_allow_html=True)
+                            expl_title = "💡 شرح :" if is_ar else ("💡 Explanation:" if is_en else "💡 Explication :")
+                            st.markdown(f"<div class='explanation-card'><strong>{expl_title}</strong> {explanation}</div>", unsafe_allow_html=True)
                         if trap_alert:
-                            st.markdown(f"<div class='trap-card'><strong>⚠️ Piège classique :</strong> {trap_alert}</div>", unsafe_allow_html=True)
+                            trap_title = "⚠️ فخ شائع :" if is_ar else ("⚠️ Common Exam Trap:" if is_en else "⚠️ Piège classique :")
+                            st.markdown(f"<div class='trap-card'><strong>{trap_title}</strong> {trap_alert}</div>", unsafe_allow_html=True)
 
                 if not is_submitted:
-                    if st.button("🏆 Valider mes réponses", type="primary"):
+                    submit_label = "🏆 Valider mes réponses" if not is_en else "🏆 Submit My Answers"
+                    if st.button(submit_label, type="primary"):
                         score = sum(1 for idx, q in enumerate(questions) if answers_chosen.get(idx) == q.get("answer_index", 0))
                         save_quiz_attempt(
                             course_id=current_course["id"],
@@ -1043,15 +1097,22 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                         st.rerun()
                 else:
                     score = sum(1 for idx, q in enumerate(questions) if answers_chosen.get(idx) == q.get("answer_index", 0))
-                    st.markdown(f"### Score obtenu : **{score} / {len(questions)}**")
-                    if st.button("🔁 Recommencer ce quiz"):
+                    score_txt = f"### Score obtenu : **{score} / {len(questions)}**" if not is_en else f"### Score: **{score} / {len(questions)}**"
+                    st.markdown(score_txt)
+                    retry_label = "🔁 Recommencer ce quiz" if not is_en else "🔁 Retake Quiz"
+                    if st.button(retry_label):
                         st.session_state[submission_key] = False
                         st.rerun()
             else:
-                st.info("Aucun quiz généré pour ce cours pour le moment.")
+                st.info("Aucun quiz généré pour ce cours pour le moment." if not is_en else "No quiz generated for this course yet.")
 
         with tab_tuteur:
-            st.markdown("### 🤖 Tuteur Virtuel : Sanad" if not is_ar else "<div class='rtl-section-title'>🤖 الأستاذ المساعد : سَنَد</div>", unsafe_allow_html=True)
+            if is_ar:
+                st.markdown("<div class='rtl-section-title'>🤖 الأستاذ المساعد : سَنَد</div>", unsafe_allow_html=True)
+            elif is_en:
+                st.markdown("### 🤖 Socratic AI Tutor: Sanad")
+            else:
+                st.markdown("### 🤖 Tuteur Virtuel : Sanad")
 
             history = get_chat_history(current_course["id"], user_id=active_user_id)
             for msg in history:
@@ -1063,17 +1124,19 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                     else:
                         st.markdown(content)
 
-            user_input = st.chat_input("Pose ta question à Sanad..." if not is_ar else "اطرح سؤالك على الأستاذ المساعد سند...")
+            chat_placeholder = "اطرح سؤالك على الأستاذ المساعد سند..." if is_ar else ("Ask Sanad a question about this lesson..." if is_en else "Pose ta question à Sanad...")
+            user_input = st.chat_input(chat_placeholder)
             if user_input:
                 if not user_api_key:
-                    st.error("Veuillez d'abord activer une clé API Gemini (dans la barre latérale ou auprès de l'administrateur).")
+                    st.error("Veuillez d'abord activer une clé API Gemini (dans la barre latérale ou auprès de l'administrateur)." if not is_en else "Please configure your Gemini API key first.")
                 else:
                     add_chat_message(current_course["id"], "user", user_input, user_id=active_user_id)
                     with st.chat_message("user", avatar="🧑‍🎓"):
                         st.markdown(user_input)
 
                     with st.chat_message("assistant", avatar="🤖"):
-                        with st.spinner("Sanad prépare ses conseils..."):
+                        spinner_txt = "Sanad prépare ses conseils..." if not is_en else "Sanad is thinking..."
+                        with st.spinner(spinner_txt):
                             updated_history = get_chat_history(current_course["id"], user_id=active_user_id)
                             reply = socratic_tutor_response(
                                 messages=updated_history,
@@ -1090,7 +1153,8 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                     st.rerun()
 
             if history:
-                if st.button("🗑️ Effacer la conversation avec Sanad", key="clear_chat_active"):
+                clear_label = "🗑️ مسح المحادثة مع سند" if is_ar else ("🗑️ Clear conversation with Sanad" if is_en else "🗑️ Effacer la conversation avec Sanad")
+                if st.button(clear_label, key="clear_chat_active"):
                     clear_chat_history(current_course["id"], user_id=active_user_id)
                     st.rerun()
 

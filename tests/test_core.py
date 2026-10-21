@@ -76,6 +76,7 @@ from services.backup_manager import (
 from services.pdf_parser import (
     classify_subject_heuristic,
     detect_language,
+    extract_fallback_title,
     is_arabic_char,
 )
 
@@ -95,10 +96,12 @@ class TestLanguageAndClassification(unittest.TestCase):
         text_fr = "Dans ce cours de mathématiques de 3AC, nous étudions le théorème de Thalès et le calcul des racines carrées."
         text_ar = "درس سورة الحشر في مادة التربية الإسلامية للسنة الثالثة إعدادي يتناول مدخل التزكية والعقيدة."
         text_mixed_mostly_ar = "ملخص درس التاريخ 3AC: الحرب العالمية الثانية وأسباب اندلاعها في أوروبا."
+        text_en = "In this English unit for 3AC Moroccan students, we learn irregular verbs, the simple past tense, and reading comprehension exercises."
 
         self.assertEqual(detect_language(text_fr), "fr")
         self.assertEqual(detect_language(text_ar), "ar")
         self.assertEqual(detect_language(text_mixed_mostly_ar), "ar")
+        self.assertEqual(detect_language(text_en), "en")
 
     def test_classify_subject_heuristic_french(self):
         math_text = "Théorème de Thalès : dans un triangle ABC, si (MN) est parallèle à (BC), alors AM/AB = AN/AC = MN/BC. Racines carrées."
@@ -125,6 +128,15 @@ class TestLanguageAndClassification(unittest.TestCase):
         arabic_text = "الدرس اللغوي: صياغة اسم الفاعل وإعماله، صيغ المبالغة، اسما الزمان والمكان، والنصوص القرائية."
         subj_ar, _ = classify_subject_heuristic(arabic_text, "ar")
         self.assertEqual(subj_ar, "اللغة العربية")
+
+    def test_classify_subject_heuristic_english(self):
+        english_text = "Unit 3: Focus on reading comprehension and grammar. Practice simple past, irregular verbs, and vocabulary dialogues."
+        subj_en, _ = classify_subject_heuristic(english_text, "en")
+        self.assertEqual(subj_en, "Anglais")
+
+    def test_extract_fallback_title_english(self):
+        title = extract_fallback_title("doc.pdf", "", "en")
+        self.assertEqual(title, "3AC English Lesson")
 
 
 class TestMultiUserAndRoles(unittest.TestCase):
@@ -220,6 +232,30 @@ class TestStrictDataIsolation(unittest.TestCase):
         # Élève B ne peut pas accéder au cours de A
         c_for_b = get_course_by_id(cid_a, user_id=self.user_b["id"])
         self.assertIsNone(c_for_b)
+
+    def test_course_english_saved_and_filtered(self):
+        # Élève A ajoute un cours d'Anglais (en)
+        cid_en = save_course(
+            title="English Unit 1",
+            subject="Anglais",
+            language="en",
+            file_path="/fake/english_u1.pdf",
+            file_hash="hash_en_789",
+            file_name="english_u1.pdf",
+            user_id=self.user_a["id"],
+        )
+        self.assertIsNotNone(cid_en)
+
+        # Récupération filtrée par langue
+        courses_en = list_courses(user_id=self.user_a["id"], language="en")
+        courses_fr = list_courses(user_id=self.user_a["id"], language="fr")
+        courses_all = list_courses(user_id=self.user_a["id"])
+
+        self.assertEqual(len(courses_en), 1)
+        self.assertEqual(courses_en[0]["subject"], "Anglais")
+        self.assertEqual(courses_en[0]["language"], "en")
+        self.assertEqual(len(courses_fr), 0)
+        self.assertEqual(len(courses_all), 1)
 
     def test_quiz_and_chat_isolation(self):
         cid_a = save_course(
