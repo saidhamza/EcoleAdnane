@@ -91,6 +91,13 @@ from services.pdf_parser import (
     extract_fallback_title,
     is_arabic_char,
 )
+from services.voice_manager import (
+    clean_text_for_speech,
+    generate_mic_speech_html,
+    generate_tts_player_html,
+    get_speech_config,
+)
+
 
 
 class TestLanguageAndClassification(unittest.TestCase):
@@ -1052,8 +1059,83 @@ class TestUserSessionPersistence(unittest.TestCase):
         self.assertIsNone(get_user_from_session_token(token))
 
 
+class TestVoiceAndSpeechManager(unittest.TestCase):
+    """Tests sur le module vocal Web Speech API (zéro quota Gemini, synthèse vocale et dictée)."""
+
+    def test_clean_text_for_speech_strips_markdown_and_latex(self):
+        raw_text = """
+### 🤖 Bienvenue sur Ecole Adnane !
+Voici les règles du **théorème de Thalès** :
+* Condition 1 : Les droites $(AB)$ et $(CD)$ sont sécantes.
+* Formule : $$\\frac{AM}{AB} = \\frac{AN}{AC}$$
+N'hésite pas à consulter [le cours complet](https://ecole.ma) !
+```python
+print("debug")
+```
+> Astuce : vérifie bien les unités ! ✨
+"""
+        cleaned = clean_text_for_speech(raw_text)
+        self.assertNotIn("###", cleaned)
+        self.assertNotIn("**", cleaned)
+        self.assertNotIn("```", cleaned)
+        self.assertNotIn("[le cours complet]", cleaned)
+        self.assertIn("le cours complet", cleaned)
+        self.assertNotIn("https://ecole.ma", cleaned)
+        self.assertNotIn("✨", cleaned)
+        self.assertIn("théorème de Thalès", cleaned)
+        self.assertIn("Condition 1", cleaned)
+        self.assertIn("droites (AB) et (CD) sont sécantes", cleaned)
+
+    def test_clean_text_empty_and_arabic(self):
+        self.assertEqual(clean_text_for_speech(""), "")
+        ar_raw = "### مرحباً ! **درس الرياضيات** مهم جداً 🎯"
+        ar_cleaned = clean_text_for_speech(ar_raw)
+        self.assertNotIn("###", ar_cleaned)
+        self.assertNotIn("**", ar_cleaned)
+        self.assertNotIn("🎯", ar_cleaned)
+        self.assertIn("مرحباً", ar_cleaned)
+        self.assertIn("درس الرياضيات", ar_cleaned)
+
+    def test_get_speech_config_trilingual(self):
+        cfg_fr = get_speech_config("fr")
+        self.assertEqual(cfg_fr["lang_code"], "fr-FR")
+        self.assertIn("Écouter", cfg_fr["play_label"])
+        self.assertEqual(cfg_fr["dir"], "ltr")
+
+        cfg_ar = get_speech_config("ar")
+        self.assertEqual(cfg_ar["lang_code"], "ar-SA")
+        self.assertIn("استمع", cfg_ar["play_label"])
+        self.assertEqual(cfg_ar["dir"], "rtl")
+
+        cfg_en = get_speech_config("en")
+        self.assertEqual(cfg_en["lang_code"], "en-US")
+        self.assertIn("Listen", cfg_en["play_label"])
+        self.assertEqual(cfg_en["dir"], "ltr")
+
+        cfg_default = get_speech_config(None)
+        self.assertEqual(cfg_default["lang_code"], "fr-FR")
+
+    def test_generate_tts_player_html_structure(self):
+        html_code = generate_tts_player_html("Bravo champion, continue ainsi !", language="fr", player_id="test_player_1")
+        self.assertIn("speechSynthesis", html_code)
+        self.assertIn("SpeechSynthesisUtterance", html_code)
+        self.assertIn("fr-FR", html_code)
+        self.assertIn("btn_test_player_1", html_code)
+        self.assertIn("Bravo champion", html_code)
+
+        # Si texte vide
+        self.assertEqual(generate_tts_player_html("", language="fr"), "")
+
+    def test_generate_mic_speech_html_structure(self):
+        mic_html = generate_mic_speech_html(language="ar", widget_id="test_mic_1")
+        self.assertIn("SpeechRecognition", mic_html)
+        self.assertIn("ar-SA", mic_html)
+        self.assertIn("mic_btn_test_mic_1", mic_html)
+
+
 if __name__ == "__main__":
     unittest.main()
+
 
 
 

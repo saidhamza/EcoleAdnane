@@ -185,6 +185,24 @@ except Exception:
     SUBJECTS_EN = ["Anglais"]
     ALL_SUBJECTS = SUBJECTS_FR + SUBJECTS_AR + SUBJECTS_EN
 
+try:
+    import services.voice_manager
+    if not hasattr(services.voice_manager, "generate_tts_player_html"):
+        services.voice_manager = importlib.reload(services.voice_manager)
+    from services.voice_manager import (
+        clean_text_for_speech,
+        generate_mic_speech_html,
+        generate_tts_player_html,
+        get_speech_config,
+    )
+except Exception:
+    from services.voice_manager import (
+        clean_text_for_speech,
+        generate_mic_speech_html,
+        generate_tts_player_html,
+        get_speech_config,
+    )
+
 # Initialisation de la base SQLite et migrations
 init_db()
 
@@ -1518,8 +1536,35 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
             else:
                 st.markdown("### 🤖 Tuteur Virtuel : Sanad")
 
+            # Réglages vocaux & vitesse de lecture (Web Speech API - 0 quota Gemini)
+            with st.expander(
+                "🎙️ Options Vocales & Vitesse (100% Gratuites — 0 quota Gemini)"
+                if not is_en
+                else ("🎙️ Voice Settings & Speed (100% Free — 0 Gemini quota)" if is_en else "🎙️ إعدادات الصوت وسرعة النطق (مجاني 100%)"),
+                expanded=False,
+            ):
+                col_v1, col_v2 = st.columns([1, 1])
+                with col_v1:
+                    voice_speed = st.select_slider(
+                        "Vitesse de lecture :" if not is_en else ("Voice Speed:" if is_en else "سرعة النطق :"),
+                        options=[0.8, 0.9, 1.0, 1.1, 1.2],
+                        value=1.0,
+                        format_func=lambda x: f"{x}x" + (" (Douce)" if x < 1.0 else (" (Normale)" if x == 1.0 else " (Rapide)")),
+                        key=f"voice_speed_slider_{current_course['id']}",
+                    )
+                with col_v2:
+                    st.caption(
+                        "💡 **Zéro impact sur votre forfait Gemini :** La synthèse vocale et le micro fonctionnent directement dans votre navigateur grâce à la Web Speech API HTML5."
+                        if not is_en
+                        else (
+                            "💡 **Zero impact on your Gemini quota:** Speech synthesis and voice typing run natively in your browser using the HTML5 Web Speech API."
+                            if is_en
+                            else "💡 **دون استهلاك رصيد Gemini :** قراءة النصوص وتسجيل الصوت يعملان محلياً في متصفحك عبر تقنية Web Speech API."
+                        )
+                    )
+
             history = get_chat_history(current_course["id"], user_id=active_user_id)
-            for msg in history:
+            for i, msg in enumerate(history):
                 role = msg["role"]
                 content = msg["content"]
                 with st.chat_message("user" if role == "user" else "assistant", avatar="🧑‍🎓" if role == "user" else "🤖"):
@@ -1527,6 +1572,24 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                         st.markdown(f"<div class='rtl-box'>{content}</div>", unsafe_allow_html=True)
                     else:
                         st.markdown(content)
+
+                    if role == "assistant":
+                        tts_html = generate_tts_player_html(
+                            content,
+                            language=current_course.get("language", "fr"),
+                            player_id=f"voice_msg_{current_course['id']}_{i}",
+                            rate=voice_speed,
+                        )
+                        if tts_html:
+                            st.components.v1.html(tts_html, height=36)
+
+            # Widget Dictée Vocale au micro (Speech-to-Text gratuit)
+            mic_html = generate_mic_speech_html(
+                language=current_course.get("language", "fr"),
+                widget_id=f"mic_chat_{current_course['id']}",
+            )
+            if mic_html:
+                st.components.v1.html(mic_html, height=75)
 
             chat_placeholder = "اطرح سؤالك على الأستاذ المساعد سند..." if is_ar else ("Ask Sanad a question about this lesson..." if is_en else "Pose ta question à Sanad...")
             user_input = st.chat_input(chat_placeholder)
@@ -1554,6 +1617,14 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                                 st.markdown(f"<div class='rtl-box'>{reply}</div>", unsafe_allow_html=True)
                             else:
                                 st.markdown(reply)
+                            tts_html = generate_tts_player_html(
+                                reply,
+                                language=current_course.get("language", "fr"),
+                                player_id=f"voice_msg_new_{current_course['id']}",
+                                rate=voice_speed,
+                            )
+                            if tts_html:
+                                st.components.v1.html(tts_html, height=36)
                     st.rerun()
 
             if history:
@@ -1821,6 +1892,39 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
             st.rerun()
 
         render_classroom_credentials_instructions(expanded=not has_user_creds)
+
+        st.divider()
+
+        st.markdown("### 🎙️ Voix de Sanad & Dictée Vocale (Web Speech API)")
+        st.markdown(
+            "Le tuteur socratique Sanad peut lire ses explications à voix haute et vous permettre de lui parler au micro. "
+            "Cette technologie s'exécute **100% dans votre navigateur** : **elle ne consomme aucun jeton de votre quota Gemini et est totalement gratuite.**"
+        )
+        col_test_v1, col_test_v2, col_test_v3 = st.columns(3)
+        with col_test_v1:
+            st.markdown("**🇫🇷 Voix Française :**")
+            test_fr_html = generate_tts_player_html(
+                "Bonjour ! Je suis Sanad, ton tuteur personnel. Prêt pour les révisions ?",
+                language="fr",
+                player_id="test_voice_fr",
+            )
+            st.components.v1.html(test_fr_html, height=36)
+        with col_test_v2:
+            st.markdown("**🇲🇦 Voix Arabe (العربية) :**")
+            test_ar_html = generate_tts_player_html(
+                "مرحباً بك ! أنا الأستاذ سند، رفيقك في الدراسة والمراجعة.",
+                language="ar",
+                player_id="test_voice_ar",
+            )
+            st.components.v1.html(test_ar_html, height=36)
+        with col_test_v3:
+            st.markdown("**🇬🇧 Voix Anglaise (English) :**")
+            test_en_html = generate_tts_player_html(
+                "Hello! I am Sanad, your personal study tutor. Ready to practice?",
+                language="en",
+                player_id="test_voice_en",
+            )
+            st.components.v1.html(test_en_html, height=36)
 
         st.divider()
 
