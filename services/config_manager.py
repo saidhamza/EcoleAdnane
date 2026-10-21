@@ -75,13 +75,15 @@ def get_gemini_api_key() -> Optional[str]:
 def get_user_gemini_api_key(user_id: Optional[int] = None) -> Optional[str]:
     """
     Récupère la clé API Gemini de l'utilisateur actif.
-    Si user_id est fourni, cherche d'abord dans user_settings.
-    Repli sur la clé système globale si non trouvée.
+    Stricte étanchéité : si user_id est fourni, cherche EXCLUSIVEMENT
+    dans les paramètres individuels de cet utilisateur (aucun fallback système
+    pour garantir que chaque élève utilise sa propre clé personnelle).
     """
     if user_id is not None:
         user_key = get_user_setting(user_id, "GEMINI_API_KEY")
         if user_key and user_key.strip():
             return user_key.strip()
+        return None
     return get_gemini_api_key()
 
 
@@ -96,11 +98,16 @@ def get_openai_api_key() -> Optional[str]:
 
 
 def get_user_openai_api_key(user_id: Optional[int] = None) -> Optional[str]:
-    """Récupère la clé API OpenAI de l'utilisateur actif ou fallback système."""
+    """
+    Récupère la clé API OpenAI de l'utilisateur actif.
+    Stricte étanchéité : si user_id est fourni, cherche EXCLUSIVEMENT
+    dans les paramètres individuels de cet utilisateur.
+    """
     if user_id is not None:
         user_key = get_user_setting(user_id, "OPENAI_API_KEY")
         if user_key and user_key.strip():
             return user_key.strip()
+        return None
     return get_openai_api_key()
 
 

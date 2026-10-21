@@ -69,6 +69,7 @@ from services.downloader import (
     get_user_credentials_path,
     get_user_storage_dir,
     ingest_pdf_bytes,
+    is_classroom_configured,
     save_user_credentials,
 )
 from services.backup_manager import (
@@ -405,6 +406,13 @@ class TestStrictDataIsolation(unittest.TestCase):
 
 
     def test_individual_api_keys(self):
+        # Un nouvel élève créé n'a AUCUNE clé par défaut, même si une clé globale existe en environnement
+        os.environ["GEMINI_API_KEY"] = "GLOBAL_SERVER_KEY"
+        new_student = create_or_get_google_user("new_student@test.ma", "Élève Nouveau", role="student")
+        self.assertIsNone(get_user_gemini_api_key(new_student["id"]))
+        self.assertFalse(is_classroom_configured(new_student["id"]))
+        self.assertIsNone(get_user_credentials_path(new_student["id"]))
+
         save_user_gemini_api_key(self.user_a["id"], "AIzaSy_KEY_USER_A")
         save_user_gemini_api_key(self.user_b["id"], "AIzaSy_KEY_USER_B")
 

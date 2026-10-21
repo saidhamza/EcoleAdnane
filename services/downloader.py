@@ -66,15 +66,20 @@ def get_user_storage_dir(user_id: Optional[int] = None) -> Path:
     return p
 
 
-def get_user_credentials_path(user_id: Optional[int] = None) -> Path:
-    """Retourne le chemin vers le fichier credentials.json propre à l'utilisateur."""
+def get_user_credentials_path(user_id: Optional[int] = None) -> Optional[Path]:
+    """
+    Retourne le chemin vers le fichier credentials.json propre à l'utilisateur.
+    Stricte étanchéité : si user_id est fourni, cherche EXCLUSIVEMENT
+    dans le dossier de cet utilisateur (aucun partage du fichier racine).
+    """
     if user_id is not None:
         user_cred = USERS_DIR / str(user_id) / "credentials.json"
         if user_cred.exists():
             return user_cred
+        return None
     if ROOT_CREDENTIALS_PATH.exists():
         return ROOT_CREDENTIALS_PATH
-    return USERS_DIR / str(user_id or 1) / "credentials.json"
+    return None
 
 
 def get_user_token_path(user_id: Optional[int] = None) -> Path:
@@ -94,11 +99,14 @@ def save_user_credentials(user_id: int, file_bytes: bytes) -> Path:
 
 
 def is_classroom_configured(user_id: Optional[int] = None) -> bool:
-    """Vérifie si credentials.json est présent pour cet utilisateur ou à la racine."""
+    """
+    Vérifie si credentials.json est présent pour cet utilisateur.
+    Stricte étanchéité : si user_id est fourni, vérifie EXCLUSIVEMENT
+    dans le dossier personnel de cet utilisateur.
+    """
     if user_id is not None:
         user_cred = USERS_DIR / str(user_id) / "credentials.json"
-        if user_cred.exists():
-            return True
+        return user_cred.exists()
     return ROOT_CREDENTIALS_PATH.exists() or (STORAGE_DIR / "credentials.json").exists()
 
 

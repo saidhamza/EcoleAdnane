@@ -785,6 +785,9 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
 
     # Indicateur IA pour l'utilisateur actif
     user_api_key = get_user_gemini_api_key(active_user_id)
+    if is_global_admin_view and not user_api_key:
+        user_api_key = get_gemini_api_key()
+
     if user_api_key:
         st.sidebar.success("🟢 IA active & prête", icon="✅")
     else:
@@ -1017,7 +1020,7 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
         st.markdown("Gestion des accès API de secours, sauvegarde intégrale de la plateforme et maintenance.")
 
         st.markdown("### 🔑 Clé API Google Gemini (Administrateur)")
-        current_admin_key = get_user_gemini_api_key(logged_in_user_id) or ""
+        current_admin_key = get_user_gemini_api_key(logged_in_user_id) or get_gemini_api_key() or ""
         col_ak1, col_ak2 = st.columns([3, 1])
         with col_ak1:
             new_admin_key = st.text_input(
