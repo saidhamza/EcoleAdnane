@@ -7,9 +7,10 @@ cours cloisonnés, fiches de révision, quiz, tentatives et tuteur socratique.
 import json
 import logging
 import os
+import secrets
 import shutil
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -30,6 +31,10 @@ __all__ = [
     "update_user_name",
     "get_pedagogical_cycle",
     "update_user_age",
+    "create_user_session",
+    "get_user_from_session_token",
+    "delete_user_session",
+    "cleanup_expired_sessions",
     "get_global_admin_kpis",
     "save_course",
     "list_courses",
@@ -171,6 +176,13 @@ def init_db(db_path: Optional[Path] = None) -> None:
                     value TEXT NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS user_sessions (
+                    token TEXT PRIMARY KEY,
+                    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    expires_at TIMESTAMP NOT NULL
+                );
+
                 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
                 CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
                 CREATE INDEX IF NOT EXISTS idx_courses_hash ON courses(file_hash);
@@ -178,6 +190,7 @@ def init_db(db_path: Optional[Path] = None) -> None:
                 CREATE INDEX IF NOT EXISTS idx_courses_lang ON courses(language);
                 CREATE INDEX IF NOT EXISTS idx_quizzes_course ON quizzes(course_id);
                 CREATE INDEX IF NOT EXISTS idx_chat_course ON chat_messages(course_id);
+                CREATE INDEX IF NOT EXISTS idx_sessions_user ON user_sessions(user_id);
             """)
 
             # 2. Migrations dynamiques pour bases existantes
@@ -435,6 +448,8 @@ def set_user_blocked_status(
 
             new_val = 1 if is_blocked else 0
             cur.execute("UPDATE users SET is_blocked = ? WHERE id = ?", (new_val, target_user_id))
+            if is_blocked:
+                cur.execute("DELETE FROM user_sessions WHERE user_id = ?", (target_user_id,))
             status_text = "suspendu" if is_blocked else "réactivé"
             return True, f"Le compte de {target_dict['name']} a été {status_text} avec succès."
     finally:
@@ -518,6 +533,7 @@ def delete_user_account(
             cur.execute("DELETE FROM courses WHERE user_id = ?", (target_user_id,))
             cur.execute("DELETE FROM flashcards WHERE user_id = ?", (target_user_id,))
             cur.execute("DELETE FROM user_settings WHERE user_id = ?", (target_user_id,))
+            cur.execute("DELETE FROM user_sessions WHERE user_id = ?", (target_user_id,))
             cur.execute("DELETE FROM users WHERE id = ?", (target_user_id,))
 
         # 2. Nettoyage physique du dossier de l'utilisateur
@@ -627,6 +643,113 @@ def update_user_age(user_id: int, age: int) -> Tuple[bool, str]:
                 return False, "Utilisateur introuvable."
             cycle = get_pedagogical_cycle(val)
             return True, f"Âge enregistré ({val} ans — {cycle['cycle_name']}) !"
+    finally:
+        conn.close()
+
+
+# ===========================================================================
+# SESSIONS UTILISATEURS PERSISTANTES (RÉSISTANCE AU RAFRAÎCHISSEMENT F5)
+# ===========================================================================
+
+def create_user_session(user_id: int, days_valid: int = 30) -> str:
+    """Génère un jeton de session sécurisé pour l'utilisateur, persistant à travers les rechargements de page."""
+    token = secrets.token_urlsafe(32)
+    expires_at = (datetime.now() + timedelta(days=days_valid)).isoformat()
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                INSERT INTO user_sessions (token, user_id, expires_at)
+                VALUES (?, ?, ?)
+                """,
+                (token, user_id, expires_at),
+            )
+            return token
+    finally:
+        conn.close()
+
+
+def get_user_from_session_token(token: Optional[str]) -> Optional[Dict[str, Any]]:
+    """
+    Vérifie la validité d'un jeton de session :
+    - Token existant et non expiré
+    - Utilisateur existant et non suspendu
+    Retourne le dictionnaire de l'utilisateur ou None.
+    """
+    if not token or not isinstance(token, str):
+        return None
+
+    clean_token = token.strip()
+    if not clean_token:
+        return None
+
+    now_iso = datetime.now().isoformat()
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                SELECT s.token, s.user_id, s.expires_at, u.*
+                FROM user_sessions s
+                JOIN users u ON s.user_id = u.id
+                WHERE s.token = ?
+                """,
+                (clean_token,),
+            )
+            row = cur.fetchone()
+            if not row:
+                return None
+
+            row_dict = dict(row)
+            expires_at = row_dict.get("expires_at")
+            if expires_at and expires_at < now_iso:
+                cur.execute("DELETE FROM user_sessions WHERE token = ?", (clean_token,))
+                return None
+
+            if row_dict.get("is_blocked", 0) == 1:
+                cur.execute("DELETE FROM user_sessions WHERE token = ?", (clean_token,))
+                return None
+
+            return {
+                "id": row_dict["id"],
+                "email": row_dict["email"],
+                "name": row_dict["name"],
+                "avatar_url": row_dict.get("avatar_url"),
+                "role": row_dict["role"],
+                "is_blocked": row_dict.get("is_blocked", 0),
+                "has_custom_name": row_dict.get("has_custom_name", 0),
+                "age": row_dict.get("age", 14),
+                "created_at": row_dict.get("created_at"),
+            }
+    finally:
+        conn.close()
+
+
+def delete_user_session(token: Optional[str]) -> None:
+    """Supprime un jeton de session lors de la déconnexion explicite."""
+    if not token or not isinstance(token, str):
+        return
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
+            cur.execute("DELETE FROM user_sessions WHERE token = ?", (token.strip(),))
+    finally:
+        conn.close()
+
+
+def cleanup_expired_sessions() -> int:
+    """Nettoie les sessions expirées en base."""
+    now_iso = datetime.now().isoformat()
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
+            cur.execute("DELETE FROM user_sessions WHERE expires_at < ?", (now_iso,))
+            return cur.rowcount
     finally:
         conn.close()
 

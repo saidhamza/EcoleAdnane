@@ -38,8 +38,10 @@ try:
     from models.database import (
         add_chat_message,
         clear_chat_history,
+        create_user_session,
         delete_course,
         delete_user_account,
+        delete_user_session,
         get_chat_history,
         get_course_by_id,
         get_global_admin_kpis,
@@ -48,6 +50,7 @@ try:
         get_quiz_stats,
         get_user_by_id,
         get_user_count,
+        get_user_from_session_token,
         init_db,
         list_courses,
         list_users,
@@ -142,6 +145,7 @@ from services.auth_manager import (
     init_session_state,
     is_oauth_configured,
     logout_user,
+    restore_user_session_from_browser,
     save_uploaded_oauth_credentials,
     set_session_user,
 )
@@ -519,18 +523,25 @@ Ce fichier permet à Ecole Adnane d'importer directement vos cours, devoirs et s
 
 init_session_state()
 
+# Restauration automatique transparente de session (résistance au rafraîchissement F5 / réouverture du site)
+if not st.session_state.get("is_authenticated"):
+    restore_user_session_from_browser()
+
 # Vérification du retour de code Google OAuth via query params
 if "code" in st.query_params:
     oauth_code = st.query_params["code"]
     try:
         authenticated_user = exchange_code_for_user(oauth_code)
         set_session_user(authenticated_user)
-        st.query_params.clear()
+        # Supprime le code OAuth consommé tout en conservant le token de session
+        if "code" in st.query_params:
+            del st.query_params["code"]
         st.success(f"🎉 Bienvenue, {authenticated_user['name']} !")
         st.rerun()
     except Exception as e:
         st.error(f"❌ Échec de connexion Google : {str(e)}")
-        st.query_params.clear()
+        if "code" in st.query_params:
+            del st.query_params["code"]
 
 # Écran de verrouillage si l'utilisateur n'est pas encore connecté
 if not st.session_state.get("is_authenticated"):
@@ -721,6 +732,27 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
     logged_in_user_id = current_user["id"]
     user_role = current_user.get("role", "student")
     is_admin = user_role == "admin"
+
+    # Synchronisation continue du token de session (query param & cookie) pour résistance absolue au refresh F5
+    session_token = st.session_state.get("session_token")
+    if session_token:
+        try:
+            if st.query_params.get("session") != session_token:
+                st.query_params["session"] = session_token
+        except Exception:
+            pass
+        st.components.v1.html(
+            f"""
+            <script>
+            try {{
+                window.parent.document.cookie = "ea_session={session_token}; path=/; max-age=2592000; SameSite=Lax";
+            }} catch(e) {{
+                document.cookie = "ea_session={session_token}; path=/; max-age=2592000; SameSite=Lax";
+            }}
+            </script>
+            """,
+            height=0,
+        )
 
     # Barre Latérale : Profil et Navigation
     st.sidebar.markdown("## 🎓 **Ecole Adnane**")

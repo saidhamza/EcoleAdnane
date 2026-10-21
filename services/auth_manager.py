@@ -15,9 +15,12 @@ import streamlit as st
 
 from models.database import (
     create_or_get_google_user,
+    create_user_session,
+    delete_user_session,
     get_user_by_email,
     get_user_by_id,
     get_user_count,
+    get_user_from_session_token,
 )
 
 logger = logging.getLogger(__name__)
@@ -381,10 +384,12 @@ def init_session_state() -> None:
         st.session_state["avatar"] = None
     if "role" not in st.session_state:
         st.session_state["role"] = None
+    if "session_token" not in st.session_state:
+        st.session_state["session_token"] = None
 
 
-def set_session_user(user: Dict[str, Any]) -> None:
-    """Configure la session active de l'utilisateur."""
+def set_session_user(user: Dict[str, Any], token: Optional[str] = None) -> None:
+    """Configure la session active de l'utilisateur et initialise son jeton persistant."""
     st.session_state["user"] = user
     st.session_state["user_id"] = user["id"]
     st.session_state["email"] = user["email"]
@@ -393,9 +398,76 @@ def set_session_user(user: Dict[str, Any]) -> None:
     st.session_state["role"] = user["role"]
     st.session_state["is_authenticated"] = True
 
+    # Création / association automatique d'un jeton de session persistant
+    actual_token = token or st.session_state.get("session_token")
+    if not actual_token and user.get("id"):
+        try:
+            actual_token = create_user_session(user["id"])
+        except Exception:
+            pass
+
+    if actual_token:
+        st.session_state["session_token"] = actual_token
+        try:
+            st.query_params["session"] = actual_token
+        except Exception:
+            pass
+
+
+def restore_user_session_from_browser() -> Optional[Dict[str, Any]]:
+    """
+    Tente de restaurer la session utilisateur lors d'un rafraîchissement (F5) ou retour sur le site :
+    1. Vérifie st.query_params['session']
+    2. Vérifie le cookie de session st.context.cookies['ea_session']
+    Si le jeton est valide en base, restaure immédiatement st.session_state.
+    """
+    if st.session_state.get("is_authenticated") and st.session_state.get("user"):
+        return st.session_state["user"]
+
+    token: Optional[str] = None
+    try:
+        token = st.query_params.get("session")
+    except Exception:
+        pass
+
+    if not token:
+        try:
+            if hasattr(st, "context") and hasattr(st.context, "cookies"):
+                token = st.context.cookies.get("ea_session")
+        except Exception:
+            pass
+
+    if token:
+        user = get_user_from_session_token(token)
+        if user:
+            set_session_user(user, token=token)
+            return user
+        else:
+            # Token expiré ou révoqué
+            try:
+                if "session" in st.query_params:
+                    del st.query_params["session"]
+            except Exception:
+                pass
+
+    return None
+
 
 def logout_user() -> None:
-    """Détruit proprement la session utilisateur."""
+    """Détruit proprement la session utilisateur et révoque son jeton persistant."""
+    current_token = st.session_state.get("session_token")
+    try:
+        if not current_token and "session" in st.query_params:
+            current_token = st.query_params.get("session")
+    except Exception:
+        pass
+
+    if current_token:
+        try:
+            delete_user_session(current_token)
+        except Exception:
+            pass
+
     st.session_state["is_authenticated"] = False
     st.session_state["user"] = None
     st.session_state["user_id"] = None
@@ -403,8 +475,15 @@ def logout_user() -> None:
     st.session_state["name"] = None
     st.session_state["avatar"] = None
     st.session_state["role"] = None
+    if "session_token" in st.session_state:
+        del st.session_state["session_token"]
     if "active_student_id" in st.session_state:
         del st.session_state["active_student_id"]
+    try:
+        if "session" in st.query_params:
+            del st.query_params["session"]
+    except Exception:
+        pass
 
 
 def dev_mode_login(email: str, name: str, role: Optional[str] = None) -> Dict[str, Any]:

@@ -19,9 +19,12 @@ from pathlib import Path
 
 from models.database import (
     add_chat_message,
+    cleanup_expired_sessions,
     clear_chat_history,
     create_or_get_google_user,
+    create_user_session,
     delete_user_account,
+    delete_user_session,
     get_chat_history,
     get_course_by_hash,
     get_course_by_id,
@@ -32,6 +35,7 @@ from models.database import (
     get_setting,
     get_user_by_email,
     get_user_by_id,
+    get_user_from_session_token,
     get_user_count,
     get_user_setting,
     init_db,
@@ -970,7 +974,86 @@ class TestPedagogicalAdaptationAndUserProfiles(unittest.TestCase):
         self.assertIsNone(courses_s2[0]["user_id"])
 
 
+class TestUserSessionPersistence(unittest.TestCase):
+    """Tests sur la persistance des sessions utilisateur (résistance F5 et invalidation sécurisée)."""
+
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.test_db_path = Path(self.temp_dir.name) / "test_sessions.db"
+        os.environ["DATABASE_PATH"] = str(self.test_db_path)
+        init_db(self.test_db_path)
+        self.admin = create_or_get_google_user("admin@ecole.ma", "Admin Principal")
+        self.student = create_or_get_google_user("adnane@eleve.ma", "Adnane")
+
+    def tearDown(self):
+        self.temp_dir.cleanup()
+        if "DATABASE_PATH" in os.environ:
+            del os.environ["DATABASE_PATH"]
+
+    def test_create_and_restore_valid_session(self):
+        token = create_user_session(self.student["id"], days_valid=30)
+        self.assertIsInstance(token, str)
+        self.assertGreater(len(token), 20)
+
+        user = get_user_from_session_token(token)
+        self.assertIsNotNone(user)
+        self.assertEqual(user["id"], self.student["id"])
+        self.assertEqual(user["email"], "adnane@eleve.ma")
+        self.assertEqual(user["role"], "student")
+
+    def test_delete_session_token_explicit_logout(self):
+        token = create_user_session(self.student["id"], days_valid=7)
+        user = get_user_from_session_token(token)
+        self.assertIsNotNone(user)
+
+        delete_user_session(token)
+        user_after_logout = get_user_from_session_token(token)
+        self.assertIsNone(user_after_logout)
+
+    def test_session_expiration(self):
+        # Création d'une session expirée avec days_valid négatif
+        expired_token = create_user_session(self.student["id"], days_valid=-1)
+        user = get_user_from_session_token(expired_token)
+        self.assertIsNone(user)
+
+        # Nettoyage global des sessions expirées
+        conn = sqlite3.connect(self.test_db_path)
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM user_sessions WHERE token = ?", (expired_token,))
+        count = cur.fetchone()[0]
+        conn.close()
+        self.assertEqual(count, 0)
+
+        # Test cleanup_expired_sessions
+        create_user_session(self.student["id"], days_valid=-2)
+        deleted = cleanup_expired_sessions()
+        self.assertGreaterEqual(deleted, 1)
+
+    def test_session_revocation_on_student_blocked(self):
+        token = create_user_session(self.student["id"], days_valid=14)
+        self.assertIsNotNone(get_user_from_session_token(token))
+
+        # L'admin suspend l'élève
+        ok, msg = set_user_blocked_status(self.student["id"], is_blocked=True, requesting_admin_id=self.admin["id"])
+        self.assertTrue(ok)
+
+        # La session active doit être immédiatement rejetée et purgée
+        self.assertIsNone(get_user_from_session_token(token))
+
+    def test_session_cascade_deletion_on_account_delete(self):
+        token = create_user_session(self.student["id"], days_valid=14)
+        self.assertIsNotNone(get_user_from_session_token(token))
+
+        # L'admin supprime l'élève
+        ok, msg = delete_user_account(self.student["id"], requesting_admin_id=self.admin["id"])
+        self.assertTrue(ok)
+
+        # La session doit avoir disparu
+        self.assertIsNone(get_user_from_session_token(token))
+
+
 if __name__ == "__main__":
     unittest.main()
+
 
 
