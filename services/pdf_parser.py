@@ -39,6 +39,19 @@ SUBJECTS_AR = [
 
 ALL_SUBJECTS = SUBJECTS_FR + SUBJECTS_AR + SUBJECTS_EN
 
+__all__ = [
+    "SUBJECTS_FR",
+    "SUBJECTS_EN",
+    "SUBJECTS_AR",
+    "ALL_SUBJECTS",
+    "KEYWORDS_3AC",
+    "detect_language",
+    "classify_subject_heuristic",
+    "extract_fallback_title",
+    "extract_text_from_pdf",
+    "is_arabic_char",
+]
+
 # Mots-clés représentatifs du programme 3AC Maroc
 KEYWORDS_3AC = {
     # Matières Biof (Français)

@@ -14,14 +14,28 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from models.database import get_course_by_hash, save_course
-from services.pdf_parser import (
-    SUBJECTS_AR,
-    SUBJECTS_EN,
-    SUBJECTS_FR,
-    classify_subject_heuristic,
-    extract_fallback_title,
-    extract_text_from_pdf,
-)
+try:
+    import importlib
+    import services.pdf_parser
+    if not hasattr(services.pdf_parser, "SUBJECTS_EN"):
+        services.pdf_parser = importlib.reload(services.pdf_parser)
+    from services.pdf_parser import (
+        SUBJECTS_AR,
+        SUBJECTS_EN,
+        SUBJECTS_FR,
+        classify_subject_heuristic,
+        extract_fallback_title,
+        extract_text_from_pdf,
+    )
+except Exception:
+    from services.pdf_parser import (
+        classify_subject_heuristic,
+        extract_fallback_title,
+        extract_text_from_pdf,
+    )
+    SUBJECTS_FR = getattr(services.pdf_parser, "SUBJECTS_FR", ["Mathématiques", "Physique-Chimie", "SVT", "Français"])
+    SUBJECTS_AR = getattr(services.pdf_parser, "SUBJECTS_AR", ["التربية الإسلامية", "الاجتماعيات", "اللغة العربية"])
+    SUBJECTS_EN = getattr(services.pdf_parser, "SUBJECTS_EN", ["Anglais"])
 
 logger = logging.getLogger(__name__)
 

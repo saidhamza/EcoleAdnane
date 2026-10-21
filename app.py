@@ -78,7 +78,20 @@ from services.downloader import (
     save_user_credentials,
     sync_google_classroom,
 )
-from services.pdf_parser import ALL_SUBJECTS, SUBJECTS_AR, SUBJECTS_EN, SUBJECTS_FR
+try:
+    import importlib
+    import services.pdf_parser
+    if not hasattr(services.pdf_parser, "SUBJECTS_EN") or not hasattr(services.pdf_parser, "ALL_SUBJECTS"):
+        services.pdf_parser = importlib.reload(services.pdf_parser)
+    from services.pdf_parser import ALL_SUBJECTS, SUBJECTS_AR, SUBJECTS_EN, SUBJECTS_FR
+except Exception:
+    try:
+        from services.pdf_parser import SUBJECTS_AR, SUBJECTS_FR
+    except Exception:
+        SUBJECTS_AR = ["التربية الإسلامية", "الاجتماعيات", "اللغة العربية"]
+        SUBJECTS_FR = ["Mathématiques", "Physique-Chimie", "SVT", "Français"]
+    SUBJECTS_EN = ["Anglais"]
+    ALL_SUBJECTS = SUBJECTS_FR + SUBJECTS_AR + SUBJECTS_EN
 
 # Initialisation de la base SQLite et migrations
 init_db()
