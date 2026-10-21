@@ -1224,15 +1224,13 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                 )
             return
 
-        col_c_sel, col_c_del = st.columns([0.88, 0.12], vertical_alignment="bottom")
-        with col_c_sel:
-            course_options = {c["id"]: f"{'🇲🇦 [AR]' if c['language'] == 'ar' else ('🇬🇧 [EN]' if c['language'] == 'en' else '🇫🇷 [FR]')} {c['subject']} - {c['title']}" for c in courses_list}
-            selected_course_id = st.selectbox(
-                "Sélectionnez le cours à réviser :",
-                options=list(course_options.keys()),
-                format_func=lambda x: course_options[x],
-                key="student_selected_course_id",
-            )
+        course_options = {c["id"]: f"{'🇲🇦 [AR]' if c['language'] == 'ar' else ('🇬🇧 [EN]' if c['language'] == 'en' else '🇫🇷 [FR]')} {c['subject']} - {c['title']}" for c in courses_list}
+        selected_course_id = st.selectbox(
+            "Sélectionnez le cours à réviser :",
+            options=list(course_options.keys()),
+            format_func=lambda x: course_options[x],
+            key="student_selected_course_id",
+        )
 
         current_course = get_course_by_id(selected_course_id, user_id=active_user_id)
         if not current_course:
@@ -1243,7 +1241,8 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
         is_en = current_course["language"] == "en"
         badge_cls = get_subject_badge_class(current_course["subject"])
 
-        can_delete = is_admin or (current_course.get("user_id") == active_user_id)
+        # La suppression d'un cours est réservée à un élève sur ses propres cours (à côté des métadonnées)
+        can_delete = (not is_admin) and (current_course.get("user_id") == active_user_id)
 
         del_warn_text = (
             "⚠️ تنبيه : هذا الإجراء نهائي وسيؤدي إلى حذف هذا الدرس وبطاقة مراجعته واختباراته ومحادثات الأستاذ المساعد سند."
@@ -1260,30 +1259,6 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
             else ("I confirm I want to permanently delete this course" if is_en else "Je confirme vouloir supprimer définitivement ce cours")
         )
         del_btn_text = "🗑️ تأكيد الحذف الآن" if is_ar else ("🗑️ Delete Now" if is_en else "🗑️ Confirmer la suppression")
-
-        with col_c_del:
-            pop_help = "حذف هذا الدرس" if is_ar else ("Delete this course" if is_en else "Supprimer ce cours")
-            with st.popover("🗑️", help=pop_help, use_container_width=True):
-                st.markdown(f"**{'🗑️ حذف هذا الدرس' if is_ar else ('🗑️ Delete this course' if is_en else '🗑️ Supprimer ce cours')}**")
-                st.caption(current_course["title"])
-                if can_delete:
-                    st.warning(del_warn_text)
-                    confirm_pop_del = st.checkbox(del_chk_text, key=f"pop_del_chk_{current_course['id']}")
-                    if st.button(del_btn_text, type="primary", disabled=not confirm_pop_del, key=f"pop_del_btn_{current_course['id']}", use_container_width=True):
-                        delete_course(current_course["id"], user_id=None if is_admin else active_user_id)
-                        st.session_state.pop("student_selected_course_id", None)
-                        st.success("تم حذف الدرس بنجاح !" if is_ar else ("Course deleted successfully!" if is_en else "Le cours a été supprimé avec succès !"))
-                        st.rerun()
-                else:
-                    st.info(
-                        "ℹ️ هذا الدرس مشترك من المؤسسة ولا يمكن حذفه من حساب تلميذ."
-                        if is_ar
-                        else (
-                            "ℹ️ This is a shared school course and cannot be deleted by a student account."
-                            if is_en
-                            else "ℹ️ Ce cours fait partie du tronc commun de l'établissement et ne peut pas être supprimé par un compte élève."
-                        )
-                    )
 
         active_user_dict = active_student_info if (is_admin and active_student_info) else current_user
         active_cycle = get_pedagogical_cycle(active_user_dict.get("age"))
@@ -1397,35 +1372,32 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                 else:
                     final_lang = "fr"
 
-            btn_save_col1, btn_del_col2, _ = st.columns([2, 2, 3])
-            with btn_save_col1:
-                btn_save_txt = "💾 حفظ التعديل" if is_ar else ("💾 Save Changes" if is_en else "💾 Enregistrer les modifications")
-                if st.button(btn_save_txt, type="primary", use_container_width=True, key=f"btn_save_m_{current_course['id']}"):
-                    update_course_metadata(current_course["id"], new_title, cleaned_subj, final_lang, user_id=active_user_id)
-                    st.success("Modifications enregistrées !" if not is_en else "Changes saved successfully!")
-                    st.rerun()
+            btn_save_txt = "💾 حفظ التعديل" if is_ar else ("💾 Save Changes" if is_en else "💾 Enregistrer les modifications")
+            if can_delete:
+                btn_save_col1, btn_del_col2, _ = st.columns([2, 2, 3])
+                with btn_save_col1:
+                    if st.button(btn_save_txt, type="primary", use_container_width=True, key=f"btn_save_m_{current_course['id']}"):
+                        update_course_metadata(current_course["id"], new_title, cleaned_subj, final_lang, user_id=active_user_id)
+                        st.success("Modifications enregistrées !" if not is_en else "Changes saved successfully!")
+                        st.rerun()
 
-            with btn_del_col2:
-                btn_del_txt = "🗑️ حذف الدرس" if is_ar else ("🗑️ Delete Course" if is_en else "🗑️ Supprimer ce cours")
-                with st.popover(btn_del_txt, use_container_width=True):
-                    if can_delete:
+                with btn_del_col2:
+                    btn_del_txt = "🗑️ حذف الدرس" if is_ar else ("🗑️ Delete Course" if is_en else "🗑️ Supprimer ce cours")
+                    with st.popover(btn_del_txt, use_container_width=True):
                         st.warning(del_warn_text)
                         confirm_meta_del = st.checkbox(del_chk_text, key=f"meta_del_chk_{current_course['id']}")
                         if st.button(del_btn_text, type="primary", disabled=not confirm_meta_del, key=f"meta_del_btn_{current_course['id']}", use_container_width=True):
-                            delete_course(current_course["id"], user_id=None if is_admin else active_user_id)
+                            delete_course(current_course["id"], user_id=active_user_id)
                             st.session_state.pop("student_selected_course_id", None)
                             st.success("تم حذف الدرس بنجاح !" if is_ar else ("Course deleted successfully!" if is_en else "Le cours a été supprimé avec succès !"))
                             st.rerun()
-                    else:
-                        st.info(
-                            "ℹ️ هذا الدرس مشترك من المؤسسة ولا يمكن حذفه من حساب تلميذ."
-                            if is_ar
-                            else (
-                                "ℹ️ This is a shared school course and cannot be deleted by a student account."
-                                if is_en
-                                else "ℹ️ Ce cours fait partie du tronc commun de l'établissement et ne peut pas être supprimé par un compte élève."
-                            )
-                        )
+            else:
+                btn_save_col1, _ = st.columns([2, 5])
+                with btn_save_col1:
+                    if st.button(btn_save_txt, type="primary", use_container_width=True, key=f"btn_save_m_{current_course['id']}"):
+                        update_course_metadata(current_course["id"], new_title, cleaned_subj, final_lang, user_id=active_user_id)
+                        st.success("Modifications enregistrées !" if not is_en else "Changes saved successfully!")
+                        st.rerun()
 
         st.write("")
 
@@ -1466,12 +1438,6 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                 )
             else:
                 st.warning("Fichier PDF non trouvé sur le disque." if not is_en else "PDF file not found on disk.")
-                if can_delete:
-                    if st.button("🗑️ حذف هذا السجل من القاعدة" if is_ar else ("🗑️ Delete this entry from database" if is_en else "🗑️ Supprimer cette entrée de la base"), type="primary", key=f"del_missing_{current_course['id']}"):
-                        delete_course(current_course["id"], user_id=None if is_admin else active_user_id)
-                        st.session_state.pop("student_selected_course_id", None)
-                        st.success("تم حذف السجل بنجاح !" if is_ar else ("Entry deleted successfully!" if is_en else "Entrée supprimée avec succès !"))
-                        st.rerun()
 
             st.write("---")
             exp_text_title = "📝 عرض النص المستخرج من الوثيقة" if is_ar else ("📝 View Extracted Text" if is_en else "📝 Voir le texte extrait du document")
@@ -1481,29 +1447,6 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                     st.markdown(f"<div class='rtl-box'>{raw[:4000]}...</div>", unsafe_allow_html=True)
                 else:
                     st.text(raw[:4000] + ("..." if len(raw) > 4000 else ""))
-
-            # Option de suppression définitive du cours
-            st.write("---")
-            del_exp_label = "🗑️ حذف هذا الدرس من التطبيق" if is_ar else ("🗑️ Delete this course from app" if is_en else "🗑️ Supprimer ce cours de l'application")
-            with st.expander(del_exp_label):
-                if can_delete:
-                    st.warning(del_warn_text)
-                    confirm_tab_del = st.checkbox(del_chk_text, key=f"tab_del_chk_{current_course['id']}")
-                    if st.button(del_btn_text, type="primary", disabled=not confirm_tab_del, key=f"tab_del_btn_{current_course['id']}", use_container_width=True):
-                        delete_course(current_course["id"], user_id=None if is_admin else active_user_id)
-                        st.session_state.pop("student_selected_course_id", None)
-                        st.success("تم حذف الدرس بنجاح !" if is_ar else ("Course deleted successfully!" if is_en else "Le cours a été supprimé avec succès !"))
-                        st.rerun()
-                else:
-                    st.info(
-                        "ℹ️ هذا الدرس مشترك من المؤسسة ولا يمكن حذفه من حساب تلميذ."
-                        if is_ar
-                        else (
-                            "ℹ️ This is a shared school course and cannot be deleted by a student account."
-                            if is_en
-                            else "ℹ️ Ce cours fait partie du tronc commun de l'établissement et ne peut pas être supprimé par un compte élève."
-                        )
-                    )
 
         with tab_fiche:
             fiche_md = current_course.get("summary_markdown")
