@@ -43,6 +43,27 @@ def resolve_student_age(user_id: Optional[int] = None, age: Optional[int] = None
     return 14
 
 
+def resolve_student_level(
+    user_id: Optional[int] = None,
+    level: Optional[str] = None,
+    default: Optional[str] = "3AC",
+) -> Optional[str]:
+    """Résout le niveau scolaire de l'élève à partir de l'argument explicite, du profil en base ou d'un fallback."""
+    if level and isinstance(level, str) and level.strip():
+        return level.strip()
+    if user_id is not None:
+        try:
+            u = get_user_by_id(user_id)
+            if u:
+                if u.get("level"):
+                    return str(u["level"]).strip()
+                if u.get("age"):
+                    return get_pedagogical_cycle(u["age"]).get("level", default)
+        except Exception:
+            pass
+    return default
+
+
 # ---------------------------------------------------------------------------
 # Appel LLM unifié (Gemini en priorité, OpenAI en fallback)
 # ---------------------------------------------------------------------------
@@ -170,16 +191,18 @@ def classify_and_extract_metadata(
     Respecte scrupuleusement la langue d'origine.
     """
     excerpt = raw_text[:3500]
+    student_level = resolve_student_level(user_id=user_id)
+    default_level = student_level or "Collège"
 
     if detected_lang == "ar":
         sys_prompt = (
-            "أنت خبير تربوي مغربي متخصص في منهاج السنة الثالثة إعدادي (3AC).\n"
-            "مهمتك تحليل النص المستخرج من وثيقة دراسية وتحديد المادة الدقيقة، عنوان الدرس، والمفاهيم الأساسية.\n"
+            "أنت خبير تربوي مغربي متخصص في المناهج الدراسية المغربية.\n"
+            "مهمتك تحليل النص المستخرج من وثيقة دراسية وتحديد المادة الدقيقة، عنوان الدرس، والمفاهيم الأساسية، والمستوى الدراسي المقدر.\n"
             "المواد الممكنة في الشعبة العامة/العربية: 'التربية الإسلامية'، 'الاجتماعيات'، 'اللغة العربية'.\n"
             "اكتب مخرجاتك بدقة متناهية وباللغة العربية الفصحى فقط وبصيغة JSON."
         )
         user_prompt = f"""
-حلل النص التالي المستخرج من درس للسنة الثالثة إعدادي:
+حلل النص التالي المستخرج من وثيقة دراسية:
 ---
 {excerpt}
 ---
@@ -188,17 +211,17 @@ def classify_and_extract_metadata(
   "title": "عنوان الدرس الدقيق والواضح",
   "subject": "التربية الإسلامية أو الاجتماعيات أو اللغة العربية",
   "key_concepts": ["مفهوم 1", "مفهوم 2", "مفهوم 3", "مفهوم 4"],
-  "estimated_level": "السنة الثالثة إعدادي (3AC)"
+  "estimated_level": "{default_level}"
 }}
 """
     elif detected_lang == "en":
         sys_prompt = (
-            "You are a Moroccan pedagogical expert specializing in the official 3rd Year Middle School (3AC) curriculum.\n"
-            "Your task is to analyze text from a 3AC English lesson and determine the exact lesson title, subject ('Anglais'), and key vocabulary/grammar concepts.\n"
+            "You are a Moroccan pedagogical expert specializing in official Moroccan curricula.\n"
+            "Your task is to analyze text from an English lesson and determine the exact lesson title, subject ('Anglais'), key vocabulary/grammar concepts, and estimated grade level.\n"
             "Output strictly valid JSON with all fields in English."
         )
         user_prompt = f"""
-Analyze the following text extracted from a 3AC English course:
+Analyze the following text extracted from an English course:
 ---
 {excerpt}
 ---
@@ -207,18 +230,18 @@ Return ONLY a valid JSON object with this exact structure:
   "title": "Clear and precise title of the English lesson",
   "subject": "Anglais",
   "key_concepts": ["concept 1", "concept 2", "concept 3", "concept 4"],
-  "estimated_level": "3AC Middle School"
+  "estimated_level": "{default_level}"
 }}
 """
     else:
         sys_prompt = (
-            "Tu es un expert pédagogique marocain spécialisé dans le programme officiel de 3ème Année Collège (3AC / Biof).\n"
-            "Ta mission est d'analyser le texte extrait d'un cours pour déterminer la matière exacte, le titre précis et les concepts clés.\n"
+            "Tu es un expert pédagogique marocain spécialisé dans les programmes scolaires officiels au Maroc.\n"
+            "Ta mission est d'analyser le texte extrait d'un cours pour déterminer la matière exacte, le titre précis, les concepts clés et le niveau scolaire estimé.\n"
             "Matières possibles (Biof/Français) : 'Mathématiques', 'Physique-Chimie', 'SVT', 'Français', 'Anglais'.\n"
             "Fournis impérativement ta réponse au format JSON strict et uniquement en français."
         )
         user_prompt = f"""
-Analyse l'extrait suivant d'un cours de 3ème Année Collège (3AC) :
+Analyse l'extrait suivant d'un cours scolaire :
 ---
 {excerpt}
 ---
@@ -227,7 +250,7 @@ Renvoie uniquement un objet JSON respectant exactement cette structure :
   "title": "Titre clair et précis du cours",
   "subject": "Mathématiques ou Physique-Chimie ou SVT ou Français ou Anglais",
   "key_concepts": ["concept 1", "concept 2", "concept 3", "concept 4"],
-  "estimated_level": "3ème Année Collège (3AC)"
+  "estimated_level": "{default_level}"
 }}
 """
 
@@ -239,7 +262,7 @@ Renvoie uniquement un objet JSON respectant exactement cette structure :
             "title": data.get("title") or fallback_title,
             "subject": data.get("subject") or fallback_subject,
             "key_concepts": [c.strip() for c in (data.get("key_concepts") or []) if c and isinstance(c, str) and not is_generic_concept(c)],
-            "estimated_level": data.get("estimated_level") or "3AC Collège",
+            "estimated_level": data.get("estimated_level") or default_level,
         }
     except Exception as e:
         logger.warning(f"Erreur classification IA ({e}), utilisation des valeurs par défaut")
@@ -247,7 +270,7 @@ Renvoie uniquement un objet JSON respectant exactement cette structure :
             "title": fallback_title,
             "subject": fallback_subject,
             "key_concepts": [],
-            "estimated_level": "3AC Collège",
+            "estimated_level": default_level,
         }
 
 
@@ -268,7 +291,8 @@ def generate_revision_sheet(
     """
     excerpt = raw_text[:5000]
     student_age = resolve_student_age(user_id=user_id, age=age)
-    cycle = get_pedagogical_cycle(student_age)
+    student_level = resolve_student_level(user_id=user_id)
+    cycle = get_pedagogical_cycle(student_age, level=student_level)
     stage = cycle["stage"]
 
     if language == "ar":
@@ -466,7 +490,7 @@ Format the sheet in clean Markdown using EXACTLY these section headers and icons
 """
         else:  # middle (défaut 11-14 ans)
             sys_prompt = (
-                f"You are an inspiring and supportive English teacher for {student_age}-year-old students in Middle School (3AC).\n"
+                f"You are an inspiring and supportive English teacher for {student_age}-year-old students in {cycle['stage_label']}.\n"
                 "Your style is clear, motivating, encouraging, and focused on exam success.\n"
                 "Strict rule: Write entirely in clear, simple and correct English."
             )
@@ -919,7 +943,8 @@ def generate_quiz(
     """
     excerpt = raw_text[:4500]
     student_age = resolve_student_age(user_id=user_id, age=age)
-    cycle = get_pedagogical_cycle(student_age)
+    student_level = resolve_student_level(user_id=user_id)
+    cycle = get_pedagogical_cycle(student_age, level=student_level)
     stage = cycle["stage"]
 
     if language == "ar":
@@ -943,7 +968,7 @@ def generate_quiz(
             )
         else:  # middle (défaut 11-14 ans)
             sys_prompt = (
-                f"أنت خبير في إعداد الامتحانات الموحدة للسنة الثالثة إعدادي في المغرب (3AC) لتلميذ عمره {student_age} سنة.\n"
+                f"أنت خبير في إعداد الامتحانات والتقييمات لمستوى {cycle['stage_label']} في المغرب لتلميذ عمره {student_age} سنة.\n"
                 "مهمتك إعداد كويز تدريبي تفاعلي ممتع وتعليمي يختبر المفاهيم الأساسية وفخاخ الامتحانات.\n"
                 "قاعدة مطلقة وإلزامية للقراءة الصوتية السليمة: اكتب الأسئلة والخيارات والشروحات باللغة العربية الفصحى مضبوطة بالحركات والتشكيل التام وبصيغة JSON صالحة."
             )
@@ -1142,7 +1167,8 @@ def socratic_tutor_response(
     """
     context_excerpt = course_context[:4000]
     student_age = resolve_student_age(user_id=user_id, age=age)
-    cycle = get_pedagogical_cycle(student_age)
+    student_level = resolve_student_level(user_id=user_id)
+    cycle = get_pedagogical_cycle(student_age, level=student_level)
     stage = cycle["stage"]
 
     if language == "ar":
@@ -1159,7 +1185,7 @@ def socratic_tutor_response(
             tone_rule = "2. الأسلوب المهني والأكاديمي: تحدث بأسلوب راقٍ ومحترم، يركز على الفهم العميق والتحليل النقدي."
             method_rule = "1. الحوار السقراطي: ناقش الفرضيات ووجه التلميذ نحو استخلاص النتائج والحلول بنضج معرفي."
         else:  # middle (défaut 11-14 ans)
-            persona = f"أنت 'سند'، الرفيق الذكي والأخ الأكبر الموجه لتلميذ عمره {student_age} سنة في المرحلة الإعدادية بالمغرب (3AC)."
+            persona = f"أنت 'سند'، الرفيق الذكي والأخ الأكبر الموجه لتلميذ عمره {student_age} سنة في {cycle['stage_label']} بالمغرب."
             tone_rule = "2. التبسيط والود: تحدث بلغة عربية فصحى دافئة ومحفزة جداً (مثل: 'ممتاز يا بطل'، 'فكرة ذكية، لنفكر معاً...', 'أنت قريب جداً!')."
             method_rule = "1. المنهج السقراطي: لا تعطِ الإجابة المباشرة أبداً لواجبات التلميذ أو تمارينه! بدلاً من ذلك، وجهه بخطوات بسيطة واطرح عليه سؤالاً يقوده لاكتشاف الحل بنفسه."
 
@@ -1224,7 +1250,7 @@ Your golden pedagogical rules:
             tone_rule = "2. Posture Collégiale : Échange d'égal à égal avec maturité, rigueur intellectuelle et esprit de synthèse."
             method_rule = "1. Dialogue Socratique d'Approfondissement : Pousse l'apprenant à questionner les concepts, à structurer ses analyses et à relier théorie et pratique."
         else:  # middle (défaut 11-14 ans)
-            persona = f"Tu es 'Sanad', le tuteur virtuel bienveillant et grand frère d'un élève de {student_age} ans en collège (3AC Biof)."
+            persona = f"Tu es 'Sanad', le tuteur virtuel bienveillant et grand frère d'un élève de {student_age} ans en {cycle['stage_label']}."
             tone_rule = "2. Ton & Motivation : Sois chaleureux, enthousiaste et très encourageant (ex: 'Bien joué champion !', 'Très bonne question !', 'Tu y es presque, regarde cette étape...')."
             method_rule = "1. Méthode Socratique : Ne donne JAMAIS directement la réponse aux devoirs ou exercices ! Guide l'élève pas à pas en lui posant une question intermédiaire ou en lui donnant un indice ciblé."
 

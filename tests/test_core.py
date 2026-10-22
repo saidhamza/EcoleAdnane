@@ -19,7 +19,9 @@ from pathlib import Path
 from unittest.mock import patch
 
 from models.database import (
+    MOROCCAN_SCHOOL_LEVELS,
     add_chat_message,
+    award_badge,
     cleanup_expired_sessions,
     clear_chat_history,
     create_or_get_google_user,
@@ -27,8 +29,10 @@ from models.database import (
     delete_course,
     delete_user_account,
     delete_user_session,
+    evaluate_and_award_badges,
     evaluate_and_sync_concept_mastery,
     extract_real_course_concepts,
+    get_badge_catalog,
     get_chat_history,
     get_course_by_hash,
     get_course_by_id,
@@ -40,6 +44,8 @@ from models.database import (
     get_quiz_stats,
     get_setting,
     get_student_concept_mastery,
+    get_student_trophies_overview,
+    get_user_badges,
     get_user_by_email,
     get_user_by_id,
     get_user_from_session_token,
@@ -61,6 +67,7 @@ from models.database import (
     update_course_metadata,
     update_course_summary,
     update_user_age,
+    update_user_level,
     update_user_name,
     update_user_role,
 )
@@ -72,6 +79,7 @@ from services.ai_engine import (
     convert_mermaid_to_markdown,
     generate_course_mindmap,
     resolve_student_age,
+    resolve_student_level,
     socratic_tutor_response,
 )
 from services.auth_manager import (
@@ -1974,6 +1982,197 @@ class TestMindmapAndConceptMastery(unittest.TestCase):
         for r in results:
             self.assertEqual(r["status"], "to_review")
             self.assertEqual(r["success_rate"], 20.0)
+
+
+class TestSchoolLevelAndTrophies(unittest.TestCase):
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.test_db_path = Path(self.temp_dir.name) / "test_level_trophies.db"
+        os.environ["DATABASE_PATH"] = str(self.test_db_path)
+        init_db(self.test_db_path)
+
+        # Utilisateur de test
+        self.user = create_or_get_google_user("student_level@test.com", "Élève Test")
+        self.user_id = self.user["id"]
+
+    def tearDown(self):
+        self.temp_dir.cleanup()
+        if "DATABASE_PATH" in os.environ:
+            del os.environ["DATABASE_PATH"]
+
+    def test_moroccan_school_levels_catalog(self):
+        self.assertIn("1AC", MOROCCAN_SCHOOL_LEVELS)
+        self.assertIn("2AC", MOROCCAN_SCHOOL_LEVELS)
+        self.assertIn("3AC", MOROCCAN_SCHOOL_LEVELS)
+        self.assertIn("Tronc Commun", MOROCCAN_SCHOOL_LEVELS)
+        self.assertIn("1BAC", MOROCCAN_SCHOOL_LEVELS)
+        self.assertIn("2BAC", MOROCCAN_SCHOOL_LEVELS)
+        self.assertIn("6AEP", MOROCCAN_SCHOOL_LEVELS)
+        self.assertIn("Supérieur", MOROCCAN_SCHOOL_LEVELS)
+
+    def test_get_pedagogical_cycle_explicit_levels(self):
+        c_1ac = get_pedagogical_cycle(level="1AC")
+        self.assertEqual(c_1ac["stage"], "middle")
+        self.assertEqual(c_1ac["level"], "1AC")
+        self.assertIn("1AC", c_1ac["stage_label"])
+
+        c_tc = get_pedagogical_cycle(level="Tronc Commun")
+        self.assertEqual(c_tc["stage"], "high")
+        self.assertEqual(c_tc["level"], "Tronc Commun")
+        self.assertIn("Tronc Commun", c_tc["stage_label"])
+
+        c_2bac = get_pedagogical_cycle(level="2BAC")
+        self.assertEqual(c_2bac["stage"], "high")
+        self.assertEqual(c_2bac["level"], "2BAC")
+        self.assertIn("2BAC", c_2bac["stage_label"])
+
+        c_6aep = get_pedagogical_cycle(level="6AEP")
+        self.assertEqual(c_6aep["stage"], "primary")
+        self.assertEqual(c_6aep["level"], "6AEP")
+
+        c_sup = get_pedagogical_cycle(level="Supérieur")
+        self.assertEqual(c_sup["stage"], "higher")
+        self.assertEqual(c_sup["level"], "Supérieur")
+
+    def test_update_user_level_and_persistence(self):
+        # Initial level
+        user = get_user_by_id(self.user_id)
+        self.assertEqual(user.get("level"), "3AC")
+
+        # Update to 2AC
+        ok, msg = update_user_level(self.user_id, "2AC")
+        self.assertTrue(ok)
+        updated = get_user_by_id(self.user_id)
+        self.assertEqual(updated["level"], "2AC")
+
+        # Session token retrieval
+        tok = create_user_session(self.user_id)
+        session_user = get_user_from_session_token(tok)
+        self.assertIsNotNone(session_user)
+        self.assertEqual(session_user["level"], "2AC")
+
+    def test_resolve_student_level(self):
+        # When explicit level passed
+        self.assertEqual(resolve_student_level(level="1BAC"), "1BAC")
+
+        # When user_id passed
+        update_user_level(self.user_id, "Tronc Commun")
+        self.assertEqual(resolve_student_level(user_id=self.user_id), "Tronc Commun")
+
+        # Default fallback
+        self.assertEqual(resolve_student_level(), "3AC")
+
+    def test_badge_catalog_and_structure(self):
+        catalog = get_badge_catalog()
+        self.assertGreaterEqual(len(catalog), 8)
+        keys = [b["key"] for b in catalog]
+        self.assertIn("first_quiz", keys)
+        self.assertIn("perfect_score", keys)
+        self.assertIn("quiz_five", keys)
+        self.assertIn("quiz_ten", keys)
+        self.assertIn("course_explorer", keys)
+        self.assertIn("sanad_scholar", keys)
+        self.assertIn("concept_master", keys)
+        self.assertIn("mindmap_pioneer", keys)
+
+        for b in catalog:
+            self.assertTrue(b["key"])
+            self.assertTrue(b["title"])
+            self.assertTrue(b["description"])
+            self.assertTrue(b["icon"])
+            self.assertGreater(b["target_value"], 0)
+
+    def test_award_badge_idempotency(self):
+        # 1st award -> True
+        res1 = award_badge(self.user_id, "first_quiz", {"note": "test"})
+        self.assertTrue(res1)
+
+        # 2nd award -> False (idempotent)
+        res2 = award_badge(self.user_id, "first_quiz")
+        self.assertFalse(res2)
+
+        badges = get_user_badges(self.user_id)
+        self.assertEqual(len(badges), 1)
+        self.assertEqual(badges[0]["badge_key"], "first_quiz")
+        self.assertIn("Premier Pas", badges[0]["title"])
+
+    def test_evaluate_and_award_badges_progression(self):
+        # Before activity: 0 badges
+        new_badges = evaluate_and_award_badges(self.user_id)
+        self.assertEqual(len(new_badges), 0)
+
+        overview_empty = get_student_trophies_overview(self.user_id)
+        self.assertEqual(overview_empty["unlocked_trophies"], 0)
+        self.assertEqual(overview_empty["completion_rate"], 0.0)
+
+        # Create a course
+        cid = save_course(
+            title="Théorème de Thalès",
+            subject="Mathématiques",
+            language="fr",
+            file_path=str(Path(self.temp_dir.name) / "thales.pdf"),
+            file_name="thales.pdf",
+            file_hash="fakehash123",
+            user_id=self.user_id,
+            mindmap_code="mindmap\n  root((Thalès))\n",
+        )
+
+        # Pass a perfect quiz
+        qid = save_quiz(cid, [{"question": "Q1", "options": ["A", "B"], "answer_index": 0}], user_id=self.user_id)
+        save_quiz_attempt(
+            course_id=cid,
+            quiz_id=qid,
+            score=1,
+            total_questions=1,
+            answers={0: 0},
+            user_id=self.user_id,
+        )
+
+        # Now evaluate
+        awarded = evaluate_and_award_badges(self.user_id)
+        awarded_keys = [b["key"] for b in awarded]
+        self.assertIn("first_quiz", awarded_keys)
+        self.assertIn("perfect_score", awarded_keys)
+        self.assertIn("mindmap_pioneer", awarded_keys)
+
+        overview = get_student_trophies_overview(self.user_id)
+        self.assertGreaterEqual(overview["unlocked_trophies"], 3)
+        self.assertGreater(overview["completion_rate"], 0.0)
+
+        # Check badges list formatting in overview
+        fq = next(b for b in overview["badges"] if b["key"] == "first_quiz")
+        self.assertTrue(fq["is_unlocked"])
+        self.assertEqual(fq["progress_percent"], 100)
+
+        q5 = next(b for b in overview["badges"] if b["key"] == "quiz_five")
+        self.assertFalse(q5["is_unlocked"])
+        self.assertEqual(q5["current_value"], 1)
+        self.assertEqual(q5["target_value"], 5)
+        self.assertIn("Plus que 4", q5["encouragement"])
+
+    def test_backup_and_restore_user_badges(self):
+        # Award badge to user
+        award_badge(self.user_id, "first_quiz")
+        award_badge(self.user_id, "mindmap_pioneer")
+
+        # Export student backup
+        zip_bytes = export_student_backup(self.user_id)
+        self.assertIsNotNone(zip_bytes)
+
+        # Verify summary includes badges
+        summary = get_student_backup_summary(self.user_id)
+        self.assertEqual(summary["badge_count"], 2)
+
+        # Create target student and restore
+        target_student = create_or_get_google_user("restored_student@test.com", "Élève Restauré")
+        res = restore_student_backup(zip_bytes, target_user_id=target_student["id"])
+        self.assertTrue(res["success"])
+
+        # Verify restored badges
+        restored_badges = get_user_badges(target_student["id"])
+        restored_keys = [b["badge_key"] for b in restored_badges]
+        self.assertIn("first_quiz", restored_keys)
+        self.assertIn("mindmap_pioneer", restored_keys)
 
 
 if __name__ == "__main__":

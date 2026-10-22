@@ -74,16 +74,21 @@ def get_student_backup_summary(user_id: int) -> Dict[str, int]:
         cur.execute("SELECT count(*) FROM flashcards WHERE user_id = ?", (user_id,))
         flashcards = cur.fetchone()[0]
 
+        cur.execute("SELECT count(*) FROM user_badges WHERE user_id = ?", (user_id,))
+        badges = cur.fetchone()[0]
+
         return {
             "courses": courses,
             "quizzes": quizzes,
             "attempts": attempts,
             "messages": messages,
             "flashcards": flashcards,
+            "badges": badges,
+            "badge_count": badges,
         }
     except Exception as e:
         logger.error(f"Erreur résumé élève {user_id}: {e}")
-        return {"courses": 0, "quizzes": 0, "attempts": 0, "messages": 0, "flashcards": 0}
+        return {"courses": 0, "quizzes": 0, "attempts": 0, "messages": 0, "flashcards": 0, "badges": 0, "badge_count": 0}
     finally:
         conn.close()
 
@@ -123,6 +128,10 @@ def export_student_backup(user_id: int) -> bytes:
         cur.execute("SELECT * FROM flashcards WHERE user_id = ?", (user_id,))
         flashcards = [dict(r) for r in cur.fetchall()]
 
+        # 6. Badges & Trophées
+        cur.execute("SELECT * FROM user_badges WHERE user_id = ?", (user_id,))
+        badges = [dict(r) for r in cur.fetchall()]
+
     finally:
         conn.close()
 
@@ -134,6 +143,7 @@ def export_student_backup(user_id: int) -> bytes:
         "quiz_attempts": attempts,
         "chat_messages": messages,
         "flashcards": flashcards,
+        "badges": badges,
     }
 
     stats = get_student_backup_summary(user_id)
@@ -385,6 +395,25 @@ def restore_student_backup(file_bytes: bytes, target_user_id: int) -> Dict[str, 
                 )
                 restored_cards += 1
 
+        # Ingestion des badges
+        restored_badges = 0
+        for b in data.get("badges", []):
+            try:
+                b_key = b.get("badge_key")
+                if b_key:
+                    conn = get_connection()
+                    with conn:
+                        conn.execute(
+                            """
+                            INSERT OR IGNORE INTO user_badges (user_id, badge_key, unlocked_at, metadata_json)
+                            VALUES (?, ?, COALESCE(?, CURRENT_TIMESTAMP), ?)
+                            """,
+                            (target_user_id, b_key, b.get("unlocked_at"), b.get("metadata_json")),
+                        )
+                    restored_badges += 1
+            except Exception:
+                pass
+
         return {
             "success": True,
             "message": (
@@ -398,6 +427,7 @@ def restore_student_backup(file_bytes: bytes, target_user_id: int) -> Dict[str, 
                 "attempts": restored_attempts,
                 "messages": restored_chats,
                 "flashcards": restored_cards,
+                "badges": restored_badges,
                 "pdfs": extracted_pdfs,
             },
         }

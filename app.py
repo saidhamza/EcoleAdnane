@@ -34,18 +34,24 @@ try:
         not hasattr(models.database, "get_pedagogical_cycle")
         or not hasattr(models.database, "update_user_age")
         or not hasattr(models.database, "update_user_name")
+        or not hasattr(models.database, "update_user_level")
         or not hasattr(models.database, "get_course_mindmap")
         or not hasattr(models.database, "evaluate_and_sync_concept_mastery")
+        or not hasattr(models.database, "get_student_trophies_overview")
     ):
         models.database = importlib.reload(models.database)
     from models.database import (
+        MOROCCAN_SCHOOL_LEVELS,
         add_chat_message,
+        award_badge,
         clear_chat_history,
         create_user_session,
         delete_course,
         delete_user_account,
         delete_user_session,
+        evaluate_and_award_badges,
         evaluate_and_sync_concept_mastery,
+        get_badge_catalog,
         get_chat_history,
         get_course_by_id,
         get_course_mindmap,
@@ -54,6 +60,8 @@ try:
         get_pedagogical_cycle,
         get_quiz_stats,
         get_student_concept_mastery,
+        get_student_trophies_overview,
+        get_user_badges,
         get_user_by_id,
         get_user_count,
         get_user_from_session_token,
@@ -72,6 +80,7 @@ try:
         update_course_metadata,
         update_course_summary,
         update_user_age,
+        update_user_level,
         update_user_name,
         update_user_role,
     )
@@ -79,13 +88,17 @@ except ImportError:
     import models.database
     models.database = importlib.reload(models.database)
     from models.database import (
+        MOROCCAN_SCHOOL_LEVELS,
         add_chat_message,
+        award_badge,
         clear_chat_history,
         create_user_session,
         delete_course,
         delete_user_account,
         delete_user_session,
+        evaluate_and_award_badges,
         evaluate_and_sync_concept_mastery,
+        get_badge_catalog,
         get_chat_history,
         get_course_by_id,
         get_course_mindmap,
@@ -94,6 +107,8 @@ except ImportError:
         get_pedagogical_cycle,
         get_quiz_stats,
         get_student_concept_mastery,
+        get_student_trophies_overview,
+        get_user_badges,
         get_user_by_id,
         get_user_count,
         get_user_from_session_token,
@@ -112,19 +127,21 @@ except ImportError:
         update_course_metadata,
         update_course_summary,
         update_user_age,
+        update_user_level,
         update_user_name,
         update_user_role,
     )
     if hasattr(models.database, "get_pedagogical_cycle"):
         get_pedagogical_cycle = models.database.get_pedagogical_cycle
     else:
-        def get_pedagogical_cycle(age=None):
+        def get_pedagogical_cycle(age=None, level=None):
             return {
                 "age": 14,
+                "level": level or "3AC",
                 "stage": "middle",
-                "stage_label": "Collège (3AC)",
+                "stage_label": f"Collège ({level or '3AC'})",
                 "cycle_name": "Cycle Collégial (1AC - 3AC)",
-                "badge_text": "🎒 Collège (14 ans)",
+                "badge_text": f"🎒 {level or 'Collège'} (14 ans)",
                 "tone": "structuré, clair, motivant, orienté réussite aux examens du collège",
             }
 
@@ -139,6 +156,12 @@ except ImportError:
     else:
         def update_user_age(user_id, age):
             return True, "Âge enregistré !"
+
+    if hasattr(models.database, "update_user_level"):
+        update_user_level = models.database.update_user_level
+    else:
+        def update_user_level(user_id, level):
+            return True, "Niveau enregistré !"
 
 # Safe, hot-reload resilient import of services.ai_engine
 try:
@@ -246,7 +269,7 @@ init_db()
 
 # Configuration de la page Streamlit
 st.set_page_config(
-    page_title="Ecole Adnane - Révision 3AC Maroc",
+    page_title="Ecole Adnane - Soutien & Révision Scolaire Maroc",
     page_icon="🎓",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -746,26 +769,33 @@ def render_student_progress_details(
 ) -> None:
     """Affiche la progression détaillée et les résultats de quiz d'un élève."""
     stats = get_quiz_stats(user_id=student_id)
+    u_level = None
     if student_age is None or not student_email:
         u_info = get_user_by_id(student_id)
         if u_info:
             student_age = u_info.get("age", 14)
+            u_level = u_info.get("level")
             student_email = student_email or u_info.get("email", "")
             if created_at is None:
                 created_at = u_info.get("created_at", "")
             is_blocked = (u_info.get("is_blocked", 0) == 1)
         else:
             student_age = 14
+    else:
+        u_info = get_user_by_id(student_id)
+        if u_info:
+            u_level = u_info.get("level")
 
     if student_cycle is None:
-        student_cycle = get_pedagogical_cycle(int(student_age or 14))
+        student_cycle = get_pedagogical_cycle(int(student_age or 14), level=u_level)
 
     with st.container(border=True):
         head_col1, head_col2 = st.columns([3, 1.4])
         with head_col1:
             st.markdown(f"### 📊 Progression de l'Élève : **{student_name}**")
             status_text = "🔴 Compte Suspendu" if is_blocked else "🟢 Compte Actif"
-            meta_info = f"📧 `{student_email}` | 🎯 Âge : **{student_age} ans** ({student_cycle['cycle_name']}) | {status_text}"
+            level_name = student_cycle.get("level") or student_cycle["stage_label"]
+            meta_info = f"📧 `{student_email}` | 🎯 Niveau : **{level_name}** ({student_age} ans - {student_cycle['stage_label']}) | {status_text}"
             if created_at:
                 meta_info += f" | 📅 Inscrit le {str(created_at)[:10]}"
             st.caption(meta_info)
@@ -796,6 +826,20 @@ def render_student_progress_details(
             st.metric("Bonnes réponses", stats.get("total_score", 0))
         with m4:
             st.metric("Moyenne générale", f"{stats.get('average_success_rate', 0.0)}%")
+
+        st.divider()
+
+        # Trophées & Badges remportés
+        trophies_info = get_student_trophies_overview(student_id)
+        unlocked_trophies = [b for b in trophies_info.get("badges", []) if b["is_unlocked"]]
+        st.markdown(f"**🏆 Trophées & Badges ({len(unlocked_trophies)} / {trophies_info['total_trophies']} remportés) :**")
+        if unlocked_trophies:
+            t_cols = st.columns(min(len(unlocked_trophies), 4))
+            for t_idx, t in enumerate(unlocked_trophies):
+                with t_cols[t_idx % min(len(unlocked_trophies), 4)]:
+                    st.caption(f"{t['icon']} **{t['title']}**")
+        else:
+            st.caption("🔒 *Aucun trophée débloqué pour le moment.*")
 
         st.divider()
 
@@ -868,7 +912,7 @@ if not st.session_state.get("is_authenticated"):
         st.markdown("<h1 style='text-align:center;'>🎓 Ecole Adnane</h1>", unsafe_allow_html=True)
         st.markdown(
             "<p style='text-align:center; color:var(--text-color, #94a3b8); font-size:1.15rem;'>"
-            "Plateforme de Révision & Préparation au Brevet 3AC Maroc"
+            "Plateforme d'Apprentissage & Révision Scolaire (Maroc)"
             "</p>",
             unsafe_allow_html=True,
         )
@@ -1070,7 +1114,7 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
 
     # Barre Latérale : Profil et Navigation
     st.sidebar.markdown("## 🎓 **Ecole Adnane**")
-    user_cycle = get_pedagogical_cycle(current_user.get("age"))
+    user_cycle = get_pedagogical_cycle(current_user.get("age"), level=current_user.get("level"))
     role_badge = "👑 Administrateur" if is_admin else user_cycle["badge_text"]
     st.sidebar.markdown(f"**{current_user['name']}**  \n`{current_user['email']}`  \n`{role_badge}`")
 
@@ -1085,7 +1129,7 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
         all_students = list_users(role="student")
         student_options: Dict[str, str] = {"global": "📊 Vue Globale (Supervision)"}
         for s in all_students:
-            s_cycle = get_pedagogical_cycle(s.get("age"))
+            s_cycle = get_pedagogical_cycle(s.get("age"), level=s.get("level"))
             blocked_tag = " [SUSPENDU]" if s.get("is_blocked") else ""
             student_options[str(s["id"])] = f"{s_cycle['badge_text']} — {s['name']} ({s['email']}){blocked_tag}"
 
@@ -1122,6 +1166,7 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                 "📚 Mes Cours (Révisions)",
                 "➕ Ajouter un Cours",
                 "📊 Mes Progrès",
+                "🏆 Trophées & Badges",
                 "⚙️ Sauvegardes & Paramètres de l'élève",
             ]
             default_menu_idx = 0
@@ -1142,8 +1187,8 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
         active_user_id = logged_in_user_id
         active_student_info = None
         menu = st.sidebar.radio(
-            "Mon Espace de Révision",
-            ["📚 Mes Cours (Révisions)", "➕ Ajouter un Cours", "📊 Mes Progrès", "⚙️ Paramètres & Sauvegardes"],
+            "Mon Espace d'Apprentissage",
+            ["📚 Mes Cours (Révisions)", "➕ Ajouter un Cours", "📊 Mes Progrès", "🏆 Mes Trophées", "⚙️ Paramètres & Sauvegardes"],
             index=0,
         )
 
@@ -1205,7 +1250,7 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                     "ID": s["user_id"],
                     "Nom": s["name"],
                     "Email": s["email"],
-                    "Âge & Niveau": f"{s.get('age', 14)} ans ({s.get('cycle', {}).get('stage_label', 'Collège')})",
+                    "Niveau & Âge": f"{s.get('level') or s.get('cycle', {}).get('level', '3AC')} • {s.get('age', 14)} ans ({s.get('cycle', {}).get('stage_label', 'Collège')})",
                     "Statut": "🔴 Suspendu" if s.get("is_blocked") == 1 else "🟢 Actif",
                     "Cours disponibles": s["course_count"],
                     "Quiz terminés": s["attempt_count"],
@@ -1245,8 +1290,9 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                 col = st_cols[idx % cols_per_row]
                 is_selected = (st.session_state.get("view_student_progress_id") == s["user_id"])
                 status_emoji = "🔴" if s.get("is_blocked") == 1 else "🎒"
+                student_lvl = s.get("level") or s.get("cycle", {}).get("level", "3AC")
                 if col.button(
-                    f"{status_emoji} {s['name']}",
+                    f"{status_emoji} {s['name']} ({student_lvl})",
                     key=f"btn_st_click_name_{s['user_id']}",
                     type="primary" if is_selected else "secondary",
                     use_container_width=True,
@@ -1339,7 +1385,7 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
             is_u_admin = (u["role"] == "admin")
 
             status_badge = "🔴 Suspendu" if is_u_blocked else "🟢 Actif"
-            u_cycle = get_pedagogical_cycle(u.get("age"))
+            u_cycle = get_pedagogical_cycle(u.get("age"), level=u.get("level"))
             role_badge = "👑 Administrateur" if is_u_admin else u_cycle["badge_text"]
             self_tag = " *(Votre compte)*" if is_self else ""
 
@@ -1347,21 +1393,26 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
             with st.expander(expander_title, expanded=False):
                 col_u0, col_u1, col_u2, col_u3 = st.columns([2.5, 2, 2, 2.5])
 
-                # 0. Nom et Âge
+                # 0. Nom, Âge et Niveau
                 with col_u0:
-                    st.markdown("##### 👤 Profil & Âge")
+                    st.markdown("##### 👤 Profil, Âge & Niveau")
                     edit_name_val = st.text_input("Nom :", value=u["name"], key=f"admin_edit_name_{u_id}")
                     current_age_val = int(u.get("age") or 14)
                     edit_age_val = st.number_input("Âge :", min_value=5, max_value=99, value=current_age_val, key=f"admin_edit_age_{u_id}")
-                    if edit_name_val != u["name"] or edit_age_val != current_age_val:
+                    current_lvl_val = u.get("level") or u_cycle.get("level", "3AC")
+                    lvl_options = MOROCCAN_SCHOOL_LEVELS
+                    lvl_idx = lvl_options.index(current_lvl_val) if current_lvl_val in lvl_options else (lvl_options.index("3AC") if "3AC" in lvl_options else 0)
+                    edit_lvl_val = st.selectbox("Niveau scolaire :", options=lvl_options, index=lvl_idx, key=f"admin_edit_lvl_{u_id}")
+                    if edit_name_val != u["name"] or edit_age_val != current_age_val or edit_lvl_val != u.get("level"):
                         if st.button("💾 Enregistrer profil", key=f"btn_save_prof_{u_id}", type="primary"):
                             ok_n, msg_n = update_user_name(u_id, edit_name_val)
                             ok_a, msg_a = update_user_age(u_id, int(edit_age_val))
-                            if ok_n and ok_a:
+                            ok_l, msg_l = update_user_level(u_id, edit_lvl_val)
+                            if ok_n and ok_a and ok_l:
                                 st.success("Profil mis à jour !")
                                 st.rerun()
                             else:
-                                st.error(f"{msg_n} {msg_a}")
+                                st.error(f"{msg_n} {msg_a} {msg_l}")
 
                 # 1. Rôle
                 with col_u1:
@@ -1569,7 +1620,9 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
         if is_admin and active_student_info:
             st.info(f"👀 **Espace de supervision :** Vous consultez les cours de l'élève **{active_student_info['name']}** (`{active_student_info['email']}`).")
 
-        st.title("📚 Espace de Révision 3AC")
+        active_u_dict = active_student_info if (is_admin and active_student_info) else current_user
+        active_u_cycle = get_pedagogical_cycle(active_u_dict.get("age"), level=active_u_dict.get("level"))
+        st.title(f"📚 Espace de Révision — {active_u_cycle.get('level', 'Collège')}")
 
         col_f1, col_f2, col_f3 = st.columns([2, 2, 2])
         with col_f1:
@@ -1643,16 +1696,16 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
         del_btn_text = "🗑️ تأكيد الحذف الآن" if is_ar else ("🗑️ Delete Now" if is_en else "🗑️ Confirmer la suppression")
 
         active_user_dict = active_student_info if (is_admin and active_student_info) else current_user
-        active_cycle = get_pedagogical_cycle(active_user_dict.get("age"))
+        active_cycle = get_pedagogical_cycle(active_user_dict.get("age"), level=active_user_dict.get("level"))
 
         if is_ar:
-            level_label = f"المستوى : {active_cycle['cycle_name']} ({active_cycle['age']} سنة)"
+            level_label = f"المستوى : {active_cycle['stage_label']} ({active_cycle['age']} سنة)"
             lang_badge_text = "العربية (AR)"
         elif is_en:
-            level_label = f"Level: {active_cycle['cycle_name']} ({active_cycle['age']} yo)"
+            level_label = f"Level: {active_cycle['stage_label']} ({active_cycle['age']} yo)"
             lang_badge_text = "English (EN)"
         else:
-            level_label = f"Niveau : {active_cycle['cycle_name']} ({active_cycle['age']} ans)"
+            level_label = f"Niveau : {active_cycle['stage_label']} ({active_cycle['age']} ans)"
             lang_badge_text = "Français (FR)"
 
         header_html = f"""
@@ -2128,8 +2181,12 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                             user_id=active_user_id,
                         )
                         evaluate_and_sync_concept_mastery(active_user_id, current_course["id"])
+                        new_badges = evaluate_and_award_badges(active_user_id)
+                        if new_badges:
+                            for nb in new_badges:
+                                st.toast(f"🎉 Nouveau trophée débloqué : {nb['icon']} {nb['title']} !", icon="🏆")
                         st.session_state[submission_key] = True
-                        if score >= len(questions) * 0.8:
+                        if score >= len(questions) * 0.8 or new_badges:
                             st.balloons()
                         st.rerun()
                 else:
@@ -2320,7 +2377,7 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
             st.info(f"👀 **Espace de supervision :** Vous téléversez des supports pour l'élève **{active_student_info['name']}**.")
             target_ids = [active_user_id]
         elif is_global_admin_view:
-            st.title("➕ Gestion & Ajout des Cours (3AC)")
+            st.title("➕ Gestion & Ajout des Cours")
             all_s = list_users(role="student")
             target_choice = st.radio(
                 "Destinataire(s) du cours :",
@@ -2348,7 +2405,9 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                     )
                     target_ids = [target_sel]
         else:
-            st.title("➕ Ajouter un Cours (Mes Révisions 3AC)")
+            active_u_dict = active_student_info if (is_admin and active_student_info) else current_user
+            active_u_cycle = get_pedagogical_cycle(active_u_dict.get("age"), level=active_u_dict.get("level"))
+            st.title(f"➕ Ajouter un Cours ({active_u_cycle.get('level', 'Mes Révisions')})")
             st.markdown(
                 "Téléversez vos supports de cours au format PDF pour enrichir vos révisions, "
                 "générer automatiquement des résumés clés, fiches mémo et quiz personnalisés."
@@ -2428,7 +2487,24 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
         if is_admin and active_student_info:
             st.info(f"👀 **Espace de supervision :** Statistiques de l'élève **{active_student_info['name']}**.")
 
-        st.title("📊 Progression & Révisions 3AC")
+        active_u_dict = active_student_info if (is_admin and active_student_info) else current_user
+        active_u_cycle = get_pedagogical_cycle(active_u_dict.get("age"), level=active_u_dict.get("level"))
+        st.title(f"📊 Progression & Révisions — {active_u_cycle.get('level', 'Collège')}")
+
+        trophies_ov = get_student_trophies_overview(active_user_id)
+        u_trophies = trophies_ov.get("unlocked_trophies", 0)
+        tot_trophies = trophies_ov.get("total_trophies", 8)
+        rate_trophies = trophies_ov.get("completion_rate", 0.0)
+
+        t_col1, t_col2 = st.columns([3, 1])
+        with t_col1:
+            st.markdown(f"### 🏆 Trophées & Objectifs ({u_trophies}/{tot_trophies} débloqués — {rate_trophies}%)")
+            st.progress(rate_trophies / 100.0)
+        with t_col2:
+            st.write("")
+            st.caption("Consultez l'onglet **🏆 Mes Trophées** pour voir tous les objectifs à accomplir !")
+
+        st.divider()
 
         stats = get_quiz_stats(user_id=active_user_id)
 
@@ -2469,6 +2545,100 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                 st.caption("L'historique des quiz récents apparaîtra ici.")
 
     # -----------------------------------------------------------------------
+    # VUE ÉLÈVE : MES TROPHÉES & OBJECTIFS
+    # -----------------------------------------------------------------------
+    elif menu in ("🏆 Mes Trophées", "🏆 Trophées & Badges"):
+        if is_admin and active_student_info:
+            st.info(f"👀 **Espace de supervision :** Trophées et accomplissements de **{active_student_info['name']}**.")
+
+        active_u_dict = active_student_info if (is_admin and active_student_info) else current_user
+        active_u_cycle = get_pedagogical_cycle(active_u_dict.get("age"), level=active_u_dict.get("level"))
+        st.title(f"🏆 Mes Trophées & Objectifs — {active_u_cycle.get('level', 'Collège')}")
+        st.markdown(
+            "Relevez les défis d'apprentissage, complétez vos entraînements et dialoguez avec votre tuteur Sanad "
+            "pour remporter tous les trophées d'excellence !"
+        )
+
+        trophies_data = get_student_trophies_overview(active_user_id)
+        unlocked_cnt = trophies_data.get("unlocked_trophies", 0)
+        total_cnt = trophies_data.get("total_trophies", 8)
+        c_rate = trophies_data.get("completion_rate", 0.0)
+
+        # Cartes récapitulatives d'objectifs
+        m_col1, m_col2, m_col3 = st.columns([1.5, 1.5, 3])
+        with m_col1:
+            st.metric("Trophées Débloqués", f"{unlocked_cnt} / {total_cnt}")
+        with m_col2:
+            st.metric("Taux d'accomplissement", f"{c_rate}%")
+        with m_col3:
+            st.write("")
+            st.progress(c_rate / 100.0)
+            if unlocked_cnt == total_cnt:
+                st.caption("🌟 **Félicitations exceptionnelles ! Tous les trophées sont débloqués !**")
+            else:
+                st.caption(f"💪 Continuez sur cette lancée ! Encore **{total_cnt - unlocked_cnt}** trophée(s) à débloquer.")
+
+        st.divider()
+
+        filter_choice = st.radio(
+            "Afficher les trophées :",
+            ["Tous les trophées", "🏆 Débloqués uniquement", "🔒 En cours d'obtention"],
+            horizontal=True,
+            key="trophy_status_filter_radio",
+        )
+
+        all_badges = trophies_data.get("badges", [])
+        if filter_choice == "🏆 Débloqués uniquement":
+            display_badges = [b for b in all_badges if b["is_unlocked"]]
+        elif filter_choice == "🔒 En cours d'obtention":
+            display_badges = [b for b in all_badges if not b["is_unlocked"]]
+        else:
+            display_badges = all_badges
+
+        if not display_badges:
+            st.info("Aucun trophée à afficher dans ce filtre.")
+        else:
+            cols = st.columns(2)
+            for idx, badge in enumerate(display_badges):
+                col = cols[idx % 2]
+                with col:
+                    is_unlocked = badge["is_unlocked"]
+                    bg_style = "linear-gradient(135deg, #1e293b 0%, #172554 100%)" if is_unlocked else "linear-gradient(135deg, #0f172a 0%, #1e293b 100%)"
+                    border_style = "#eab308" if is_unlocked else "#334155"
+                    badge_status_tag = (
+                        "<span style='background:#16a34a; color:#ffffff; padding:3px 10px; border-radius:12px; font-size:0.75rem; font-weight:700;'>🎉 DÉBLOQUÉ</span>"
+                        if is_unlocked
+                        else "<span style='background:#334155; color:#94a3b8; padding:3px 10px; border-radius:12px; font-size:0.75rem; font-weight:700;'>🔒 EN COURS</span>"
+                    )
+                    icon_filter = "none" if is_unlocked else "grayscale(100%) opacity(0.5)"
+
+                    card_html = f"""
+                    <div style="background:{bg_style}; border:1.5px solid {border_style}; border-radius:12px; padding:16px; margin-bottom:12px; box-shadow:0 4px 6px -1px rgba(0,0,0,0.25);">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                            <div style="font-size:2.2rem; filter:{icon_filter}; line-height:1;">{badge['icon']}</div>
+                            <div>{badge_status_tag}</div>
+                        </div>
+                        <div style="font-size:1.15rem; font-weight:700; color:{'#fbbf24' if is_unlocked else '#f8fafc'}; margin-bottom:4px;">
+                            {badge['title']}
+                        </div>
+                        <div style="font-size:0.85rem; color:#cbd5e1; margin-bottom:10px; line-height:1.4;">
+                            🎯 <strong>Objectif :</strong> {badge['description']}
+                        </div>
+                        <div style="font-size:0.8rem; color:#94a3b8; margin-bottom:6px;">
+                            Progression : <strong>{badge['current_value']} / {badge['target_value']} {badge['unit']}</strong> ({badge['progress_percent']}%)
+                        </div>
+                    </div>
+                    """
+                    st.markdown(card_html, unsafe_allow_html=True)
+                    st.progress(badge["progress_ratio"])
+                    if is_unlocked and badge.get("unlocked_at"):
+                        unlocked_time = str(badge["unlocked_at"])[:16]
+                        st.caption(f"🎖️ Débloqué le {unlocked_time} • *{badge['encouragement']}*")
+                    else:
+                        st.caption(f"💡 *{badge['encouragement']}*")
+                    st.write("")
+
+    # -----------------------------------------------------------------------
     # VUE ÉLÈVE : PARAMÈTRES INDIVIDUELS & SAUVEGARDE ÉLÈVE
     # -----------------------------------------------------------------------
     elif menu in ("⚙️ Paramètres & Sauvegardes", "⚙️ Sauvegardes & Paramètres de l'élève"):
@@ -2478,11 +2648,11 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
         st.title("⚙️ Paramètres & Sauvegardes Personnelles")
 
         # -------------------------------------------------------------------
-        # 1. PROFIL DE L'APPRENANT : NOM & ÂGE (ADAPTATION UNIVERSELLE)
+        # 1. PROFIL DE L'APPRENANT : NOM, ÂGE & NIVEAU SCOLAIRE
         # -------------------------------------------------------------------
         st.markdown("### 👤 Mon Profil & Niveau Scolaire")
         st.markdown(
-            "Indiquez votre nom d'affichage et votre âge. "
+            "Indiquez votre nom d'affichage, votre âge et votre niveau scolaire marocain. "
             "L'intelligence artificielle Sanad adapte automatiquement ses explications, "
             "ses résumés et la difficulté de ses quiz à votre niveau (Primaire, Collège, Lycée ou Supérieur/Adulte)."
         )
@@ -2490,33 +2660,40 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
         target_user = active_student_info if (is_admin and active_student_info) else current_user
         current_name = target_user.get("name") or ""
         current_age = int(target_user.get("age") or 14)
+        current_level = target_user.get("level") or "3AC"
 
-        col_p1, col_p2, col_p3 = st.columns([2.5, 1.5, 1.5])
+        col_p1, col_p2, col_p3, col_p4 = st.columns([2.5, 1.2, 1.8, 1.5])
         with col_p1:
             new_prof_name = st.text_input("Nom d'affichage :", value=current_name, key="prof_edit_name_input")
         with col_p2:
             new_prof_age = st.number_input("Âge de l'élève :", min_value=5, max_value=99, value=current_age, key="prof_edit_age_input")
         with col_p3:
+            lvl_opts = MOROCCAN_SCHOOL_LEVELS
+            cur_lvl_idx = lvl_opts.index(current_level) if current_level in lvl_opts else (lvl_opts.index("3AC") if "3AC" in lvl_opts else 0)
+            new_prof_level = st.selectbox("Niveau scolaire :", options=lvl_opts, index=cur_lvl_idx, key="prof_edit_level_input")
+        with col_p4:
             st.write("")
             st.write("")
             save_prof_btn = st.button("💾 Mettre à jour mon profil", type="primary", use_container_width=True, key="btn_save_prof_settings")
 
-        ped_cycle = get_pedagogical_cycle(int(new_prof_age))
-        st.info(f"🎯 **Niveau & Cycle :** {ped_cycle['cycle_name']} — *Style d'apprentissage : {ped_cycle['tone']}*")
+        ped_cycle = get_pedagogical_cycle(int(new_prof_age), level=new_prof_level)
+        st.info(f"🎯 **Niveau & Cycle :** {ped_cycle['cycle_name']} ({ped_cycle['level']}) — *Style d'apprentissage : {ped_cycle['tone']}*")
 
         if save_prof_btn:
             ok_name, msg_name = update_user_name(active_user_id, new_prof_name)
             ok_age, msg_age = update_user_age(active_user_id, int(new_prof_age))
-            if ok_name and ok_age:
+            ok_lvl, msg_lvl = update_user_level(active_user_id, new_prof_level)
+            if ok_name and ok_age and ok_lvl:
                 if active_user_id == logged_in_user_id:
                     st.session_state["name"] = new_prof_name
                     if "user" in st.session_state and isinstance(st.session_state["user"], dict):
                         st.session_state["user"]["name"] = new_prof_name
                         st.session_state["user"]["age"] = int(new_prof_age)
-                st.success("Profil mis à jour avec succès ! Les contenus générés par l'IA s'adapteront à votre nouvel âge.")
+                        st.session_state["user"]["level"] = new_prof_level
+                st.success("Profil mis à jour avec succès ! Les contenus générés par l'IA s'adapteront à votre niveau scolaire.")
                 st.rerun()
             else:
-                st.error(f"{msg_name} {msg_age}")
+                st.error(f"{msg_name} {msg_age} {msg_lvl}")
 
         st.divider()
 

@@ -31,8 +31,10 @@ __all__ = [
     "update_user_role",
     "delete_user_account",
     "update_user_name",
+    "MOROCCAN_SCHOOL_LEVELS",
     "get_pedagogical_cycle",
     "update_user_age",
+    "update_user_level",
     "create_user_session",
     "get_user_from_session_token",
     "delete_user_session",
@@ -65,6 +67,12 @@ __all__ = [
     "set_setting",
     "get_user_setting",
     "set_user_setting",
+    "BADGE_CATALOG",
+    "get_badge_catalog",
+    "get_user_badges",
+    "award_badge",
+    "evaluate_and_award_badges",
+    "get_student_trophies_overview",
 ]
 
 DEFAULT_DB_DIR = Path(__file__).parent.parent / "storage"
@@ -107,6 +115,7 @@ def init_db(db_path: Optional[Path] = None) -> None:
                     is_blocked INTEGER NOT NULL DEFAULT 0,
                     has_custom_name INTEGER NOT NULL DEFAULT 0,
                     age INTEGER DEFAULT 14,
+                    level TEXT DEFAULT '3AC',
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
 
@@ -209,6 +218,16 @@ def init_db(db_path: Optional[Path] = None) -> None:
                     UNIQUE(user_id, course_id, concept_title)
                 );
 
+                CREATE TABLE IF NOT EXISTS user_badges (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    badge_key TEXT NOT NULL,
+                    unlocked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    metadata_json TEXT,
+                    FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
+                    UNIQUE(user_id, badge_key)
+                );
+
                 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
                 CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
                 CREATE INDEX IF NOT EXISTS idx_courses_hash ON courses(file_hash);
@@ -218,6 +237,7 @@ def init_db(db_path: Optional[Path] = None) -> None:
                 CREATE INDEX IF NOT EXISTS idx_chat_course ON chat_messages(course_id);
                 CREATE INDEX IF NOT EXISTS idx_sessions_user ON user_sessions(user_id);
                 CREATE INDEX IF NOT EXISTS idx_concept_mastery_user_course ON concept_mastery(user_id, course_id);
+                CREATE INDEX IF NOT EXISTS idx_user_badges_user ON user_badges(user_id);
             """)
 
             # 2. Migrations dynamiques pour bases existantes
@@ -231,6 +251,21 @@ def init_db(db_path: Optional[Path] = None) -> None:
                 cur.execute("ALTER TABLE users ADD COLUMN has_custom_name INTEGER NOT NULL DEFAULT 0")
             if "age" not in user_cols:
                 cur.execute("ALTER TABLE users ADD COLUMN age INTEGER DEFAULT 14")
+            if "level" not in user_cols:
+                cur.execute("ALTER TABLE users ADD COLUMN level TEXT DEFAULT '3AC'")
+
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS user_badges (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    badge_key TEXT NOT NULL,
+                    unlocked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    metadata_json TEXT,
+                    FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
+                    UNIQUE(user_id, badge_key)
+                )
+            """)
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_user_badges_user ON user_badges(user_id)")
 
             cur.execute("PRAGMA table_info(courses)")
             course_cols = [row["name"] for row in cur.fetchall()]
@@ -420,12 +455,13 @@ def create_or_get_google_user(
                 role = "admin" if total_users == 0 else "student"
 
             default_age = 14
+            default_level = "3AC"
             cur.execute(
                 """
-                INSERT INTO users (email, name, avatar_url, role, is_blocked, has_custom_name, age)
-                VALUES (?, ?, ?, ?, 0, 0, ?)
+                INSERT INTO users (email, name, avatar_url, role, is_blocked, has_custom_name, age, level)
+                VALUES (?, ?, ?, ?, 0, 0, ?, ?)
                 """,
-                (clean_email, name, avatar_url, role, default_age),
+                (clean_email, name, avatar_url, role, default_age, default_level),
             )
             new_id = cur.lastrowid
 
@@ -438,6 +474,7 @@ def create_or_get_google_user(
                 "is_blocked": 0,
                 "has_custom_name": 0,
                 "age": default_age,
+                "level": default_level,
                 "created_at": datetime.now().isoformat(),
             }
     finally:
@@ -618,13 +655,35 @@ def update_user_name(user_id: int, new_name: str) -> Tuple[bool, str]:
         conn.close()
 
 
-def get_pedagogical_cycle(age: Optional[int]) -> Dict[str, Any]:
+MOROCCAN_SCHOOL_LEVELS: List[str] = [
+    # Primaire
+    "1AEP",
+    "2AEP",
+    "3AEP",
+    "4AEP",
+    "5AEP",
+    "6AEP",
+    # Collège
+    "1AC",
+    "2AC",
+    "3AC",
+    # Lycée
+    "Tronc Commun",
+    "1BAC",
+    "2BAC",
+    # Supérieur
+    "Supérieur",
+]
+
+
+def get_pedagogical_cycle(age: Optional[int] = None, level: Optional[str] = None) -> Dict[str, Any]:
     """
-    Détermine le cycle scolaire et le profil pédagogique en fonction de l'âge de l'élève.
-    - 5 à 10 ans : Primaire (CP à CM2 / 1AEP à 6AEP)
-    - 11 à 14 ans : Collège (1AC à 3AC / 6ème à 3ème) [Défaut 14 ans]
-    - 15 à 18 ans : Lycée (Tronc commun à Baccalauréat)
-    - 19 ans et + : Enseignement Supérieur / Formation Adulte
+    Détermine le cycle scolaire et le profil pédagogique.
+    Prend en compte le niveau scolaire explicite (s'il est spécifié) ou l'infère de l'âge.
+    - Primaire : 1AEP à 6AEP (5 à 10 ans)
+    - Collège : 1AC, 2AC, 3AC (11 à 14 ans) [Défaut 14 ans / 3AC]
+    - Lycée : Tronc Commun, 1BAC, 2BAC (15 à 18 ans)
+    - Supérieur : Enseignement Supérieur / Formation Adulte (19 ans et +)
     """
     safe_age = 14
     if age is not None:
@@ -638,9 +697,98 @@ def get_pedagogical_cycle(age: Optional[int]) -> Dict[str, Any]:
     elif safe_age > 100:
         safe_age = 100
 
+    clean_level = (level.strip() if isinstance(level, str) else "") or None
+
+    # Si un niveau explicite est fourni, il prime sur l'inférence d'âge
+    if clean_level:
+        lvl_upper = clean_level.upper()
+        if any(lvl_upper.startswith(p) for p in ["1AEP", "2AEP", "3AEP", "4AEP", "5AEP", "6AEP"]) or "PRIMAIRE" in lvl_upper:
+            return {
+                "age": safe_age,
+                "level": clean_level,
+                "stage": "primary",
+                "stage_label": f"Primaire ({clean_level})" if "AEP" in clean_level else "Primaire",
+                "cycle_name": f"Cycle Primaire ({clean_level})",
+                "badge_text": f"🎒 {clean_level} ({safe_age} ans)",
+                "tone": "simple, ludique, visuel, très encourageant",
+            }
+        elif "1AC" in lvl_upper:
+            return {
+                "age": safe_age,
+                "level": "1AC",
+                "stage": "middle",
+                "stage_label": "Collège (1AC)",
+                "cycle_name": "Cycle Collégial (1AC)",
+                "badge_text": f"🎒 1AC ({safe_age} ans)",
+                "tone": "structuré, clair, motivant, orienté découverte et méthodologie du collège",
+            }
+        elif "2AC" in lvl_upper:
+            return {
+                "age": safe_age,
+                "level": "2AC",
+                "stage": "middle",
+                "stage_label": "Collège (2AC)",
+                "cycle_name": "Cycle Collégial (2AC)",
+                "badge_text": f"🎒 2AC ({safe_age} ans)",
+                "tone": "structuré, clair, motivant, consolidation des acquis du collège",
+            }
+        elif "3AC" in lvl_upper:
+            return {
+                "age": safe_age,
+                "level": "3AC",
+                "stage": "middle",
+                "stage_label": "Collège (3AC)",
+                "cycle_name": "Cycle Collégial (1AC - 3AC)",
+                "badge_text": f"🎒 3AC ({safe_age} ans)",
+                "tone": "structuré, clair, motivant, orienté réussite aux examens du collège",
+            }
+        elif "TRONC" in lvl_upper or "TC" in lvl_upper:
+            return {
+                "age": safe_age,
+                "level": "Tronc Commun",
+                "stage": "high",
+                "stage_label": "Lycée (Tronc Commun)",
+                "cycle_name": "Cycle Secondaire Qualifiant (Lycée - Tronc Commun)",
+                "badge_text": f"🏛️ Tronc Commun ({safe_age} ans)",
+                "tone": "académique, rigoureux, méthodologique, orientation",
+            }
+        elif "1BAC" in lvl_upper:
+            return {
+                "age": safe_age,
+                "level": "1BAC",
+                "stage": "high",
+                "stage_label": "Lycée (1BAC)",
+                "cycle_name": "Cycle Secondaire Qualifiant (1BAC - Examen Régional)",
+                "badge_text": f"🏛️ 1BAC ({safe_age} ans)",
+                "tone": "académique, rigoureux, analytique, préparation à l'examen régional",
+            }
+        elif "2BAC" in lvl_upper or "BAC" in lvl_upper:
+            return {
+                "age": safe_age,
+                "level": "2BAC",
+                "stage": "high",
+                "stage_label": "Lycée (2BAC - Baccalauréat)",
+                "cycle_name": "Cycle Secondaire Qualifiant (2BAC - Baccalauréat)",
+                "badge_text": f"🏛️ 2BAC ({safe_age} ans)",
+                "tone": "académique, rigoureux, analytique, préparation aux épreuves du Baccalauréat",
+            }
+        elif "SUP" in lvl_upper:
+            return {
+                "age": safe_age,
+                "level": "Supérieur",
+                "stage": "higher",
+                "stage_label": "Supérieur / Adulte",
+                "cycle_name": "Enseignement Supérieur & Formation Continue",
+                "badge_text": f"🎓 Supérieur ({safe_age} ans)",
+                "tone": "universitaire, professionnel, critique, approfondissement conceptuel",
+            }
+
+    # Inférence automatique selon l'âge lorsque le niveau n'est pas précisé
     if safe_age <= 10:
+        level_inferred = "1AEP" if safe_age <= 6 else f"{safe_age - 5}AEP"
         return {
             "age": safe_age,
+            "level": level_inferred,
             "stage": "primary",
             "stage_label": "Primaire",
             "cycle_name": "Cycle Primaire (CP - CM2)",
@@ -648,17 +796,34 @@ def get_pedagogical_cycle(age: Optional[int]) -> Dict[str, Any]:
             "tone": "simple, ludique, visuel, très encourageant",
         }
     elif safe_age <= 14:
+        if safe_age in (11, 12):
+            inferred_lvl = "1AC"
+            stage_lbl = "Collège (1AC)"
+        elif safe_age == 13:
+            inferred_lvl = "2AC"
+            stage_lbl = "Collège (2AC)"
+        else:
+            inferred_lvl = "3AC"
+            stage_lbl = "Collège (3AC)"
         return {
             "age": safe_age,
+            "level": inferred_lvl,
             "stage": "middle",
-            "stage_label": "Collège (3AC)",
+            "stage_label": stage_lbl,
             "cycle_name": "Cycle Collégial (1AC - 3AC)",
             "badge_text": f"🎒 Collège ({safe_age} ans)",
             "tone": "structuré, clair, motivant, orienté réussite aux examens du collège",
         }
     elif safe_age <= 18:
+        if safe_age == 15:
+            inferred_lvl = "Tronc Commun"
+        elif safe_age == 16:
+            inferred_lvl = "1BAC"
+        else:
+            inferred_lvl = "2BAC"
         return {
             "age": safe_age,
+            "level": inferred_lvl,
             "stage": "high",
             "stage_label": "Lycée (Baccalauréat)",
             "cycle_name": "Cycle Secondaire Qualifiant (Lycée)",
@@ -668,6 +833,7 @@ def get_pedagogical_cycle(age: Optional[int]) -> Dict[str, Any]:
     else:
         return {
             "age": safe_age,
+            "level": "Supérieur",
             "stage": "higher",
             "stage_label": "Supérieur / Adulte",
             "cycle_name": "Enseignement Supérieur & Formation Continue",
@@ -695,6 +861,24 @@ def update_user_age(user_id: int, age: int) -> Tuple[bool, str]:
                 return False, "Utilisateur introuvable."
             cycle = get_pedagogical_cycle(val)
             return True, f"Âge enregistré ({val} ans — {cycle['cycle_name']}) !"
+    finally:
+        conn.close()
+
+
+def update_user_level(user_id: int, level: str) -> Tuple[bool, str]:
+    """Met à jour le niveau scolaire de l'élève (ex: 1AC, 2AC, 3AC, Tronc Commun, 1BAC, 2BAC...)."""
+    clean_lvl = (level or "").strip()
+    if not clean_lvl:
+        return False, "Le niveau scolaire ne peut pas être vide."
+
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
+            cur.execute("UPDATE users SET level = ? WHERE id = ?", (clean_lvl, user_id))
+            if cur.rowcount == 0:
+                return False, "Utilisateur introuvable."
+            return True, f"Niveau scolaire mis à jour ({clean_lvl}) !"
     finally:
         conn.close()
 
@@ -774,6 +958,7 @@ def get_user_from_session_token(token: Optional[str]) -> Optional[Dict[str, Any]
                 "is_blocked": row_dict.get("is_blocked", 0),
                 "has_custom_name": row_dict.get("has_custom_name", 0),
                 "age": row_dict.get("age", 14),
+                "level": row_dict.get("level"),
                 "created_at": row_dict.get("created_at"),
             }
     finally:
@@ -852,6 +1037,7 @@ def get_global_admin_kpis() -> Dict[str, Any]:
                 COALESCE(u.is_blocked, 0) as is_blocked,
                 u.created_at,
                 COALESCE(u.age, 14) as age,
+                u.level,
                 (
                     SELECT COUNT(DISTINCT file_hash) 
                     FROM courses 
@@ -879,7 +1065,9 @@ def get_global_admin_kpis() -> Dict[str, Any]:
             sq = d.get("student_questions", 0)
             ss = d.get("student_score", 0)
             d["average_rate"] = round((ss / sq * 100), 1) if sq > 0 else 0.0
-            d["cycle"] = get_pedagogical_cycle(d.get("age", 14))
+            cycle = get_pedagogical_cycle(d.get("age", 14), level=d.get("level"))
+            d["cycle"] = cycle
+            d["level"] = d.get("level") or cycle.get("level", "3AC")
             students_summary.append(d)
 
         return {
@@ -2220,3 +2408,377 @@ def evaluate_and_sync_concept_mastery(user_id: int, course_id: int) -> List[Dict
         })
 
     return results
+
+
+# ===========================================================================
+# SYSTÈME DE RÉCOMPENSES & TROPHÉES PAR BADGE
+# ===========================================================================
+
+BADGE_CATALOG: List[Dict[str, Any]] = [
+    {
+        "key": "first_quiz",
+        "title": "🌟 Premier Pas",
+        "category": "Quiz & Découverte",
+        "description": "Compléter ton premier quiz d'évaluation pour tester tes connaissances.",
+        "target_value": 1,
+        "unit": "quiz complété",
+        "icon": "🌟",
+    },
+    {
+        "key": "perfect_score",
+        "title": "🎯 Tir Parfait",
+        "category": "Excellence",
+        "description": "Obtenir un score parfait de 100% sans aucune erreur à un quiz.",
+        "target_value": 1,
+        "unit": "score parfait (100%)",
+        "icon": "🎯",
+    },
+    {
+        "key": "quiz_five",
+        "title": "⚡ Assiduité",
+        "category": "Entraînement",
+        "description": "S'entraîner régulièrement en complétant au moins 5 quiz.",
+        "target_value": 5,
+        "unit": "quiz complétés",
+        "icon": "⚡",
+    },
+    {
+        "key": "quiz_ten",
+        "title": "🏆 Champion des Quiz",
+        "category": "Excellence",
+        "description": "Atteindre le palier de 10 quiz terminés avec succès.",
+        "target_value": 10,
+        "unit": "quiz complétés",
+        "icon": "🏆",
+    },
+    {
+        "key": "course_explorer",
+        "title": "📚 Explorateur",
+        "category": "Curiosité",
+        "description": "Consulter ou importer au moins 3 cours différents dans son espace.",
+        "target_value": 3,
+        "unit": "cours révisés",
+        "icon": "📚",
+    },
+    {
+        "key": "sanad_scholar",
+        "title": "💬 Curieux avec Sanad",
+        "category": "Dialogue Socratique",
+        "description": "Poser au moins 5 questions au tuteur intelligent Sanad pour approfondir.",
+        "target_value": 5,
+        "unit": "questions posées",
+        "icon": "💬",
+    },
+    {
+        "key": "concept_master",
+        "title": "🧠 Maître des Notions",
+        "category": "Maîtrise",
+        "description": "Assimiler complètement au moins 3 notions clés de cours.",
+        "target_value": 3,
+        "unit": "notions maîtrisées",
+        "icon": "🧠",
+    },
+    {
+        "key": "mindmap_pioneer",
+        "title": "🗺️ Cartographe du Savoir",
+        "category": "Schématisation",
+        "description": "Consulter ou générer la carte mentale schématisée d'une leçon.",
+        "target_value": 1,
+        "unit": "carte mentale explorée",
+        "icon": "🗺️",
+    },
+]
+
+BADGE_CATALOG_MAP: Dict[str, Dict[str, Any]] = {b["key"]: b for b in BADGE_CATALOG}
+
+
+def get_badge_catalog() -> List[Dict[str, Any]]:
+    """Retourne la liste des trophées et badges disponibles dans le catalogue."""
+    return [dict(b) for b in BADGE_CATALOG]
+
+
+def get_user_badges(user_id: int) -> List[Dict[str, Any]]:
+    """Récupère les badges remportés par un utilisateur spécifique."""
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT badge_key, unlocked_at, metadata_json
+            FROM user_badges
+            WHERE user_id = ?
+            ORDER BY unlocked_at ASC
+            """,
+            (user_id,),
+        )
+        badges = []
+        for r in cur.fetchall():
+            d = dict(r)
+            b_info = BADGE_CATALOG_MAP.get(d["badge_key"])
+            if b_info:
+                d.update({
+                    "title": b_info["title"],
+                    "category": b_info["category"],
+                    "description": b_info["description"],
+                    "icon": b_info["icon"],
+                    "target_value": b_info["target_value"],
+                    "unit": b_info["unit"],
+                })
+            badges.append(d)
+        return badges
+    finally:
+        conn.close()
+
+
+def award_badge(user_id: int, badge_key: str, metadata: Optional[Dict[str, Any]] = None) -> bool:
+    """
+    Attribue un badge à un utilisateur s'il ne l'a pas déjà débloqué.
+    Retourne True si le badge est nouvellement attribué, False s'il était déjà débloqué.
+    """
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
+            meta_json = json.dumps(metadata or {}, ensure_ascii=False)
+            cur.execute(
+                """
+                INSERT OR IGNORE INTO user_badges (user_id, badge_key, metadata_json)
+                VALUES (?, ?, ?)
+                """,
+                (user_id, badge_key, meta_json),
+            )
+            return cur.rowcount > 0
+    finally:
+        conn.close()
+
+
+def evaluate_and_award_badges(user_id: int) -> List[Dict[str, Any]]:
+    """
+    Évalue l'ensemble des critères d'attribution de trophées pour un élève et attribue
+    automatiquement les badges mérités.
+    Retourne la liste des nouveaux trophées débloqués lors de cet appel.
+    """
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+
+        # 1. Nombre de quiz terminés
+        cur.execute("SELECT COUNT(id) as cnt FROM quiz_attempts WHERE user_id = ?", (user_id,))
+        total_quizzes = int(cur.fetchone()["cnt"])
+
+        # 2. Nombre de quiz avec score parfait (100%)
+        cur.execute(
+            """
+            SELECT COUNT(id) as cnt 
+            FROM quiz_attempts 
+            WHERE user_id = ? AND score = total_questions AND total_questions > 0
+            """,
+            (user_id,),
+        )
+        perfect_quizzes = int(cur.fetchone()["cnt"])
+
+        # 3. Nombre de cours accessibles / révisés
+        cur.execute(
+            """
+            SELECT COUNT(DISTINCT id) as cnt
+            FROM courses
+            WHERE user_id = ? OR user_id IS NULL
+            """,
+            (user_id,),
+        )
+        total_courses = int(cur.fetchone()["cnt"])
+
+        # 4. Nombre de questions posées à Sanad
+        cur.execute(
+            """
+            SELECT COUNT(id) as cnt
+            FROM chat_messages
+            WHERE user_id = ? AND role = 'user'
+            """,
+            (user_id,),
+        )
+        sanad_questions = int(cur.fetchone()["cnt"])
+
+        # 5. Nombre de notions assimilées
+        cur.execute(
+            """
+            SELECT COUNT(id) as cnt
+            FROM concept_mastery
+            WHERE user_id = ? AND status = 'mastered'
+            """,
+            (user_id,),
+        )
+        mastered_concepts = int(cur.fetchone()["cnt"])
+
+        # 6. Nombre de cartes mentales existantes
+        cur.execute(
+            """
+            SELECT COUNT(id) as cnt
+            FROM courses
+            WHERE (user_id = ? OR user_id IS NULL) 
+              AND mindmap_code IS NOT NULL 
+              AND TRIM(mindmap_code) != ''
+            """,
+            (user_id,),
+        )
+        mindmaps_count = int(cur.fetchone()["cnt"])
+    finally:
+        conn.close()
+
+    newly_awarded = []
+    catalog_map = {b["key"]: b for b in BADGE_CATALOG}
+
+    checks = [
+        ("first_quiz", total_quizzes >= 1, {"total_quizzes": total_quizzes}),
+        ("perfect_score", perfect_quizzes >= 1, {"perfect_quizzes": perfect_quizzes}),
+        ("quiz_five", total_quizzes >= 5, {"total_quizzes": total_quizzes}),
+        ("quiz_ten", total_quizzes >= 10, {"total_quizzes": total_quizzes}),
+        ("course_explorer", total_courses >= 3, {"total_courses": total_courses}),
+        ("sanad_scholar", sanad_questions >= 5, {"sanad_questions": sanad_questions}),
+        ("concept_master", mastered_concepts >= 3, {"mastered_concepts": mastered_concepts}),
+        ("mindmap_pioneer", mindmaps_count >= 1, {"mindmaps_count": mindmaps_count}),
+    ]
+
+    for key, condition, meta in checks:
+        if condition:
+            is_new = award_badge(user_id, key, meta)
+            if is_new and key in catalog_map:
+                newly_awarded.append(catalog_map[key])
+
+    return newly_awarded
+
+
+def get_student_trophies_overview(user_id: int) -> Dict[str, Any]:
+    """
+    Construit la vue détaillée des trophées pour l'élève :
+    - Taux de complétion global
+    - Détail de chaque trophée (débloqué ou en cours avec progression précise et encouragement).
+    """
+    # 1. Évaluation dynamique préalable
+    evaluate_and_award_badges(user_id)
+
+    # 2. Récupération des badges débloqués
+    unlocked_list = get_user_badges(user_id)
+    unlocked_map = {b["badge_key"]: b for b in unlocked_list}
+
+    # 3. Mesures réelles de progression
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(id) as cnt FROM quiz_attempts WHERE user_id = ?", (user_id,))
+        total_quizzes = int(cur.fetchone()["cnt"])
+
+        cur.execute(
+            """
+            SELECT COUNT(id) as cnt 
+            FROM quiz_attempts 
+            WHERE user_id = ? AND score = total_questions AND total_questions > 0
+            """,
+            (user_id,),
+        )
+        perfect_quizzes = int(cur.fetchone()["cnt"])
+
+        cur.execute(
+            """
+            SELECT COUNT(DISTINCT id) as cnt
+            FROM courses
+            WHERE user_id = ? OR user_id IS NULL
+            """,
+            (user_id,),
+        )
+        total_courses = int(cur.fetchone()["cnt"])
+
+        cur.execute(
+            """
+            SELECT COUNT(id) as cnt
+            FROM chat_messages
+            WHERE user_id = ? AND role = 'user'
+            """,
+            (user_id,),
+        )
+        sanad_questions = int(cur.fetchone()["cnt"])
+
+        cur.execute(
+            """
+            SELECT COUNT(id) as cnt
+            FROM concept_mastery
+            WHERE user_id = ? AND status = 'mastered'
+            """,
+            (user_id,),
+        )
+        mastered_concepts = int(cur.fetchone()["cnt"])
+
+        cur.execute(
+            """
+            SELECT COUNT(id) as cnt
+            FROM courses
+            WHERE (user_id = ? OR user_id IS NULL) 
+              AND mindmap_code IS NOT NULL 
+              AND TRIM(mindmap_code) != ''
+            """,
+            (user_id,),
+        )
+        mindmaps_count = int(cur.fetchone()["cnt"])
+    finally:
+        conn.close()
+
+    current_metrics = {
+        "first_quiz": total_quizzes,
+        "perfect_score": perfect_quizzes,
+        "quiz_five": total_quizzes,
+        "quiz_ten": total_quizzes,
+        "course_explorer": total_courses,
+        "sanad_scholar": sanad_questions,
+        "concept_master": mastered_concepts,
+        "mindmap_pioneer": mindmaps_count,
+    }
+
+    badges_detail = []
+    for b in BADGE_CATALOG:
+        key = b["key"]
+        target = b["target_value"]
+        current_val = current_metrics.get(key, 0)
+        is_unlocked = key in unlocked_map
+        unlocked_at = unlocked_map[key]["unlocked_at"] if is_unlocked else None
+
+        if is_unlocked:
+            progress_ratio = 1.0
+            progress_percent = 100
+            status_text = "🎉 Trophée Remporté !"
+            encouragement = f"Bravo ! Tu as atteint l'objectif ({target} {b['unit']})."
+        else:
+            progress_ratio = min(1.0, current_val / target) if target > 0 else 0.0
+            progress_percent = int(progress_ratio * 100)
+            remaining = max(0, target - current_val)
+            status_text = f"🔒 En cours ({current_val} / {target})"
+            encouragement = f"Plus que {remaining} {b['unit']} pour remporter ce trophée !"
+
+        badges_detail.append({
+            "key": key,
+            "title": b["title"],
+            "category": b["category"],
+            "description": b["description"],
+            "icon": b["icon"],
+            "target_value": target,
+            "unit": b["unit"],
+            "current_value": current_val,
+            "is_unlocked": is_unlocked,
+            "unlocked_at": unlocked_at,
+            "progress_ratio": progress_ratio,
+            "progress_percent": progress_percent,
+            "status_text": status_text,
+            "encouragement": encouragement,
+        })
+
+    unlocked_count = len(unlocked_list)
+    total_count = len(BADGE_CATALOG)
+    rate = round((unlocked_count / total_count * 100), 1) if total_count > 0 else 0.0
+
+    return {
+        "total_trophies": total_count,
+        "total_count": total_count,
+        "unlocked_trophies": unlocked_count,
+        "unlocked_count": unlocked_count,
+        "completion_rate": rate,
+        "badges": badges_detail,
+    }
