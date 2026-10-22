@@ -2434,6 +2434,45 @@ class TestSchoolLevelAndTrophies(unittest.TestCase):
         all_restored = get_user_badges(target_student["id"])
         self.assertEqual(len(all_restored), 3)
 
+    def test_init_db_migrates_legacy_user_badges_without_course_id(self):
+        legacy_db_file = Path(self.temp_dir.name) / "legacy_badges_migration.db"
+        conn = sqlite3.connect(legacy_db_file)
+        # Create legacy table without course_id column
+        conn.execute("""
+            CREATE TABLE user_badges (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                badge_key TEXT NOT NULL,
+                unlocked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                metadata_json TEXT
+            )
+        """)
+        conn.commit()
+        conn.close()
+
+        old_db_env = os.environ.get("DATABASE_PATH")
+        try:
+            os.environ["DATABASE_PATH"] = str(legacy_db_file)
+            # Must succeed without sqlite3.OperationalError!
+            init_db()
+
+            # Verify column course_id was added and index created
+            conn2 = sqlite3.connect(legacy_db_file)
+            cur = conn2.cursor()
+            cur.execute("PRAGMA table_info(user_badges)")
+            cols = [r[1] for r in cur.fetchall()]
+            self.assertIn("course_id", cols)
+
+            cur.execute("PRAGMA index_list(user_badges)")
+            idx_names = [r[1] for r in cur.fetchall()]
+            self.assertIn("idx_user_badges_course", idx_names)
+            conn2.close()
+        finally:
+            if old_db_env is not None:
+                os.environ["DATABASE_PATH"] = old_db_env
+            else:
+                os.environ.pop("DATABASE_PATH", None)
+
 
 if __name__ == "__main__":
     unittest.main()

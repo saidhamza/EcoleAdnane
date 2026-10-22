@@ -244,7 +244,6 @@ def init_db(db_path: Optional[Path] = None) -> None:
                 CREATE INDEX IF NOT EXISTS idx_sessions_user ON user_sessions(user_id);
                 CREATE INDEX IF NOT EXISTS idx_concept_mastery_user_course ON concept_mastery(user_id, course_id);
                 CREATE INDEX IF NOT EXISTS idx_user_badges_user ON user_badges(user_id);
-                CREATE INDEX IF NOT EXISTS idx_user_badges_course ON user_badges(user_id, course_id);
             """)
 
             # 2. Migrations dynamiques pour bases existantes
@@ -279,9 +278,15 @@ def init_db(db_path: Optional[Path] = None) -> None:
                 try:
                     cur.execute("ALTER TABLE user_badges ADD COLUMN course_id INTEGER REFERENCES courses(id) ON DELETE CASCADE")
                 except Exception:
-                    pass
+                    try:
+                        cur.execute("ALTER TABLE user_badges ADD COLUMN course_id INTEGER")
+                    except Exception:
+                        pass
             cur.execute("CREATE INDEX IF NOT EXISTS idx_user_badges_user ON user_badges(user_id)")
-            cur.execute("CREATE INDEX IF NOT EXISTS idx_user_badges_course ON user_badges(user_id, course_id)")
+            cur.execute("PRAGMA table_info(user_badges)")
+            refreshed_badge_cols = [row["name"] for row in cur.fetchall()]
+            if "course_id" in refreshed_badge_cols:
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_user_badges_course ON user_badges(user_id, course_id)")
 
             cur.execute("PRAGMA table_info(courses)")
             course_cols = [row["name"] for row in cur.fetchall()]
