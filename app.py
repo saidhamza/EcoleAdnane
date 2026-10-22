@@ -74,17 +74,22 @@ except ImportError:
         clear_chat_history,
         delete_course,
         delete_user_account,
+        evaluate_and_sync_concept_mastery,
         get_chat_history,
         get_course_by_id,
+        get_course_mindmap,
         get_global_admin_kpis,
         get_latest_quiz,
         get_quiz_stats,
+        get_student_concept_mastery,
         get_user_by_id,
         get_user_count,
         init_db,
         list_courses,
         list_users,
+        save_concept_mastery,
         save_course,
+        save_course_mindmap,
         save_quiz,
         save_quiz_attempt,
         set_user_blocked_status,
@@ -124,6 +129,8 @@ try:
         services.ai_engine = importlib.reload(services.ai_engine)
     from services.ai_engine import (
         classify_and_extract_metadata,
+        clean_mermaid_mindmap,
+        generate_course_mindmap,
         generate_quiz,
         generate_revision_sheet,
         socratic_tutor_response,
@@ -133,6 +140,8 @@ except ImportError:
     services.ai_engine = importlib.reload(services.ai_engine)
     from services.ai_engine import (
         classify_and_extract_metadata,
+        clean_mermaid_mindmap,
+        generate_course_mindmap,
         generate_quiz,
         generate_revision_sheet,
         socratic_tutor_response,
@@ -464,6 +473,81 @@ def get_subject_badge_class(subject: str) -> str:
         "Anglais": "badge-anglais",
     }
     return mapping.get(subject, "badge-default")
+
+
+def render_mermaid_mindmap(mermaid_code: str, is_ar: bool = False) -> str:
+    """Génère le composant HTML5 pour afficher un diagramme Mermaid mindmap réactif et interactif."""
+    escaped_code = (
+        mermaid_code.strip()
+        .replace("\\", "\\\\")
+        .replace("`", "\\`")
+    )
+    lang_attr = "ar" if is_ar else "fr"
+    dir_attr = "rtl" if is_ar else "ltr"
+    return f"""
+    <!DOCTYPE html>
+    <html lang="{lang_attr}" dir="{dir_attr}">
+    <head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+      <style>
+        * {{
+          box-sizing: border-box;
+        }}
+        body {{
+          margin: 0;
+          padding: 8px;
+          background: transparent;
+          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+          display: flex;
+          justify-content: center;
+          align-items: center;
+        }}
+        .mindmap-wrapper {{
+          width: 100%;
+          background: #ffffff;
+          border-radius: 12px;
+          border: 1px solid rgba(0, 0, 0, 0.08);
+          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.04);
+          padding: 16px;
+          overflow-x: auto;
+          display: flex;
+          justify-content: center;
+        }}
+        .mermaid {{
+          width: 100%;
+          display: flex;
+          justify-content: center;
+          min-height: 380px;
+        }}
+        .mermaid svg {{
+          max-width: 100%;
+          height: auto !important;
+        }}
+      </style>
+    </head>
+    <body>
+      <div class="mindmap-wrapper">
+        <div class="mermaid">
+{escaped_code}
+        </div>
+      </div>
+      <script>
+        try {{
+          mermaid.initialize({{
+            startOnLoad: true,
+            theme: 'default',
+            securityLevel: 'loose',
+            fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+          }});
+        }} catch(e) {{
+          console.error("Mermaid init error:", e);
+        }}
+      </script>
+    </body>
+    </html>
+    """
 
 
 def render_gemini_key_instructions(expanded: bool = False) -> None:
@@ -1585,24 +1669,30 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
         st.write("")
 
         if is_ar:
-            tab_doc, tab_fiche, tab_quiz, tab_tuteur = st.tabs([
+            tab_doc, tab_fiche, tab_schema, tab_notions, tab_quiz, tab_tuteur = st.tabs([
                 "📄 وثيقة الدرس",
                 "⚡ بطاقة المراجعة",
-                "🎯 تدريب الامتحان",
+                "🧠 خريطة ذهنية",
+                "🎯 المفاهيم والمكتسبات",
+                "📝 تدريب الامتحان",
                 "🤖 الأستاذ سند",
             ])
         elif is_en:
-            tab_doc, tab_fiche, tab_quiz, tab_tuteur = st.tabs([
+            tab_doc, tab_fiche, tab_schema, tab_notions, tab_quiz, tab_tuteur = st.tabs([
                 "📄 Course Document",
                 "⚡ Revision Sheet",
-                "🎯 Exam Quiz",
+                "🧠 Mind Map",
+                "🎯 Key Concepts",
+                "📝 Exam Quiz",
                 "🤖 AI Tutor (Sanad)",
             ])
         else:
-            tab_doc, tab_fiche, tab_quiz, tab_tuteur = st.tabs([
+            tab_doc, tab_fiche, tab_schema, tab_notions, tab_quiz, tab_tuteur = st.tabs([
                 "📄 Le Document",
                 "⚡ Fiche Express",
-                "🎯 Entraînement Examen",
+                "🧠 Carte Mentale",
+                "🎯 Notions & Acquis",
+                "📝 Entraînement Examen",
                 "🤖 Tuteur Virtuel (Sanad)",
             ])
 
@@ -1669,6 +1759,165 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                             )
                             update_course_summary(current_course["id"], generated_summary, user_id=active_user_id)
                             st.rerun()
+
+        with tab_schema:
+            if is_ar:
+                st.markdown("<div class='rtl-section-title'>🧠 خريطة ذهنية ومخطط الدرس التفاعلي</div>", unsafe_allow_html=True)
+                st.caption("مخطط هيكلي بيداغوجي لربط المفاهيم وتسهيل الحفظ والاستيعاب السريع (100% مجاني ومحفوظ في قاعدة البيانات).")
+            elif is_en:
+                st.markdown("### 🧠 Interactive Course Mind Map")
+                st.caption("Visual brainstorming diagram mapping core branches, formulas and exam traps (persisted in DB).")
+            else:
+                st.markdown("### 🧠 Carte Mentale & Schéma Visuel du Cours")
+                st.caption("Schéma visuel et arborescence du cours pour mémoriser les notions, formules et pièges d'examen (100% gratuit et mis en cache).")
+
+            cached_mindmap = get_course_mindmap(current_course["id"]) or current_course.get("mindmap_code")
+
+            if not cached_mindmap:
+                btn_gen_map = "🧠 توليد الخريطة الذهنية بالذكاء الاصطناعي" if is_ar else ("🧠 Generate AI Mind Map" if is_en else "🧠 Générer la Carte Mentale avec l'IA")
+                st.info(
+                    "💡 Ce cours ne possède pas encore de carte mentale interactive. Cliquez sur le bouton ci-dessous pour la générer en quelques secondes."
+                    if not is_en and not is_ar else
+                    ("💡 لم يتم إنشاء خريطة ذهنية لهذا الدرس بعد. انقر على الزر أدناه لتوليدها فوراً." if is_ar else "💡 No mind map generated for this course yet. Click below to generate it instantly.")
+                )
+                if st.button(btn_gen_map, type="primary", key=f"btn_gen_mindmap_{current_course['id']}"):
+                    if not user_api_key:
+                        st.error("⚠️ Clé API Gemini requise. Obtenez votre clé 100% gratuite sur [Google AI Studio](https://aistudio.google.com/) et activez-la dans **⚙️ Paramètres** ou la barre latérale." if not is_en else "⚠️ Gemini API key required. Get your free key on [Google AI Studio](https://aistudio.google.com/) and configure it in **⚙️ Settings** or the sidebar.")
+                    else:
+                        spin_msg = "Génération de la carte mentale..." if not is_en else ("Generating mind map..." if not is_ar else "جاري إنشاء الخريطة الذهنية...")
+                        with st.spinner(spin_msg):
+                            course_content = current_course.get("summary_markdown") or current_course.get("raw_text") or ""
+                            generated_mindmap = generate_course_mindmap(
+                                course_text_or_summary=course_content,
+                                course_title=current_course["title"],
+                                subject=current_course["subject"],
+                                language=current_course.get("language", "fr"),
+                                user_id=active_user_id,
+                            )
+                            save_course_mindmap(current_course["id"], generated_mindmap)
+                            st.success("Carte mentale générée avec succès !" if not is_en else "Mind map generated successfully!")
+                            st.rerun()
+            else:
+                # Affichage du diagramme Mermaid dans un composant HTML5 isolé et réactif
+                html_component = render_mermaid_mindmap(cached_mindmap, is_ar=is_ar)
+                st.components.v1.html(html_component, height=480, scrolling=True)
+
+                col_map_actions1, col_map_actions2 = st.columns([0.5, 0.5])
+                with col_map_actions1:
+                    regen_map_label = "🔄 إعادة توليد الخريطة الذهنية" if is_ar else ("🔄 Regenerate Mind Map" if is_en else "🔄 Régénérer la Carte Mentale")
+                    if st.button(regen_map_label, key=f"btn_regen_mindmap_{current_course['id']}"):
+                        if not user_api_key:
+                            st.error("⚠️ Clé API Gemini requise." if not is_en else "⚠️ Gemini API key required.")
+                        else:
+                            with st.spinner("Régénération du schéma..." if not is_en else "Regenerating..."):
+                                course_content = current_course.get("summary_markdown") or current_course.get("raw_text") or ""
+                                generated_mindmap = generate_course_mindmap(
+                                    course_text_or_summary=course_content,
+                                    course_title=current_course["title"],
+                                    subject=current_course["subject"],
+                                    language=current_course.get("language", "fr"),
+                                    user_id=active_user_id,
+                                )
+                                save_course_mindmap(current_course["id"], generated_mindmap)
+                                st.rerun()
+
+                with col_map_actions2:
+                    exp_title = "📋 عرض كود المخطط (Mermaid)" if is_ar else ("📋 View Mermaid Code" if is_en else "📋 Voir le code du schéma")
+                    with st.expander(exp_title):
+                        st.code(cached_mindmap, language="mermaid")
+
+        with tab_notions:
+            if is_ar:
+                st.markdown("<div class='rtl-section-title'>🎯 تتبع استيعاب المفاهيم والمكتسبات</div>", unsafe_allow_html=True)
+                st.caption("تقييم ذاتي ذكي ومحلي (0 استهلاك لرصيد الذكاء الاصطناعي) مبني على نتائج الاختبارات وأسئلتك للأستاذ سند.")
+            elif is_en:
+                st.markdown("### 🎯 Key Concepts & Mastery Tracking")
+                st.caption("Automatic local diagnostic (0 AI quota used) tracking your understanding based on quiz attempts and tutor chats.")
+            else:
+                st.markdown("### 🎯 Suivi de l'Assimilation des Notions Clés")
+                st.caption("Diagnostic pédagogique automatique (100% local, 0 jeton Gemini consommé) mesurant la maîtrise de chaque notion grâce aux quiz et échanges avec Sanad.")
+
+            # Évaluation locale synchronisée
+            mastery_data = evaluate_and_sync_concept_mastery(active_user_id, current_course["id"])
+            if not mastery_data:
+                mastery_data = get_student_concept_mastery(active_user_id, current_course["id"])
+
+            total_concepts = len(mastery_data)
+            mastered_count = sum(1 for c in mastery_data if c["status"] == "mastered")
+            in_prog_count = sum(1 for c in mastery_data if c["status"] == "in_progress")
+            to_rev_count = sum(1 for c in mastery_data if c["status"] == "to_review")
+            untested_count = sum(1 for c in mastery_data if c["status"] == "untested")
+
+            # Synthèse & Jauge de progression
+            m_pct = round(mastered_count / total_concepts * 100) if total_concepts > 0 else 0
+            st.write("")
+            col_kpi1, col_kpi2, col_kpi3, col_kpi4 = st.columns(4)
+            col_kpi1.metric("📚 Notions Clés" if not is_ar else "📚 مجموع المفاهيم", total_concepts)
+            col_kpi2.metric("🟢 Assimilées" if not is_ar else "🟢 تم استيعابها", mastered_count)
+            col_kpi3.metric("🟡 En cours" if not is_ar else "🟡 في طور التثبيت", in_prog_count)
+            col_kpi4.metric("🔴 À réviser" if not is_ar else "🔴 تحتاج مراجعة", to_rev_count)
+
+            st.progress(mastered_count / total_concepts if total_concepts > 0 else 0.0)
+            progress_caption = (
+                f"**Progression globale :** {mastered_count} sur {total_concepts} notion(s) maîtrisée(s) ({m_pct}%)"
+                if not is_en and not is_ar else
+                (f"**التقدم العام :** {mastered_count} من أصل {total_concepts} مفهوم مستوعب ({m_pct}%)" if is_ar else f"**Overall Progress:** {mastered_count} of {total_concepts} concepts mastered ({m_pct}%)")
+            )
+            st.caption(progress_caption)
+            st.write("---")
+
+            status_labels = {
+                "mastered": ("🟢 Assimilé", "🟢 تم الاستيعاب", "🟢 Mastered"),
+                "in_progress": ("🟡 En consolidation", "🟡 قيد التثبيت", "🟡 In Progress"),
+                "to_review": ("🔴 À réviser", "🔴 بحاجة لمراجعة", "🔴 Needs Review"),
+                "untested": ("⚪ Non évalué", "⚪ لم يُقيّم بعد", "⚪ Untested"),
+            }
+
+            for idx, item in enumerate(mastery_data):
+                c_title = item.get("concept_title", "Notion")
+                c_status = item.get("status", "untested")
+                c_rate = item.get("success_rate", 0.0)
+                c_attempts = item.get("attempts_count", 0)
+                c_ctx = item.get("last_context", "")
+
+                label_tuple = status_labels.get(c_status, ("⚪ Non évalué", "⚪ لم يُقيّم", "⚪ Untested"))
+                badge_str = label_tuple[1] if is_ar else (label_tuple[2] if is_en else label_tuple[0])
+
+                with st.container(border=True):
+                    col_title, col_badge = st.columns([0.72, 0.28], vertical_alignment="center")
+                    with col_title:
+                        st.markdown(f"**{idx + 1}. {c_title}**")
+                        if c_ctx:
+                            st.caption(c_ctx)
+                    with col_badge:
+                        st.markdown(f"<div style='text-align: right; font-weight: 600;'>{badge_str}</div>", unsafe_allow_html=True)
+                        if c_attempts > 0:
+                            st.caption(f"Score : {c_rate}% ({c_attempts} test{'s' if c_attempts > 1 else ''})")
+
+                    # Bouton d'action directe vers Sanad
+                    col_act1, col_act2 = st.columns([0.5, 0.5])
+                    with col_act1:
+                        btn_ask_sanad = "💬 Réviser avec Sanad" if not is_ar else "💬 راجع مع سند"
+                        if st.button(btn_act_label := (btn_ask_sanad if not is_en else "💬 Study with Sanad"), key=f"btn_sanad_concept_{idx}_{current_course['id']}", use_container_width=True):
+                            if is_ar:
+                                prompt_text = f"اشرح لي من فضلك مفهوم '{c_title}' في درس {current_course['title']} واطرح علي سؤالاً بسيطاً لأتأكد من فهمي له."
+                            elif is_en:
+                                prompt_text = f"Please explain the concept '{c_title}' from the lesson {current_course['title']} and give me a concrete example or guiding question."
+                            else:
+                                prompt_text = f"Peux-tu m'expliquer clairement la notion '{c_title}' du cours {current_course['title']} et me donner un exemple concret avec une petite question d'entraînement ?"
+                            st.session_state[f"sanad_quick_prompt_{current_course['id']}"] = prompt_text
+                            st.success("Question envoyée à Sanad ! Rendez-vous sur l'onglet 🤖 Tuteur Virtuel pour voir sa réponse." if not is_en else "Sent to Sanad! Switch to the 🤖 Tutor tab to see his guidance.")
+
+                    with col_act2:
+                        btn_quiz_link = "🎯 S'entraîner (Quiz)" if not is_ar else "🎯 تدرب على الأسئلة"
+                        if st.button(btn_quiz_link if not is_en else "🎯 Practice Quiz", key=f"btn_quiz_concept_{idx}_{current_course['id']}", use_container_width=True):
+                            st.info("Rendez-vous sur l'onglet 📝 Entraînement Examen pour tester vos connaissances !" if not is_en else "Go to the 📝 Exam Quiz tab to practice!")
+
+            st.write("")
+            refresh_label = "🔄 Actualiser le diagnostic d'assimilation" if not is_ar else ("🔄 تحديث تشخيص الاستيعاب" if is_ar else "🔄 Refresh Mastery Diagnostic")
+            if st.button(refresh_label, key=f"btn_sync_mastery_{current_course['id']}"):
+                evaluate_and_sync_concept_mastery(active_user_id, current_course["id"])
+                st.rerun()
 
         with tab_quiz:
             latest_quiz = get_latest_quiz(current_course["id"], user_id=active_user_id)
@@ -1739,6 +1988,7 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                             answers=answers_chosen,
                             user_id=active_user_id,
                         )
+                        evaluate_and_sync_concept_mastery(active_user_id, current_course["id"])
                         st.session_state[submission_key] = True
                         if score >= len(questions) * 0.8:
                             st.balloons()
@@ -1810,6 +2060,9 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
             st.write(sug_header)
             sug_cols = st.columns(3)
             suggested_prompt = None
+            quick_concept_prompt = st.session_state.pop(f"sanad_quick_prompt_{current_course['id']}", None)
+            if quick_concept_prompt:
+                suggested_prompt = quick_concept_prompt
             student_age = active_cycle.get("age", 14)
 
             if is_ar:

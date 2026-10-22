@@ -27,14 +27,17 @@ from models.database import (
     delete_course,
     delete_user_account,
     delete_user_session,
+    evaluate_and_sync_concept_mastery,
     get_chat_history,
     get_course_by_hash,
     get_course_by_id,
+    get_course_mindmap,
     get_global_admin_kpis,
     get_latest_quiz,
     get_pedagogical_cycle,
     get_quiz_stats,
     get_setting,
+    get_student_concept_mastery,
     get_user_by_email,
     get_user_by_id,
     get_user_from_session_token,
@@ -43,7 +46,9 @@ from models.database import (
     init_db,
     list_courses,
     list_users,
+    save_concept_mastery,
     save_course,
+    save_course_mindmap,
     save_flashcard,
     save_quiz,
     save_quiz_attempt,
@@ -56,7 +61,14 @@ from models.database import (
     update_user_name,
     update_user_role,
 )
-from services.ai_engine import clean_json_output, resolve_student_age, socratic_tutor_response
+from services.ai_engine import (
+    _fallback_mindmap,
+    clean_json_output,
+    clean_mermaid_mindmap,
+    generate_course_mindmap,
+    resolve_student_age,
+    socratic_tutor_response,
+)
 from services.auth_manager import (
     check_active_user_session,
     extract_auth_code,
@@ -1403,8 +1415,181 @@ class TestTutorQuestionSuggestions(unittest.TestCase):
         self.assertIn("16-year-old", prompt_en)
 
 
+class TestMindmapAndConceptMastery(unittest.TestCase):
+    """Vérification des cartes mentales Mermaid et du suivi d'assimilation des notions clés."""
+
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.db_path = Path(self.temp_dir.name) / "test_mindmap.db"
+        self.patcher = patch("models.database.get_db_path", return_value=self.db_path)
+        self.patcher.start()
+        init_db()
+
+        self.student = create_or_get_google_user("eleve_notions@test.ma", "Adnane Eleve", role="student")
+        pdf_file = Path(self.temp_dir.name) / "cours_thales.pdf"
+        pdf_file.write_bytes(b"%PDF-1.4 Fake PDF Content")
+        self.course_id = save_course(
+            title="Théorème de Thalès",
+            subject="Mathématiques",
+            language="fr",
+            file_path=str(pdf_file),
+            file_hash="hash_thales_test_01",
+            file_name="thales.pdf",
+            raw_text="Le théorème de Thalès permet de calculer des longueurs dans un triangle. La réciproque permet de démontrer le parallélisme.",
+            summary_markdown="## Fiche Thalès\nCalcul de longueurs et démonstration du parallélisme.",
+            key_concepts=[
+                "Théorème direct de Thalès",
+                "Réciproque du théorème de Thalès",
+                "Calcul de longueurs et quotients",
+                "Démontrer que deux droites sont parallèles",
+            ],
+            user_id=self.student["id"],
+        )
+
+    def tearDown(self):
+        self.patcher.stop()
+        self.temp_dir.cleanup()
+
+    def test_save_and_get_course_mindmap(self):
+        # Initialement aucun mindmap
+        self.assertIsNone(get_course_mindmap(self.course_id))
+
+        # Enregistrement
+        sample_code = """mindmap
+  root((Théorème de Thalès))
+    Théorème Direct
+      Calcul de longueurs
+    Réciproque
+      Prouver le parallélisme"""
+        save_course_mindmap(self.course_id, sample_code)
+
+        # Récupération
+        fetched = get_course_mindmap(self.course_id)
+        self.assertEqual(fetched, sample_code)
+
+        # get_course_by_id doit aussi inclure mindmap_code
+        course_obj = get_course_by_id(self.course_id)
+        self.assertEqual(course_obj.get("mindmap_code"), sample_code)
+
+    def test_clean_mermaid_mindmap(self):
+        # 1. Nettoyer les balises de code markdown ```mermaid ... ```
+        raw_with_fences = "```mermaid\nmindmap\n  root((Mon Cours))\n    Branche 1\n```"
+        cleaned = clean_mermaid_mindmap(raw_with_fences, default_title="Mon Cours")
+        self.assertTrue(cleaned.startswith("mindmap"))
+        self.assertNotIn("```", cleaned)
+
+        # 2. Nettoyer les parenthèses orphelines dans les étiquettes enfants
+        raw_with_parens = "mindmap\n  root((Mon Cours))\n    Branche 1 (Attention)\n      Sous-branche [info]"
+        cleaned2 = clean_mermaid_mindmap(raw_with_parens)
+        self.assertIn("root((Mon Cours))", cleaned2)
+        self.assertNotIn("(", cleaned2.splitlines()[2])
+
+        # 3. Fallback si vide ou syntaxe corrompue
+        fallback = clean_mermaid_mindmap("", default_title="Maths", default_subject="Calcul")
+        self.assertTrue(fallback.startswith("mindmap"))
+        self.assertIn("root((Maths))", fallback)
+
+    def test_fallback_mindmap_structure(self):
+        fb = _fallback_mindmap("Géométrie 3AC", "Mathématiques")
+        self.assertTrue(fb.startswith("mindmap"))
+        self.assertIn("root((Géométrie 3AC))", fb)
+        self.assertIn("Notions Fondamentales", fb)
+        self.assertIn("Propriétés et Formules", fb)
+
+    def test_save_and_get_concept_mastery(self):
+        save_concept_mastery(
+            user_id=self.student["id"],
+            course_id=self.course_id,
+            concept_title="Théorème direct de Thalès",
+            status="mastered",
+            success_rate=85.5,
+            attempts_count=2,
+            last_context="Réussi sur 2 quiz",
+        )
+
+        mastery_list = get_student_concept_mastery(self.student["id"], self.course_id)
+        self.assertEqual(len(mastery_list), 1)
+        item = mastery_list[0]
+        self.assertEqual(item["concept_title"], "Théorème direct de Thalès")
+        self.assertEqual(item["status"], "mastered")
+        self.assertEqual(item["success_rate"], 85.5)
+        self.assertEqual(item["attempts_count"], 2)
+
+        # Upsert sur conflit
+        save_concept_mastery(
+            user_id=self.student["id"],
+            course_id=self.course_id,
+            concept_title="Théorème direct de Thalès",
+            status="in_progress",
+            success_rate=60.0,
+            attempts_count=3,
+            last_context="Mise à jour",
+        )
+        updated_list = get_student_concept_mastery(self.student["id"], self.course_id)
+        self.assertEqual(len(updated_list), 1)
+        self.assertEqual(updated_list[0]["status"], "in_progress")
+        self.assertEqual(updated_list[0]["success_rate"], 60.0)
+
+    def test_evaluate_and_sync_concept_mastery_no_attempts_no_chat(self):
+        # Sans quiz ni chat, toutes les notions sont untested
+        results = evaluate_and_sync_concept_mastery(self.student["id"], self.course_id)
+        self.assertEqual(len(results), 4)
+        for r in results:
+            self.assertEqual(r["status"], "untested")
+            self.assertEqual(r["attempts_count"], 0)
+
+    def test_evaluate_and_sync_concept_mastery_with_chat_discussion(self):
+        # Ajout d'un échange chat mentionnant "parallélisme"
+        add_chat_message(
+            course_id=self.course_id,
+            role="user",
+            content="Comment démontrer que deux droites sont parallèles avec Thalès ?",
+            user_id=self.student["id"],
+        )
+        results = evaluate_and_sync_concept_mastery(self.student["id"], self.course_id)
+        # La notion sur le parallélisme doit passer en in_progress
+        paral_item = next(r for r in results if "parallèles" in r["concept_title"])
+        self.assertEqual(paral_item["status"], "in_progress")
+        self.assertIn("Sanad", paral_item["last_context"])
+
+    def test_evaluate_and_sync_concept_mastery_with_quiz_score_mastered(self):
+        # Ajout d'une tentative de quiz avec un excellent score (4/5 = 80%)
+        q_id = save_quiz(self.course_id, [{"question": "Q1", "options": ["A", "B"], "answer_index": 0}], user_id=self.student["id"])
+        save_quiz_attempt(
+            course_id=self.course_id,
+            quiz_id=q_id,
+            score=4,
+            total_questions=5,
+            answers={0: 0},
+            user_id=self.student["id"],
+        )
+        results = evaluate_and_sync_concept_mastery(self.student["id"], self.course_id)
+        self.assertEqual(len(results), 4)
+        for r in results:
+            self.assertEqual(r["status"], "mastered")
+            self.assertEqual(r["success_rate"], 80.0)
+            self.assertEqual(r["attempts_count"], 1)
+
+    def test_evaluate_and_sync_concept_mastery_with_quiz_score_to_review(self):
+        # Tentative avec score faible (1/5 = 20%) -> to_review
+        q_id = save_quiz(self.course_id, [{"question": "Q1", "options": ["A", "B"], "answer_index": 0}], user_id=self.student["id"])
+        save_quiz_attempt(
+            course_id=self.course_id,
+            quiz_id=q_id,
+            score=1,
+            total_questions=5,
+            answers={0: 0},
+            user_id=self.student["id"],
+        )
+        results = evaluate_and_sync_concept_mastery(self.student["id"], self.course_id)
+        for r in results:
+            self.assertEqual(r["status"], "to_review")
+            self.assertEqual(r["success_rate"], 20.0)
+
+
 if __name__ == "__main__":
     unittest.main()
+
 
 
 

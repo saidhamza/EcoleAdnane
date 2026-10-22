@@ -600,6 +600,157 @@ Structure la fiche en Markdown clair et aéré en utilisant ces sections précis
 
 
 # ---------------------------------------------------------------------------
+# 2b. Génération de Schéma Mindmap / Brainstorming (Mermaid.js)
+# ---------------------------------------------------------------------------
+
+def _fallback_mindmap(title: str, subject: str = "") -> str:
+    """Schéma Mermaid de secours par défaut si la génération LLM échoue."""
+    safe_title = re.sub(r'[()\[\]{}"\':;]', ' ', title).strip() or "Cours"
+    safe_subject = re.sub(r'[()\[\]{}"\':;]', ' ', subject).strip() or "Matière"
+    return f"""mindmap
+  root(({safe_title[:35]}))
+    Notions Fondamentales
+      Définitions clés
+      Vocabulaire essentiel
+    Propriétés et Formules
+      Règles d'application
+      Méthode de calcul
+    Méthodologie
+      Démarche de résolution
+      Vérification des étapes
+    Pièges d'Examen
+      Erreurs fréquentes à éviter
+      Astuces pour les points"""
+
+
+def clean_mermaid_mindmap(raw_output: str, default_title: str = "Cours", default_subject: str = "") -> str:
+    """
+    Nettoie et valide la sortie brute LLM pour garantir une syntaxe Mermaid mindmap valide.
+    """
+    if not raw_output:
+        return _fallback_mindmap(default_title, default_subject)
+
+    cleaned = raw_output.strip()
+    # Retirer les blocs markdown ```mermaid ou ```
+    cleaned = re.sub(r"^```(?:mermaid|mindmap)?\s*", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\s*```$", "", cleaned)
+    cleaned = cleaned.strip()
+
+    # Trouver la position où 'mindmap' commence
+    idx = cleaned.find("mindmap")
+    if idx != -1:
+        cleaned = cleaned[idx:]
+    else:
+        cleaned = "mindmap\n" + cleaned
+
+    lines = cleaned.splitlines()
+    if not lines or lines[0].strip() != "mindmap":
+        return _fallback_mindmap(default_title, default_subject)
+
+    sanitized_lines = ["mindmap"]
+    for line in lines[1:]:
+        stripped = line.strip()
+        if not stripped:
+            continue
+        indent = len(line) - len(line.lstrip(" "))
+        indent_str = " " * max(2, indent)
+
+        if "root((" in stripped:
+            m = re.search(r"root\(\((.*?)\)\)", stripped)
+            root_text = m.group(1).strip() if m else default_title
+            root_text = re.sub(r'[()\[\]{}"\':;]', ' ', root_text).strip()[:40]
+            sanitized_lines.append(f"  root(({root_text or default_title}))")
+            continue
+
+        node_text = stripped
+        node_text = re.sub(r"^[-*+]\s*", "", node_text)
+        node_text = re.sub(r'[()\[\]{}"\':;]', ' ', node_text)
+        node_text = re.sub(r"\s+", " ", node_text).strip()
+        if node_text:
+            sanitized_lines.append(f"{indent_str}{node_text[:50]}")
+
+    if len(sanitized_lines) <= 2:
+        return _fallback_mindmap(default_title, default_subject)
+
+    return "\n".join(sanitized_lines)
+
+
+def generate_course_mindmap(
+    course_text_or_summary: str,
+    course_title: str,
+    subject: str,
+    language: str = "fr",
+    user_id: Optional[int] = None,
+) -> str:
+    """
+    Génère la syntaxe Mermaid mindmap structurant le cours sous forme de carte mentale / brainstorming.
+    S'appuie en priorité sur la fiche express ou l'extrait textuel pour minimiser la consommation de tokens.
+    """
+    excerpt = course_text_or_summary[:4000] if course_text_or_summary else course_title
+
+    if language == "ar":
+        sys_prompt = (
+            "أنت أستاذ خبير ومصمم خرائط ذهنية وبيداغوجية لمساعدة التلاميذ على الحفظ والفهم السريع.\n"
+            "مهمتك تحويل الدرس إلى خريطة ذهنية بصيغة Mermaid mindmap دقيقة، مرتبة، واضحة وخالية من أخطاء التركيب.\n"
+            "قواعد إلزامية:\n"
+            "1. ابدأ مباشرة بالكلمة mindmap بدون أي مقدمات أو شروح.\n"
+            "2. اجعل العقدة المركزية root((عنوان الدرس)).\n"
+            "3. أنشئ 3 إلى 5 فروع رئيسية (المفاهيم الأساسية، القواعد والصيغ، طريقة التطبيق، فخاخ الامتحانات).\n"
+            "4. تحت كل فرع، أضف 2 إلى 3 تفرعات فرعية موجزة (كلمتان إلى 5 كلمات لكل عقدة).\n"
+            "5. لا تستخدم أقواس () أو عوارض [] أو علامات تنصيص داخل نصوص العقد تجنباً لأخطاء Mermaid."
+        )
+        user_prompt = f"""
+قم بإنشاء خريطة ذهنية Mermaid mindmap لدرس: {course_title} (مادة: {subject}).
+محتوى الدرس أو ملخصه:
+---
+{excerpt}
+---
+أخرج كود Mermaid mindmap فقط:
+"""
+    elif language == "en":
+        sys_prompt = (
+            "You are an expert educator and visual learning designer.\n"
+            "Your task is to convert the course content into a clean, hierarchical Mermaid mindmap.\n"
+            "Strict rules:\n"
+            "1. Output ONLY valid Mermaid mindmap syntax, starting with 'mindmap' on the first line.\n"
+            "2. Root node format: root((Course Title))\n"
+            "3. 3 to 5 main branches (Core Concepts, Rules and Formulas, Application Method, Exam Pitfalls).\n"
+            "4. 2 to 3 concise sub-branches per branch (2 to 6 words per node).\n"
+            "5. DO NOT use unescaped parentheses (), brackets [], braces {}, or quotes within node labels."
+        )
+        user_prompt = f"""
+Generate a Mermaid mindmap for the course: {course_title} (Subject: {subject}).
+Content / Summary:
+---
+{excerpt}
+---
+Mermaid mindmap code:
+"""
+    else:  # fr
+        sys_prompt = (
+            "Tu es un professeur pédagogue expert en pensée visuelle et cartes mentales (Mind Mapping).\n"
+            "Ta mission est de transformer le cours en une carte mentale structurée au format Mermaid mindmap.\n"
+            "Règles strictes :\n"
+            "1. Renvoie UNIQUEMENT le code Mermaid valide, commençant directement par 'mindmap'.\n"
+            "2. Racine centrale sous la forme : root((Titre du Cours))\n"
+            "3. 3 à 5 branches principales (Notions Clés, Propriétés & Formules, Méthode d'Application, Pièges d'Examen).\n"
+            "4. 2 à 3 sous-branches concises par branche (2 à 6 mots par étiquette).\n"
+            "5. N'utilise JAMAIS de parenthèses (), crochets [], accolades {} ou guillemets dans les étiquettes de nœuds."
+        )
+        user_prompt = f"""
+Génère la carte mentale Mermaid mindmap pour le cours : {course_title} (Matière : {subject}).
+Contenu ou résumé du cours :
+---
+{excerpt}
+---
+Code Mermaid mindmap :
+"""
+
+    raw = call_llm(user_prompt, system_instruction=sys_prompt, temperature=0.2, user_id=user_id)
+    return clean_mermaid_mindmap(raw, default_title=course_title, default_subject=subject)
+
+
+# ---------------------------------------------------------------------------
 # 3. Génération de Quiz d'Entraînement Examen (QCM Interactif)
 # ---------------------------------------------------------------------------
 

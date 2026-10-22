@@ -7,6 +7,7 @@ cours cloisonnés, fiches de révision, quiz, tentatives et tuteur socratique.
 import json
 import logging
 import os
+import re
 import secrets
 import shutil
 import sqlite3
@@ -51,6 +52,11 @@ __all__ = [
     "add_chat_message",
     "get_chat_history",
     "clear_chat_history",
+    "get_course_mindmap",
+    "save_course_mindmap",
+    "get_student_concept_mastery",
+    "save_concept_mastery",
+    "evaluate_and_sync_concept_mastery",
     "get_setting",
     "set_setting",
     "get_user_setting",
@@ -120,6 +126,7 @@ def init_db(db_path: Optional[Path] = None) -> None:
                     raw_text TEXT,
                     summary_markdown TEXT,
                     key_concepts_json TEXT,
+                    mindmap_code TEXT,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
@@ -183,6 +190,21 @@ def init_db(db_path: Optional[Path] = None) -> None:
                     expires_at TIMESTAMP NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS concept_mastery (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    course_id INTEGER NOT NULL,
+                    concept_title TEXT NOT NULL,
+                    status TEXT NOT NULL CHECK(status IN ('mastered', 'in_progress', 'to_review', 'untested')),
+                    success_rate REAL DEFAULT 0.0,
+                    attempts_count INTEGER DEFAULT 0,
+                    last_context TEXT,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
+                    FOREIGN KEY (course_id) REFERENCES courses (id) ON DELETE CASCADE,
+                    UNIQUE(user_id, course_id, concept_title)
+                );
+
                 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
                 CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
                 CREATE INDEX IF NOT EXISTS idx_courses_hash ON courses(file_hash);
@@ -191,6 +213,7 @@ def init_db(db_path: Optional[Path] = None) -> None:
                 CREATE INDEX IF NOT EXISTS idx_quizzes_course ON quizzes(course_id);
                 CREATE INDEX IF NOT EXISTS idx_chat_course ON chat_messages(course_id);
                 CREATE INDEX IF NOT EXISTS idx_sessions_user ON user_sessions(user_id);
+                CREATE INDEX IF NOT EXISTS idx_concept_mastery_user_course ON concept_mastery(user_id, course_id);
             """)
 
             # 2. Migrations dynamiques pour bases existantes
@@ -204,6 +227,11 @@ def init_db(db_path: Optional[Path] = None) -> None:
                 cur.execute("ALTER TABLE users ADD COLUMN has_custom_name INTEGER NOT NULL DEFAULT 0")
             if "age" not in user_cols:
                 cur.execute("ALTER TABLE users ADD COLUMN age INTEGER DEFAULT 14")
+
+            cur.execute("PRAGMA table_info(courses)")
+            course_cols = [row["name"] for row in cur.fetchall()]
+            if "mindmap_code" not in course_cols:
+                cur.execute("ALTER TABLE courses ADD COLUMN mindmap_code TEXT")
 
             for tbl in ["courses", "quizzes", "quiz_attempts", "chat_messages"]:
                 cur.execute(f"PRAGMA table_info({tbl})")
@@ -1475,3 +1503,195 @@ def set_setting(key: str, value: str) -> None:
             )
     finally:
         conn.close()
+
+
+# ===========================================================================
+# 8. CARTES MENTALES (MIND MAPS) & SUIVI DE L'ASSIMILATION DES NOTIONS
+# ===========================================================================
+
+def get_course_mindmap(course_id: int) -> Optional[str]:
+    """Récupère le code Mermaid du diagramme mindmap associé à un cours."""
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT mindmap_code FROM courses WHERE id = ?", (course_id,))
+        row = cur.fetchone()
+        return row["mindmap_code"] if row and row["mindmap_code"] else None
+    finally:
+        conn.close()
+
+
+def save_course_mindmap(course_id: int, mindmap_code: str) -> None:
+    """Enregistre ou met à jour le schéma mindmap d'un cours en base."""
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
+            cur.execute(
+                "UPDATE courses SET mindmap_code = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                (mindmap_code, course_id),
+            )
+    finally:
+        conn.close()
+
+
+def get_student_concept_mastery(user_id: int, course_id: int) -> List[Dict[str, Any]]:
+    """Récupère les notions et leur statut d'assimilation pour un élève sur un cours."""
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT id, user_id, course_id, concept_title, status, success_rate, attempts_count, last_context, updated_at
+            FROM concept_mastery
+            WHERE user_id = ? AND course_id = ?
+            ORDER BY id ASC
+            """,
+            (user_id, course_id),
+        )
+        return [dict(r) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def save_concept_mastery(
+    user_id: int,
+    course_id: int,
+    concept_title: str,
+    status: str,
+    success_rate: float = 0.0,
+    attempts_count: int = 0,
+    last_context: Optional[str] = None,
+) -> None:
+    """Enregistre ou met à jour l'état d'assimilation d'une notion pour un élève."""
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                INSERT INTO concept_mastery (user_id, course_id, concept_title, status, success_rate, attempts_count, last_context, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT(user_id, course_id, concept_title) DO UPDATE SET
+                    status = excluded.status,
+                    success_rate = excluded.success_rate,
+                    attempts_count = excluded.attempts_count,
+                    last_context = excluded.last_context,
+                    updated_at = CURRENT_TIMESTAMP
+                """,
+                (user_id, course_id, concept_title, status, success_rate, attempts_count, last_context),
+            )
+    finally:
+        conn.close()
+
+
+def evaluate_and_sync_concept_mastery(user_id: int, course_id: int) -> List[Dict[str, Any]]:
+    """
+    Évalue localement (0 appel API IA, 100% gratuit) le niveau d'assimilation de chaque notion clé
+    d'un cours pour un élève donné en analysant ses quiz et son historique de chat avec Sanad.
+    """
+    course = get_course_by_id(course_id)
+    if not course:
+        return []
+
+    # 1. Notions clés du cours
+    concepts = course.get("key_concepts") or []
+    if not concepts:
+        title = course.get("title", "")
+        subject = course.get("subject", "")
+        concepts = [
+            f"Définitions & Principes fondamentaux ({title})",
+            f"Propriétés, Théorèmes et Formules ({subject})",
+            "Méthode d'application & Démarche de résolution",
+            "Pièges d'examen & Erreurs fréquentes",
+        ]
+
+    # 2. Récupérer les quiz et tentatives de l'élève sur ce cours
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT score, total_questions, answers_json, completed_at
+            FROM quiz_attempts
+            WHERE course_id = ? AND user_id = ?
+            ORDER BY completed_at DESC
+            """,
+            (course_id, user_id),
+        )
+        attempts = [dict(r) for r in cur.fetchall()]
+
+        # 3. Récupérer l'historique du chat pour ce cours
+        cur.execute(
+            """
+            SELECT role, content
+            FROM chat_messages
+            WHERE course_id = ? AND user_id = ?
+            ORDER BY id DESC LIMIT 40
+            """,
+            (course_id, user_id),
+        )
+        chats = [dict(r) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+    total_attempts = len(attempts)
+    overall_rate = 0.0
+    if total_attempts > 0:
+        total_score = sum(a["score"] for a in attempts)
+        total_q = sum(a["total_questions"] for a in attempts)
+        overall_rate = round((total_score / total_q * 100), 1) if total_q > 0 else 0.0
+
+    chat_text = " ".join([c["content"].lower() for c in chats])
+    results = []
+
+    for concept in concepts:
+        concept_words = [w.lower() for w in re.findall(r"\w+", concept) if len(w) > 3]
+
+        concept_attempts = 0
+        concept_scores = []
+
+        if total_attempts > 0:
+            for a in attempts:
+                concept_attempts += 1
+                if a.get("total_questions", 0) > 0:
+                    concept_scores.append(a["score"] / a["total_questions"] * 100)
+
+        in_chat = any(w in chat_text for w in concept_words) if concept_words else False
+
+        if concept_attempts > 0:
+            concept_rate = round(sum(concept_scores) / len(concept_scores), 1) if concept_scores else overall_rate
+            if concept_rate >= 75.0:
+                status = "mastered"
+            elif concept_rate >= 50.0:
+                status = "in_progress"
+            else:
+                status = "to_review"
+            context = f"Évalué sur {concept_attempts} entraînement(s) (Moyenne : {concept_rate}%)"
+        else:
+            concept_rate = 0.0
+            if in_chat:
+                status = "in_progress"
+                context = "Abordé et discuté lors des échanges avec le tuteur Sanad"
+            else:
+                status = "untested"
+                context = "Pas encore évalué dans un quiz ou une discussion"
+
+        save_concept_mastery(
+            user_id=user_id,
+            course_id=course_id,
+            concept_title=concept,
+            status=status,
+            success_rate=concept_rate,
+            attempts_count=concept_attempts,
+            last_context=context,
+        )
+        results.append({
+            "concept_title": concept,
+            "status": status,
+            "success_rate": concept_rate,
+            "attempts_count": concept_attempts,
+            "last_context": context,
+        })
+
+    return results
