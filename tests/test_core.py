@@ -1660,6 +1660,73 @@ class TestMindmapAndConceptMastery(unittest.TestCase):
         self.assertNotIn("Pièges d'examen & Erreurs fréquentes", db_titles)
         self.assertNotIn("Méthode d'application & Démarche de résolution", db_titles)
 
+    def test_get_course_by_id_auto_repairs_legacy_generic_concepts(self):
+        pdf_file = Path(self.temp_dir.name) / "cours_legacy_polluted.pdf"
+        pdf_file.write_bytes(b"%PDF-1.4 Fake Arabic PDF")
+        c_id = save_course(
+            title="مبرهنة طاليس",
+            subject="الرياضيات",
+            language="ar",
+            file_path=str(pdf_file),
+            file_hash="hash_thales_legacy_01",
+            file_name="thales_ar.pdf",
+            raw_text="مبرهنة طاليس المباشرة والعكسية وتطبيقاتها.",
+            summary_markdown="""
+## 🎯 المفاهيم والتعاريف الأساسية (التي تتكرر في الامتحان)
+- **مَبَرْهَنَةُ طَالِيسَ الْمُبَاشِرَةُ** : حساب أطوال الأضلاع في مثلث.
+- **مَبَرْهَنَةُ طَالِيسَ الْعَكْسِيَّةُ** : البرهان على توازي مستقيمين.
+## ⚠️ فَخَاخُ الِامْتِحَانِ الْمُوَحَّدِ (أَخْطَاءٌ يَقَعُ فِيهَا أَغْلَبُ التَّلَامِيذِ)
+- نسيان الترتيب الصحيح للنقط.
+## 💡 نَصِيحَةُ التَّحْرِيرِ لِضَمَانِ النُّقْطَةِ الكَامِلَةِ
+- التأكد من استقامية النقط بنفس الترتيب.
+""",
+            user_id=self.student["id"],
+        )
+
+        # Simuler une ancienne base de données polluée avec les 4 gabarits rapportés par l'utilisateur
+        from models.database import get_connection
+        polluted_headers = [
+            "الْمَفَاهِيمُ وَالتَّعَارِيفُ الْأَسَاسِيَّةُ (الَّتِي تَتَكَرَّرُ ف",
+            "الْقَوَاعِدُ الذَّهَبِيَّةُ / الْعَنَاصِرُ الْمِفْتَاحِيَّةُ",
+            "فَخَاخُ الِامْتِحَانِ الْمُوَحَّدِ (أَخْطَاءٌ يَقَعُ فِيهَا أَغْلَب",
+            "نَصِيحَةُ التَّحْرِيرِ لِضَمَانِ النُّقْطَةِ الْكَامِلَةِ",
+        ]
+        conn = get_connection()
+        try:
+            with conn:
+                conn.cursor().execute(
+                    "UPDATE courses SET key_concepts_json = ? WHERE id = ?",
+                    (json.dumps(polluted_headers, ensure_ascii=False), c_id),
+                )
+        finally:
+            conn.close()
+
+        # Appel de get_course_by_id
+        course = get_course_by_id(c_id, user_id=self.student["id"])
+        self.assertIsNotNone(course)
+        loaded_concepts = course["key_concepts"]
+
+        # 1. Vérifier qu'AUCUNE des 4 méta-catégories n'apparaît dans key_concepts
+        for bad in polluted_headers:
+            self.assertNotIn(bad, loaded_concepts)
+
+        # 2. Vérifier que les vraies notions pédagogiques ont été extraites
+        self.assertIn("مَبَرْهَنَةُ طَالِيسَ الْمُبَاشِرَةُ", loaded_concepts)
+        self.assertIn("مَبَرْهَنَةُ طَالِيسَ الْعَكْسِيَّةُ", loaded_concepts)
+
+        # 3. Vérifier que la base SQLite elle-même a été auto-réparée
+        conn = get_connection()
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT key_concepts_json FROM courses WHERE id = ?", (c_id,))
+            db_kc_raw = cur.fetchone()["key_concepts_json"]
+            db_kc = json.loads(db_kc_raw)
+            for bad in polluted_headers:
+                self.assertNotIn(bad, db_kc)
+            self.assertIn("مَبَرْهَنَةُ طَالِيسَ الْمُبَاشِرَةُ", db_kc)
+        finally:
+            conn.close()
+
     def test_convert_mermaid_to_markdown(self):
         mermaid_sample = """mindmap
   root((Théorème de Thalès))

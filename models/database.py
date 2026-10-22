@@ -926,6 +926,165 @@ def set_user_setting(user_id: int, key: str, value: str) -> None:
 
 
 # ===========================================================================
+# EXTRACTION ET VALIDATION DES NOTIONS DU COURS (ANTI-GÉNÉRIQUE)
+# ===========================================================================
+
+def normalize_text_for_concept_check(text: str) -> str:
+    """
+    Normalise le texte pour la détection fiable de notions génériques :
+    retire les diacritiques arabes (tashkeel/harakat), unifie les lettres arabes (alif, taa marbuta, yaa),
+    retire les accents latins et la ponctuation superflue.
+    """
+    if not text:
+        return ""
+    t = text.strip().lower()
+    t = re.sub(r"^[0-9\W_]+|[0-9\W_]+$", "", t).strip()
+    t = re.sub(r"[*#_`]+", "", t).strip()
+
+    # 1. Normalisation Arabe : retirer le tashkeel (fatha, damma, kasra, sukun, shadda, tanween, dagger alif, tatweel)
+    t = re.sub(r"[\u064b-\u065f\u0670\u0640]", "", t)
+    # Normaliser alef
+    t = re.sub(r"[إأآٱ]", "ا", t)
+    # Normaliser taa marbuta
+    t = re.sub(r"ة", "ه", t)
+    # Normaliser yaa / alef maqsura
+    t = re.sub(r"[ىي]", "ي", t)
+
+    # 2. Normalisation Latin (Français / Anglais) : retirer les accents
+    t = "".join(
+        c for c in unicodedata.normalize("NFD", t)
+        if unicodedata.category(c) != "Mn"
+    )
+    return t
+
+
+GENERIC_KEYWORDS_NORMALIZED = [
+    # Arabe - Pièges, erreurs, examens
+    "فخ", "فخاخ", "مزلق", "مزالق", "خطا", "اخطاء", "يقع فيها", "انتبه يا بطل",
+    "الامتحان الموحد", "الامتحان الجهوي", "الامتحان الوطني", "الامتحانات الاشهاديه",
+    "تتكرر في الامتحان", "يجب ان اعرفها", "لضمان النقطه الكامله", "لضمان الامتياز",
+    # Arabe - Méta-catégories de sections de fiches express
+    "المفاهيم والتعاريف", "المفاهيم والمصطلحات", "المفاهيم المحوريه",
+    "الكلمات والمفاهيم", "المفاهيم الاساسيه", "المفاهيم المركزيه",
+    "القواعد الذهبيه", "القواعد والبرهنات", "النماذج والقواعد", "القواعد والصيغ",
+    "طريقه التطبيق", "منهجيه التطبيق", "منهجيه الحل", "خطوات التطبيق",
+    "نصيحه التحرير", "توجيهات منهجيه", "رويه نقديه", "سر التفوق", "سر النجاح",
+    "العناصر المفتاحيه", "التواريخ والعناصر المفتاحيه", "التواريخ والعناصر",
+    # Français - Pièges, erreurs
+    "piege", "erreur frequente", "erreurs frequentes", "erreur classique", "erreurs classiques",
+    "ecueil", "ecueils", "attention au petit piege",
+    # Français - Méta-catégories de sections de fiches express
+    "methode d'application", "methode d application", "demarche de resolution", "methodologie",
+    "definitions & principes", "definition & principe", "definitions fondamentales",
+    "proprietes, theoremes et formules", "proprietes & formules",
+    "notions fondamentales", "notion fondamentale", "notions cles", "notion cle",
+    "formules, regles & proprietes", "vocabulaire & les idees", "super words & key ideas",
+    "l'idee cle", "idee cle en 1 minute",
+    "astuce redaction", "astuce de champion", "conseil methodologique", "astuces pour les points",
+    "gagner des points", "note maximale",
+    "examen normalise", "examen blanc", "baccalaureat",
+    # Anglais - Traps, pitfalls, templates
+    "trap", "pitfall", "frequent error", "common mistake",
+    "application method", "core concept", "rules and formulas", "golden rules",
+    "star tip", "top marks", "writing strategy", "maximum marks",
+]
+
+LONE_GENERIC_WORDS_NORMALIZED = {
+    "propriete", "proprietes", "formule", "formules", "definition", "definitions",
+    "generalite", "generalites", "introduction", "conclusion", "fiche", "resume",
+    "cours", "lecon", "notion", "notions", "methode", "methodes",
+    "الخاصيات", "التعاريف", "القواعد", "الدرس", "ملخص", "مقدمه", "مفاهيم", "مصطلحات",
+    "properties", "rules", "definitions", "summary", "lesson", "notes",
+}
+
+
+def is_generic_concept(text: str) -> bool:
+    """
+    Vérifie si un intitulé est une méta-catégorie générique (ex: Pièges d'examen,
+    Méthode d'application, Définitions fondamentales, Formules, فخاخ الامتحان)
+    plutôt qu'une notion réelle du cours.
+    Gère la normalisation totale du texte (y compris le Tashkeel arabe et les accents français).
+    """
+    if not text or not text.strip():
+        return True
+
+    norm = normalize_text_for_concept_check(text)
+    if not norm:
+        return True
+
+    if norm in LONE_GENERIC_WORDS_NORMALIZED:
+        return True
+
+    for kw in GENERIC_KEYWORDS_NORMALIZED:
+        if kw in norm:
+            return True
+
+    return False
+
+
+def extract_real_course_concepts(course: Dict[str, Any]) -> List[str]:
+    """
+    Extrait les notions pédagogiques réelles et concrètes d'un cours à partir de sa fiche/résumé
+    ou de son texte brut, en éliminant strictement les méta-catégories génériques.
+    """
+    # 1. Vérifier si des notions non génériques existent déjà dans key_concepts
+    raw_concepts = course.get("key_concepts") or []
+    valid_concepts = [c.strip() for c in raw_concepts if c and not is_generic_concept(c)]
+    if len(valid_concepts) >= 2:
+        return valid_concepts
+
+    # 2. Extraire depuis le résumé markdown ou le texte brut
+    summary = course.get("summary_markdown") or course.get("raw_text") or ""
+    extracted: List[str] = []
+
+    if summary:
+        # a) Puces en gras : "- **Notion réelle** : explication..."
+        bold_bullets = re.findall(r"^[-*•]\s*\*\*([^*:\n]{3,65})\*\*", summary, flags=re.MULTILINE)
+        for b in bold_bullets:
+            b_clean = re.sub(r"^[0-9\.\)\-\s]+", "", b.strip())
+            b_clean = re.sub(r"[()\[\]{}]+", "", b_clean).strip()
+            if len(b_clean) >= 3 and not is_generic_concept(b_clean) and b_clean not in extracted:
+                extracted.append(b_clean)
+
+        # b) Si et seulement si les puces en gras sont insuffisantes (< 2), examiner les sous-titres non génériques
+        if len(extracted) < 2:
+            headings = re.findall(r"^#{2,3}\s+(?:[0-9]+[.\-)]\s*)?([^\n#]{3,70})", summary, flags=re.MULTILINE)
+            for h in headings:
+                h_clean = re.sub(r"^[^\w\s]+", "", h.strip())  # retire emojis
+                h_clean = re.sub(r"^[0-9\.\)\-\s]+", "", h_clean).strip()
+                if len(h_clean) >= 3 and not is_generic_concept(h_clean) and h_clean not in extracted:
+                    extracted.append(h_clean)
+
+    # 3. Si l'extraction n'a rien donné ou trop peu (< 2), générer des notions concrètes rattachées au titre du cours
+    if len(extracted) < 2:
+        title = (course.get("title") or "Leçon").strip()
+        lang = course.get("language", "fr")
+        if lang == "ar":
+            extracted = [
+                f"مفهوم وتعريف ({title})",
+                f"الخاصيات والقواعد الأساسية لـ {title}",
+                f"تطبيقات وتمارين نموذجية ({title})",
+                f"حالات خاصة وملاحظات هامة ({title})",
+            ]
+        elif lang == "en":
+            extracted = [
+                f"Definition and Core Principles of {title}",
+                f"Essential Formulas and Properties ({title})",
+                f"Practical Worked Examples ({title})",
+                f"Special Cases and Applications ({title})",
+            ]
+        else:
+            extracted = [
+                f"Définition et principes de {title}",
+                f"Propriétés et formules de {title}",
+                f"Applications et démarches types ({title})",
+                f"Cas particuliers et vérifications ({title})",
+            ]
+
+    return extracted[:6]
+
+
+# ===========================================================================
 # OPÉRATIONS CRUD SUR LES COURS (CLOISONNÉES PAR USER_ID)
 # ===========================================================================
 
@@ -946,7 +1105,8 @@ def save_course(
     try:
         with conn:
             cur = conn.cursor()
-            concepts_json = json.dumps(key_concepts or [], ensure_ascii=False)
+            clean_kc = [c.strip() for c in (key_concepts or []) if c and isinstance(c, str) and not is_generic_concept(c)]
+            concepts_json = json.dumps(clean_kc, ensure_ascii=False)
 
             if user_id is not None:
                 cur.execute("SELECT id FROM courses WHERE file_hash = ? AND user_id = ?", (file_hash, user_id))
@@ -1049,9 +1209,38 @@ def get_course_by_id(course_id: int, user_id: Optional[int] = None) -> Optional[
             return None
         res = dict(row)
         try:
-            res["key_concepts"] = json.loads(res.get("key_concepts_json") or "[]")
+            raw_kc = json.loads(res.get("key_concepts_json") or "[]")
+            if not isinstance(raw_kc, list):
+                raw_kc = []
         except Exception:
-            res["key_concepts"] = []
+            raw_kc = []
+
+        clean_kc = [c.strip() for c in raw_kc if c and isinstance(c, str) and not is_generic_concept(c)]
+
+        # Auto-réparation si les notions sont absentes, polluées ou insuffisantes (< 2)
+        if len(clean_kc) < 2 and (res.get("summary_markdown") or res.get("raw_text")):
+            real_kc = extract_real_course_concepts(res)
+            if real_kc:
+                try:
+                    cur.execute(
+                        "UPDATE courses SET key_concepts_json = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                        (json.dumps(real_kc, ensure_ascii=False), course_id),
+                    )
+                    conn.commit()
+                    clean_kc = real_kc
+                except Exception:
+                    pass
+        elif len(clean_kc) != len(raw_kc):
+            try:
+                cur.execute(
+                    "UPDATE courses SET key_concepts_json = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                    (json.dumps(clean_kc, ensure_ascii=False), course_id),
+                )
+                conn.commit()
+            except Exception:
+                pass
+
+        res["key_concepts"] = clean_kc
         return res
     finally:
         conn.close()
@@ -1070,7 +1259,41 @@ def get_course_by_hash(file_hash: str, user_id: Optional[int] = None, include_gl
         else:
             cur.execute("SELECT * FROM courses WHERE file_hash = ?", (file_hash,))
         row = cur.fetchone()
-        return dict(row) if row else None
+        if not row:
+            return None
+        res = dict(row)
+        try:
+            raw_kc = json.loads(res.get("key_concepts_json") or "[]")
+            if not isinstance(raw_kc, list):
+                raw_kc = []
+        except Exception:
+            raw_kc = []
+
+        clean_kc = [c.strip() for c in raw_kc if c and isinstance(c, str) and not is_generic_concept(c)]
+        if len(clean_kc) < 2 and (res.get("summary_markdown") or res.get("raw_text")):
+            real_kc = extract_real_course_concepts(res)
+            if real_kc:
+                try:
+                    cur.execute(
+                        "UPDATE courses SET key_concepts_json = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                        (json.dumps(real_kc, ensure_ascii=False), res["id"]),
+                    )
+                    conn.commit()
+                    clean_kc = real_kc
+                except Exception:
+                    pass
+        elif len(clean_kc) != len(raw_kc):
+            try:
+                cur.execute(
+                    "UPDATE courses SET key_concepts_json = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                    (json.dumps(clean_kc, ensure_ascii=False), res["id"]),
+                )
+                conn.commit()
+            except Exception:
+                pass
+
+        res["key_concepts"] = clean_kc
+        return res
     finally:
         conn.close()
 
@@ -1117,9 +1340,12 @@ def list_courses(
         for row in rows:
             d = dict(row)
             try:
-                d["key_concepts"] = json.loads(d.get("key_concepts_json") or "[]")
+                raw_kc = json.loads(d.get("key_concepts_json") or "[]")
+                if not isinstance(raw_kc, list):
+                    raw_kc = []
             except Exception:
-                d["key_concepts"] = []
+                raw_kc = []
+            d["key_concepts"] = [c.strip() for c in raw_kc if c and isinstance(c, str) and not is_generic_concept(c)]
             result.append(d)
         return result
     finally:
@@ -1141,8 +1367,9 @@ def update_course_summary(
             params: List[Any] = []
 
             if key_concepts is not None:
+                clean_kc = [c.strip() for c in key_concepts if c and isinstance(c, str) and not is_generic_concept(c)]
                 set_clause = "SET summary_markdown = ?, key_concepts_json = ?, updated_at = CURRENT_TIMESTAMP"
-                params.extend([summary_markdown, json.dumps(key_concepts, ensure_ascii=False)])
+                params.extend([summary_markdown, json.dumps(clean_kc, ensure_ascii=False)])
             else:
                 set_clause = "SET summary_markdown = ?, updated_at = CURRENT_TIMESTAMP"
                 params.append(summary_markdown)
@@ -1682,157 +1909,6 @@ def save_concept_mastery(
         conn.close()
 
 
-def normalize_text_for_concept_check(text: str) -> str:
-    """
-    Normalise le texte pour la détection fiable de notions génériques :
-    retire les diacritiques arabes (tashkeel/harakat), unifie les lettres arabes (alif, taa marbuta, yaa),
-    retire les accents latins et la ponctuation superflue.
-    """
-    if not text:
-        return ""
-    t = text.strip().lower()
-    t = re.sub(r"^[0-9\W_]+|[0-9\W_]+$", "", t).strip()
-
-    # 1. Normalisation Arabe : retirer le tashkeel (fatha, damma, kasra, sukun, shadda, tanween, dagger alif, tatweel)
-    t = re.sub(r"[\u064b-\u065f\u0670\u0640]", "", t)
-    # Normaliser alef
-    t = re.sub(r"[إأآٱ]", "ا", t)
-    # Normaliser taa marbuta
-    t = re.sub(r"ة", "ه", t)
-    # Normaliser yaa / alef maqsura
-    t = re.sub(r"[ىي]", "ي", t)
-
-    # 2. Normalisation Latin (Français / Anglais) : retirer les accents
-    t = "".join(
-        c for c in unicodedata.normalize("NFD", t)
-        if unicodedata.category(c) != "Mn"
-    )
-    return t
-
-
-GENERIC_KEYWORDS_NORMALIZED = [
-    # Arabe - Pièges, erreurs, examens
-    "فخ", "فخاخ", "مزلق", "مزالق", "خطا", "اخطاء", "يقع فيها", "انتبه يا بطل",
-    "الامتحان الموحد", "الامتحان الجهوي", "الامتحان الوطني", "الامتحانات الاشهاديه",
-    "تتكرر في الامتحان", "يجب ان اعرفها", "لضمان النقطه الكامله", "لضمان الامتياز",
-    # Arabe - Méta-catégories de sections de fiches express
-    "المفاهيم والتعاريف", "المفاهيم والمصطلحات", "المفاهيم المحوريه",
-    "الكلمات والمفاهيم", "المفاهيم الاساسيه", "المفاهيم المركزيه",
-    "القواعد الذهبيه", "القواعد والبرهنات", "النماذج والقواعد", "القواعد والصيغ",
-    "طريقه التطبيق", "منهجيه التطبيق", "منهجيه الحل", "خطوات التطبيق",
-    "نصيحه التحرير", "توجيهات منهجيه", "رويه نقديه", "سر التفوق", "سر النجاح",
-    # Français - Pièges, erreurs
-    "piege", "erreur frequente", "erreurs frequentes", "erreur classique", "erreurs classiques",
-    "ecueil", "ecueils", "attention au petit piege",
-    # Français - Méta-catégories de sections de fiches express
-    "methode d'application", "methode d application", "demarche de resolution", "methodologie",
-    "definitions & principes", "definition & principe", "definitions fondamentales",
-    "proprietes, theoremes et formules", "proprietes & formules",
-    "notions fondamentales", "notion fondamentale", "notions cles", "notion cle",
-    "formules, regles & proprietes", "vocabulaire & les idees", "super words & key ideas",
-    "l'idee cle", "idee cle en 1 minute",
-    "astuce redaction", "astuce de champion", "conseil methodologique", "astuces pour les points",
-    "gagner des points", "note maximale",
-    "examen normalise", "examen blanc", "baccalaureat",
-    # Anglais - Traps, pitfalls, templates
-    "trap", "pitfall", "frequent error", "common mistake",
-    "application method", "core concept", "rules and formulas", "golden rules",
-    "star tip", "top marks", "writing strategy", "maximum marks",
-]
-
-LONE_GENERIC_WORDS_NORMALIZED = {
-    "propriete", "proprietes", "formule", "formules", "definition", "definitions",
-    "generalite", "generalites", "introduction", "conclusion", "fiche", "resume",
-    "cours", "lecon", "notion", "notions", "methode", "methodes",
-    "الخاصيات", "التعاريف", "القواعد", "الدرس", "ملخص", "مقدمه", "مفاهيم", "مصطلحات",
-    "properties", "rules", "definitions", "summary", "lesson", "notes",
-}
-
-
-def is_generic_concept(text: str) -> bool:
-    """
-    Vérifie si un intitulé est une méta-catégorie générique (ex: Pièges d'examen,
-    Méthode d'application, Définitions fondamentales, Formules, فخاخ الامتحان)
-    plutôt qu'une notion réelle du cours.
-    Gère la normalisation totale du texte (y compris le Tashkeel arabe et les accents français).
-    """
-    if not text or not text.strip():
-        return True
-
-    norm = normalize_text_for_concept_check(text)
-    if not norm:
-        return True
-
-    if norm in LONE_GENERIC_WORDS_NORMALIZED:
-        return True
-
-    for kw in GENERIC_KEYWORDS_NORMALIZED:
-        if kw in norm:
-            return True
-
-    return False
-
-
-def extract_real_course_concepts(course: Dict[str, Any]) -> List[str]:
-    """
-    Extrait les notions pédagogiques réelles et concrètes d'un cours à partir de sa fiche/résumé
-    ou de son texte brut, en éliminant strictement les méta-catégories génériques.
-    """
-    # 1. Vérifier si des notions non génériques existent déjà dans key_concepts
-    raw_concepts = course.get("key_concepts") or []
-    valid_concepts = [c.strip() for c in raw_concepts if c and not is_generic_concept(c)]
-    if len(valid_concepts) >= 2:
-        return valid_concepts
-
-    # 2. Extraire depuis le résumé markdown ou le texte brut
-    summary = course.get("summary_markdown") or course.get("raw_text") or ""
-    extracted: List[str] = []
-
-    if summary:
-        # a) Puces en gras : "- **Notion réelle** : explication..."
-        bold_bullets = re.findall(r"^[-*•]\s*\*\*([^*:\n]{3,65})\*\*", summary, flags=re.MULTILINE)
-        for b in bold_bullets:
-            b_clean = re.sub(r"^[0-9\.\)\-\s]+", "", b.strip())
-            b_clean = re.sub(r"[()\[\]{}]+", "", b_clean).strip()
-            if len(b_clean) >= 3 and not is_generic_concept(b_clean) and b_clean not in extracted:
-                extracted.append(b_clean)
-
-        # b) Si et seulement si les puces en gras sont insuffisantes (< 2), examiner les sous-titres non génériques
-        if len(extracted) < 2:
-            headings = re.findall(r"^#{2,3}\s+(?:[0-9]+[.\-)]\s*)?([^\n#]{3,70})", summary, flags=re.MULTILINE)
-            for h in headings:
-                h_clean = re.sub(r"^[^\w\s]+", "", h.strip())  # retire emojis
-                h_clean = re.sub(r"^[0-9\.\)\-\s]+", "", h_clean).strip()
-                if len(h_clean) >= 3 and not is_generic_concept(h_clean) and h_clean not in extracted:
-                    extracted.append(h_clean)
-
-    # 3. Si l'extraction n'a rien donné ou trop peu (< 2), générer des notions concrètes rattachées au titre du cours
-    if len(extracted) < 2:
-        title = (course.get("title") or "Leçon").strip()
-        lang = course.get("language", "fr")
-        if lang == "ar":
-            extracted = [
-                f"مفهوم وتعريف ({title})",
-                f"الخاصيات والقواعد الأساسية لـ {title}",
-                f"تطبيقات وتمارين نموذجية ({title})",
-                f"حالات خاصة وملاحظات هامة ({title})",
-            ]
-        elif lang == "en":
-            extracted = [
-                f"Definition and Core Principles of {title}",
-                f"Essential Formulas and Properties ({title})",
-                f"Practical Worked Examples ({title})",
-                f"Special Cases and Applications ({title})",
-            ]
-        else:
-            extracted = [
-                f"Définition et principes de {title}",
-                f"Propriétés et formules de {title}",
-                f"Applications et démarches types ({title})",
-                f"Cas particuliers et vérifications ({title})",
-            ]
-
-    return extracted[:6]
 
 
 def evaluate_and_sync_concept_mastery(user_id: int, course_id: int) -> List[Dict[str, Any]]:

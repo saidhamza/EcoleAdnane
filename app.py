@@ -1663,15 +1663,16 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
         """
         st.markdown(header_html, unsafe_allow_html=True)
 
-        if current_course.get("key_concepts"):
+        valid_concepts = [c for c in (current_course.get("key_concepts") or []) if not is_generic_concept(c)]
+        if valid_concepts:
             if is_ar:
-                chips = " ".join([f"<span class='concept-tag'>{c}</span>" for c in current_course["key_concepts"]])
+                chips = " ".join([f"<span class='concept-tag'>{c}</span>" for c in valid_concepts])
                 st.markdown(f"<div dir='rtl' style='text-align:right; margin-top:8px; margin-bottom:12px;'><strong>المفاهيم الأساسية :</strong> {chips}</div>", unsafe_allow_html=True)
             elif is_en:
-                chips = " ".join([f"<span class='concept-tag'>#{c}</span>" for c in current_course["key_concepts"]])
+                chips = " ".join([f"<span class='concept-tag'>#{c}</span>" for c in valid_concepts])
                 st.markdown(f"**Key Concepts:** {chips}", unsafe_allow_html=True)
             else:
-                chips = " ".join([f"<span class='concept-tag'>#{c}</span>" for c in current_course["key_concepts"]])
+                chips = " ".join([f"<span class='concept-tag'>#{c}</span>" for c in valid_concepts])
                 st.markdown(f"**Notions clés :** {chips}", unsafe_allow_html=True)
 
         if is_ar:

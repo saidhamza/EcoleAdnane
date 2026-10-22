@@ -238,7 +238,7 @@ Renvoie uniquement un objet JSON respectant exactement cette structure :
         return {
             "title": data.get("title") or fallback_title,
             "subject": data.get("subject") or fallback_subject,
-            "key_concepts": data.get("key_concepts") or [],
+            "key_concepts": [c.strip() for c in (data.get("key_concepts") or []) if c and isinstance(c, str) and not is_generic_concept(c)],
             "estimated_level": data.get("estimated_level") or "3AC Collège",
         }
     except Exception as e:
