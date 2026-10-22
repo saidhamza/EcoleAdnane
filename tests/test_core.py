@@ -33,6 +33,7 @@ from models.database import (
     get_course_by_hash,
     get_course_by_id,
     get_course_mindmap,
+    get_mindmap_disk_paths,
     get_global_admin_kpis,
     get_latest_quiz,
     get_pedagogical_cycle,
@@ -478,6 +479,7 @@ class TestStudentAndGlobalBackup(unittest.TestCase):
         self.qid = save_quiz(self.cid, [{"question": "pH ?", "options": ["Acide", "Basique"], "answer_index": 0}], user_id=self.user_id)
         save_quiz_attempt(self.cid, self.qid, score=1, total_questions=1, answers={0: 0}, user_id=self.user_id)
         add_chat_message(self.cid, "user", "Bonjour Sanad", user_id=self.user_id)
+        save_course_mindmap(self.cid, "# Solutions Aqueuses\n## Ions et pH")
 
     def tearDown(self):
         self.temp_dir.cleanup()
@@ -503,10 +505,12 @@ class TestStudentAndGlobalBackup(unittest.TestCase):
         res_restore = restore_student_backup(backup_zip, target_user_id=new_user["id"])
         self.assertTrue(res_restore["success"])
 
-        # Vérification que le nouveau compte possède bien le cours et le chat
+        # Vérification que le nouveau compte possède bien le cours, le chat et la carte mentale
         restored_courses = list_courses(user_id=new_user["id"])
         self.assertEqual(len(restored_courses), 1)
         self.assertEqual(restored_courses[0]["title"], "Physique Chimie 3AC")
+        self.assertEqual(get_course_mindmap(restored_courses[0]["id"]), "# Solutions Aqueuses\n## Ions et pH")
+        self.assertEqual(restored_courses[0].get("mindmap_code"), "# Solutions Aqueuses\n## Ions et pH")
 
         restored_chat = get_chat_history(restored_courses[0]["id"], user_id=new_user["id"])
         self.assertEqual(len(restored_chat), 1)
@@ -1492,6 +1496,46 @@ class TestMindmapAndConceptMastery(unittest.TestCase):
         # La colonne doit désormais exister et permettre l'enregistrement
         save_course_mindmap(self.course_id, "mindmap\n  root((Test))")
         self.assertEqual(get_course_mindmap(self.course_id), "mindmap\n  root((Test))")
+
+    def test_mindmap_dual_persistence_and_restart(self):
+        # 1. Enregistrement d'une carte mentale
+        sample_code = """# Schéma Thalès
+## Branches
+- Direct: Calculs
+- Réciproque: Parallélisme"""
+        save_course_mindmap(self.course_id, sample_code)
+
+        # 2. Vérifier que la carte est sur disque
+        thales_pdf = str(Path(self.temp_dir.name) / "cours_thales.pdf")
+        disk_paths = get_mindmap_disk_paths(self.course_id, thales_pdf, self.student["id"])
+        existing_on_disk = [p for p in disk_paths if p.exists() and p.is_file()]
+        self.assertTrue(len(existing_on_disk) > 0, "Le fichier de carte mentale doit exister sur disque.")
+
+        # 3. Simuler une base réinitialisée ou colonne vidée (comme sur Streamlit Cloud)
+        from models.database import get_connection
+        conn = get_connection()
+        try:
+            with conn:
+                conn.execute("UPDATE courses SET mindmap_code = NULL WHERE id = ?", (self.course_id,))
+        finally:
+            conn.close()
+
+        # Vérifier que get_course_mindmap récupère depuis le disque et auto-répare SQLite
+        restored = get_course_mindmap(self.course_id)
+        self.assertEqual(restored, sample_code)
+
+        # Vérifier que SQLite est auto-réparé
+        conn2 = get_connection()
+        try:
+            val = conn2.execute("SELECT mindmap_code FROM courses WHERE id = ?", (self.course_id,)).fetchone()[0]
+            self.assertEqual(val, sample_code)
+        finally:
+            conn2.close()
+
+        # 4. Simuler un redémarrage de l'app avec init_db()
+        from models.database import init_db
+        init_db(self.db_path)
+        self.assertEqual(get_course_mindmap(self.course_id), sample_code)
 
     def test_clean_mermaid_mindmap(self):
         # 1. Nettoyer les balises de code markdown ```mermaid ... ```

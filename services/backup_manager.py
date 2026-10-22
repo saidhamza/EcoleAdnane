@@ -27,6 +27,7 @@ from models.database import (
     list_users,
     init_db,
     save_course,
+    save_course_mindmap,
     save_quiz,
     save_quiz_attempt,
     add_chat_message,
@@ -153,10 +154,12 @@ def export_student_backup(user_id: int) -> bytes:
         zf.writestr("manifest.json", json.dumps(manifest, indent=2, ensure_ascii=False))
         zf.writestr("data.json", json.dumps(data_payload, indent=2, ensure_ascii=False))
 
-        # Fichiers PDF originaux de l'élève
+        # Fichiers PDF et cartes mentales originaux de l'élève
         if user_storage_dir.exists():
             for pdf_file in user_storage_dir.glob("*.pdf"):
                 zf.write(pdf_file, arcname=f"cours/{pdf_file.name}")
+            for map_file in user_storage_dir.glob("*.mindmap.md"):
+                zf.write(map_file, arcname=f"cours/{map_file.name}")
 
     buf.seek(0)
     return buf.getvalue()
@@ -204,16 +207,18 @@ def restore_student_backup(file_bytes: bytes, target_user_id: int) -> Dict[str, 
                     if ".." in filename or filename.startswith("/") or filename.startswith("\\"):
                         return {"success": False, "error": "Tentative de traversée de répertoire détectée."}
 
-                # 1. Extraire les PDFs de manière sécurisée
+                # 1. Extraire les PDFs et cartes mentales de manière sécurisée
                 for member in zf.infolist():
-                    if member.filename.lower().endswith(".pdf"):
+                    name_lower = member.filename.lower()
+                    if name_lower.endswith(".pdf") or name_lower.endswith(".mindmap.md"):
                         safe_name = Path(member.filename).name
                         if safe_name:
                             dest_file = user_storage_dir / safe_name
                             if is_safe_extract_path(user_storage_dir, dest_file):
                                 with zf.open(member) as src, open(dest_file, "wb") as dst:
                                     shutil.copyfileobj(src, dst)
-                                extracted_pdfs += 1
+                                if name_lower.endswith(".pdf"):
+                                    extracted_pdfs += 1
 
                 # 2a. Archive moderne v2.0 avec data.json
                 if "data.json" in zf.namelist():
@@ -301,6 +306,7 @@ def restore_student_backup(file_bytes: bytes, target_user_id: int) -> Dict[str, 
             except Exception:
                 key_concepts = []
 
+            mindmap_code = c.get("mindmap_code")
             new_cid = save_course(
                 title=c["title"],
                 subject=c["subject"],
@@ -312,7 +318,13 @@ def restore_student_backup(file_bytes: bytes, target_user_id: int) -> Dict[str, 
                 summary_markdown=c.get("summary_markdown"),
                 key_concepts=key_concepts,
                 user_id=target_user_id,
+                mindmap_code=mindmap_code,
             )
+            if mindmap_code:
+                try:
+                    save_course_mindmap(new_cid, mindmap_code)
+                except Exception:
+                    pass
             course_id_map[old_id] = new_cid
             restored_courses += 1
 
@@ -460,8 +472,9 @@ def export_global_backup() -> bytes:
         # 3. Dossier cours legacy si présent
         legacy_dir = STORAGE_DIR / "cours"
         if legacy_dir.exists():
-            for f in legacy_dir.glob("*.pdf"):
-                zf.write(f, arcname=f"cours/{f.name}")
+            for f in legacy_dir.iterdir():
+                if f.is_file() and (f.suffix.lower() == ".pdf" or f.name.endswith(".mindmap.md")):
+                    zf.write(f, arcname=f"cours/{f.name}")
 
         # 4. Manifeste système
         stats = get_backup_summary()

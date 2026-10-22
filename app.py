@@ -1916,6 +1916,7 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                                 user_id=active_user_id,
                             )
                             save_course_mindmap(current_course["id"], generated_mindmap)
+                            current_course["mindmap_code"] = generated_mindmap
                             st.success("Carte mentale générée avec succès !" if not is_en else "Mind map generated successfully!")
                             st.rerun()
             else:
@@ -1952,6 +1953,7 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                                     user_id=active_user_id,
                                 )
                                 save_course_mindmap(current_course["id"], generated_mindmap)
+                                current_course["mindmap_code"] = generated_mindmap
                                 st.rerun()
 
                 with col_map_actions2:

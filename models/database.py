@@ -55,6 +55,7 @@ __all__ = [
     "clear_chat_history",
     "get_course_mindmap",
     "save_course_mindmap",
+    "get_mindmap_disk_paths",
     "get_student_concept_mastery",
     "save_concept_mastery",
     "evaluate_and_sync_concept_mastery",
@@ -247,7 +248,11 @@ def init_db(db_path: Optional[Path] = None) -> None:
             indexes = cur.fetchall()
             has_unique_hash = False
             for idx in indexes:
-                if idx["unique"] == 1:
+                if (
+                    idx["unique"] == 1
+                    and not idx["partial"]
+                    and idx["name"] not in ("idx_courses_null_user_hash", "idx_courses_user_hash")
+                ):
                     idx_name = idx["name"]
                     cur.execute(f"PRAGMA index_info({idx_name})")
                     cols = [c["name"] for c in cur.fetchall()]
@@ -258,8 +263,9 @@ def init_db(db_path: Optional[Path] = None) -> None:
             if has_unique_hash:
                 logger.info("Migration courses : suppression de la contrainte UNIQUE globale sur file_hash...")
                 conn.execute("PRAGMA foreign_keys = OFF")
+                conn.execute("DROP TABLE IF EXISTS courses_temp_migration")
                 conn.execute("""
-                    CREATE TABLE IF NOT EXISTS courses_temp_migration (
+                    CREATE TABLE courses_temp_migration (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         user_id INTEGER,
                         title TEXT NOT NULL,
@@ -1120,6 +1126,47 @@ def extract_real_course_concepts(course: Dict[str, Any]) -> List[str]:
 # OPÉRATIONS CRUD SUR LES COURS (CLOISONNÉES PAR USER_ID)
 # ===========================================================================
 
+def get_mindmap_disk_paths(
+    course_id: Optional[int] = None,
+    file_path: Optional[str] = None,
+    user_id: Optional[int] = None,
+) -> List[Path]:
+    """Retourne la liste ordonnée des chemins potentiels de fichier disque pour la carte mentale d'un cours."""
+    paths: List[Path] = []
+    if file_path:
+        fp = Path(file_path)
+        if fp.parent.exists():
+            # 1. <file_path>.mindmap.md (ex: .../cours/doc.pdf.mindmap.md)
+            paths.append(fp.with_name(f"{fp.name}.mindmap.md"))
+            # 2. <file_stem>.mindmap.md (ex: .../cours/doc.mindmap.md)
+            paths.append(fp.with_suffix(".mindmap.md"))
+            # 3. <parent>/<course_id>_mindmap.md
+            if course_id is not None:
+                paths.append(fp.parent / f"{course_id}_mindmap.md")
+
+    try:
+        storage_root = get_db_path().parent
+    except Exception:
+        storage_root = Path(DEFAULT_DB_DIR)
+
+    if course_id is not None:
+        if user_id is not None:
+            user_cours_dir = storage_root / "users" / str(user_id) / "cours"
+            paths.append(user_cours_dir / f"{course_id}_mindmap.md")
+        legacy_dir = storage_root / "cours"
+        paths.append(legacy_dir / f"{course_id}_mindmap.md")
+
+    # Éliminer les doublons tout en préservant l'ordre
+    seen = set()
+    unique_paths: List[Path] = []
+    for p in paths:
+        p_str = str(p)
+        if p_str not in seen:
+            seen.add(p_str)
+            unique_paths.append(p)
+    return unique_paths
+
+
 def save_course(
     title: str,
     subject: str,
@@ -1131,14 +1178,28 @@ def save_course(
     summary_markdown: Optional[str] = None,
     key_concepts: Optional[List[str]] = None,
     user_id: Optional[int] = None,
+    mindmap_code: Optional[str] = None,
 ) -> int:
-    """Enregistre ou met à jour un cours cloisonné par son hash et son user_id."""
+    """Enregistre ou met à jour un cours cloisonné par son hash et son user_id avec double persistance de la carte mentale."""
     conn = get_connection()
     try:
         with conn:
             cur = conn.cursor()
             clean_kc = [c.strip() for c in (key_concepts or []) if c and isinstance(c, str) and not is_generic_concept(c)]
             concepts_json = json.dumps(clean_kc, ensure_ascii=False)
+
+            # Si mindmap_code n'est pas fourni, chercher un fichier existant sur disque
+            if not mindmap_code:
+                disk_paths = get_mindmap_disk_paths(None, file_path, user_id)
+                for dp in disk_paths:
+                    if dp.exists() and dp.is_file():
+                        try:
+                            content = dp.read_text(encoding="utf-8").strip()
+                            if content:
+                                mindmap_code = content
+                                break
+                        except Exception:
+                            pass
 
             if user_id is not None:
                 cur.execute("SELECT id FROM courses WHERE file_hash = ? AND user_id = ?", (file_hash, user_id))
@@ -1153,7 +1214,7 @@ def save_course(
                     UPDATE courses
                     SET title = ?, subject = ?, language = ?, file_path = ?,
                         file_name = ?, raw_text = ?, summary_markdown = COALESCE(?, summary_markdown),
-                        key_concepts_json = ?, updated_at = CURRENT_TIMESTAMP
+                        key_concepts_json = ?, mindmap_code = COALESCE(?, mindmap_code), updated_at = CURRENT_TIMESTAMP
                     WHERE id = ?
                     """,
                     (
@@ -1165,16 +1226,24 @@ def save_course(
                         raw_text,
                         summary_markdown,
                         concepts_json,
+                        mindmap_code,
                         course_id,
                     ),
                 )
+                if mindmap_code:
+                    for dp in get_mindmap_disk_paths(course_id, file_path, user_id):
+                        try:
+                            dp.parent.mkdir(parents=True, exist_ok=True)
+                            dp.write_text(mindmap_code, encoding="utf-8")
+                        except Exception:
+                            pass
                 return course_id
             else:
                 try:
                     cur.execute(
                         """
-                        INSERT INTO courses (user_id, title, subject, language, file_path, file_hash, file_name, raw_text, summary_markdown, key_concepts_json)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        INSERT INTO courses (user_id, title, subject, language, file_path, file_hash, file_name, raw_text, summary_markdown, key_concepts_json, mindmap_code)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
                         (
                             user_id,
@@ -1187,9 +1256,18 @@ def save_course(
                             raw_text,
                             summary_markdown,
                             concepts_json,
+                            mindmap_code,
                         ),
                     )
-                    return cur.lastrowid
+                    course_id = cur.lastrowid
+                    if mindmap_code:
+                        for dp in get_mindmap_disk_paths(course_id, file_path, user_id):
+                            try:
+                                dp.parent.mkdir(parents=True, exist_ok=True)
+                                dp.write_text(mindmap_code, encoding="utf-8")
+                            except Exception:
+                                pass
+                    return course_id
                 except sqlite3.IntegrityError:
                     if user_id is not None:
                         cur.execute("SELECT id FROM courses WHERE file_hash = ? AND user_id = ?", (file_hash, user_id))
@@ -1206,7 +1284,7 @@ def save_course(
                             UPDATE courses
                             SET title = ?, subject = ?, language = ?, file_path = ?,
                                 file_name = ?, raw_text = ?, summary_markdown = COALESCE(?, summary_markdown),
-                                key_concepts_json = ?, updated_at = CURRENT_TIMESTAMP
+                                key_concepts_json = ?, mindmap_code = COALESCE(?, mindmap_code), updated_at = CURRENT_TIMESTAMP
                             WHERE id = ?
                             """,
                             (
@@ -1218,9 +1296,17 @@ def save_course(
                                 raw_text,
                                 summary_markdown,
                                 concepts_json,
+                                mindmap_code,
                                 cid,
                             ),
                         )
+                        if mindmap_code:
+                            for dp in get_mindmap_disk_paths(cid, file_path, user_id):
+                                try:
+                                    dp.parent.mkdir(parents=True, exist_ok=True)
+                                    dp.write_text(mindmap_code, encoding="utf-8")
+                                except Exception:
+                                    pass
                         return cid
                     raise
     finally:
@@ -1273,6 +1359,10 @@ def get_course_by_id(course_id: int, user_id: Optional[int] = None) -> Optional[
                 pass
 
         res["key_concepts"] = clean_kc
+        if not res.get("mindmap_code"):
+            m = get_course_mindmap(course_id)
+            if m:
+                res["mindmap_code"] = m
         return res
     finally:
         conn.close()
@@ -1325,6 +1415,10 @@ def get_course_by_hash(file_hash: str, user_id: Optional[int] = None, include_gl
                 pass
 
         res["key_concepts"] = clean_kc
+        if not res.get("mindmap_code"):
+            m = get_course_mindmap(res["id"])
+            if m:
+                res["mindmap_code"] = m
         return res
     finally:
         conn.close()
@@ -1443,7 +1537,7 @@ def delete_course(course_id: int, user_id: Optional[int] = None) -> bool:
     try:
         with conn:
             cur = conn.cursor()
-            query_sel = "SELECT file_path FROM courses WHERE id = ?"
+            query_sel = "SELECT file_path, user_id FROM courses WHERE id = ?"
             params_sel: List[Any] = [course_id]
             if user_id is not None:
                 query_sel += " AND user_id = ?"
@@ -1459,6 +1553,14 @@ def delete_course(course_id: int, user_id: Optional[int] = None) -> bool:
                     os.remove(row["file_path"])
                 except Exception as e:
                     logger.warning(f"Impossible de supprimer le fichier {row['file_path']} : {e}")
+
+            # Nettoyage des fichiers disque de la carte mentale
+            for dp in get_mindmap_disk_paths(course_id, row["file_path"], row["user_id"]):
+                if dp.exists() and dp.is_file():
+                    try:
+                        dp.unlink()
+                    except Exception as e:
+                        logger.warning(f"Impossible de supprimer la carte mentale {dp} : {e}")
 
             query_del = "DELETE FROM courses WHERE id = ?"
             params_del: List[Any] = [course_id]
@@ -1807,30 +1909,57 @@ def _ensure_concept_mastery_table(conn: sqlite3.Connection) -> None:
 
 
 def get_course_mindmap(course_id: int) -> Optional[str]:
-    """Récupère le code Mermaid du diagramme mindmap associé à un cours (avec auto-réparation)."""
+    """Récupère le schéma mindmap associé à un cours (avec double persistance SQLite + disque et auto-réparation)."""
     conn = get_connection()
     try:
         cur = conn.cursor()
         try:
-            cur.execute("SELECT mindmap_code FROM courses WHERE id = ?", (course_id,))
+            cur.execute("SELECT mindmap_code, file_path, user_id FROM courses WHERE id = ?", (course_id,))
         except sqlite3.OperationalError:
             # Auto-réparation si la colonne mindmap_code n'existe pas encore sur la base SQLite distante
             try:
                 with conn:
                     conn.execute("ALTER TABLE courses ADD COLUMN mindmap_code TEXT")
-                cur.execute("SELECT mindmap_code FROM courses WHERE id = ?", (course_id,))
+                cur.execute("SELECT mindmap_code, file_path, user_id FROM courses WHERE id = ?", (course_id,))
             except Exception:
                 return None
         row = cur.fetchone()
-        return row["mindmap_code"] if row and row["mindmap_code"] else None
+        if not row:
+            return None
+
+        # 1. Vérifier si mindmap_code est présent dans SQLite
+        if row["mindmap_code"] and row["mindmap_code"].strip():
+            return row["mindmap_code"]
+
+        # 2. Secours / Auto-réparation : chercher sur le disque
+        paths = get_mindmap_disk_paths(course_id, row["file_path"], row["user_id"])
+        for p in paths:
+            if p.exists() and p.is_file():
+                try:
+                    content = p.read_text(encoding="utf-8").strip()
+                    if content:
+                        try:
+                            with conn:
+                                cur.execute(
+                                    "UPDATE courses SET mindmap_code = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                                    (content, course_id),
+                                )
+                        except Exception:
+                            pass
+                        return content
+                except Exception as e:
+                    logger.warning(f"Erreur lecture carte mentale disque {p}: {e}")
+
+        return None
     finally:
         conn.close()
 
 
 def save_course_mindmap(course_id: int, mindmap_code: str) -> None:
-    """Enregistre ou met à jour le schéma mindmap d'un cours en base (avec auto-réparation)."""
+    """Enregistre ou met à jour le schéma mindmap d'un cours en base SQLite et sur disque (double persistance)."""
     conn = get_connection()
     try:
+        row = None
         with conn:
             cur = conn.cursor()
             try:
@@ -1844,6 +1973,18 @@ def save_course_mindmap(course_id: int, mindmap_code: str) -> None:
                     "UPDATE courses SET mindmap_code = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
                     (mindmap_code, course_id),
                 )
+            cur.execute("SELECT file_path, user_id FROM courses WHERE id = ?", (course_id,))
+            row = cur.fetchone()
+
+        # Écriture physique sur disque (dual storage)
+        if row and mindmap_code:
+            paths = get_mindmap_disk_paths(course_id, row["file_path"], row["user_id"])
+            for p in paths:
+                try:
+                    p.parent.mkdir(parents=True, exist_ok=True)
+                    p.write_text(mindmap_code, encoding="utf-8")
+                except Exception as e:
+                    logger.warning(f"Impossible d'écrire la carte mentale sur disque à {p}: {e}")
     finally:
         conn.close()
 
