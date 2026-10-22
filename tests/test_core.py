@@ -1471,6 +1471,24 @@ class TestMindmapAndConceptMastery(unittest.TestCase):
         course_obj = get_course_by_id(self.course_id)
         self.assertEqual(course_obj.get("mindmap_code"), sample_code)
 
+    def test_get_course_mindmap_auto_repairs_missing_column(self):
+        # Simuler une base existante où la colonne mindmap_code n'a pas encore été migrée
+        from models.database import get_connection
+        conn = get_connection()
+        try:
+            with conn:
+                conn.execute("ALTER TABLE courses DROP COLUMN mindmap_code")
+        finally:
+            conn.close()
+
+        # get_course_mindmap ne doit PAS lever d'OperationalError et doit auto-réparer la table
+        val = get_course_mindmap(self.course_id)
+        self.assertIsNone(val)
+
+        # La colonne doit désormais exister et permettre l'enregistrement
+        save_course_mindmap(self.course_id, "mindmap\n  root((Test))")
+        self.assertEqual(get_course_mindmap(self.course_id), "mindmap\n  root((Test))")
+
     def test_clean_mermaid_mindmap(self):
         # 1. Nettoyer les balises de code markdown ```mermaid ... ```
         raw_with_fences = "```mermaid\nmindmap\n  root((Mon Cours))\n    Branche 1\n```"

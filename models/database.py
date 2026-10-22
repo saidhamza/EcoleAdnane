@@ -268,18 +268,33 @@ def init_db(db_path: Optional[Path] = None) -> None:
                         raw_text TEXT,
                         summary_markdown TEXT,
                         key_concepts_json TEXT,
+                        mindmap_code TEXT,
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
                     )
                 """)
-                conn.execute("""
-                    INSERT INTO courses_temp_migration (id, user_id, title, subject, language, file_path, file_hash, file_name, raw_text, summary_markdown, key_concepts_json, created_at, updated_at)
-                    SELECT id, user_id, title, subject, language, file_path, file_hash, file_name, raw_text, summary_markdown, key_concepts_json, created_at, updated_at FROM courses
-                """)
+                cur.execute("PRAGMA table_info(courses)")
+                source_cols = [c["name"] for c in cur.fetchall()]
+                if "mindmap_code" in source_cols:
+                    conn.execute("""
+                        INSERT INTO courses_temp_migration (id, user_id, title, subject, language, file_path, file_hash, file_name, raw_text, summary_markdown, key_concepts_json, mindmap_code, created_at, updated_at)
+                        SELECT id, user_id, title, subject, language, file_path, file_hash, file_name, raw_text, summary_markdown, key_concepts_json, mindmap_code, created_at, updated_at FROM courses
+                    """)
+                else:
+                    conn.execute("""
+                        INSERT INTO courses_temp_migration (id, user_id, title, subject, language, file_path, file_hash, file_name, raw_text, summary_markdown, key_concepts_json, created_at, updated_at)
+                        SELECT id, user_id, title, subject, language, file_path, file_hash, file_name, raw_text, summary_markdown, key_concepts_json, created_at, updated_at FROM courses
+                    """)
                 conn.execute("DROP TABLE courses")
                 conn.execute("ALTER TABLE courses_temp_migration RENAME TO courses")
                 conn.execute("PRAGMA foreign_keys = ON")
+
+            # Vérification finale post-migration : garantir la présence de mindmap_code
+            cur.execute("PRAGMA table_info(courses)")
+            final_course_cols = [row["name"] for row in cur.fetchall()]
+            if "mindmap_code" not in final_course_cols:
+                cur.execute("ALTER TABLE courses ADD COLUMN mindmap_code TEXT")
 
             # 3. Index et vues dépendant de user_id
             conn.executescript("""
@@ -1509,12 +1524,42 @@ def set_setting(key: str, value: str) -> None:
 # 8. CARTES MENTALES (MIND MAPS) & SUIVI DE L'ASSIMILATION DES NOTIONS
 # ===========================================================================
 
+def _ensure_concept_mastery_table(conn: sqlite3.Connection) -> None:
+    """Crée la table concept_mastery si elle n'existe pas encore."""
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS concept_mastery (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            course_id INTEGER NOT NULL,
+            concept_title TEXT NOT NULL,
+            status TEXT NOT NULL CHECK(status IN ('mastered', 'in_progress', 'to_review', 'untested')),
+            success_rate REAL DEFAULT 0.0,
+            attempts_count INTEGER DEFAULT 0,
+            last_context TEXT,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
+            FOREIGN KEY (course_id) REFERENCES courses (id) ON DELETE CASCADE,
+            UNIQUE(user_id, course_id, concept_title)
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_concept_mastery_user_course ON concept_mastery(user_id, course_id)")
+
+
 def get_course_mindmap(course_id: int) -> Optional[str]:
-    """Récupère le code Mermaid du diagramme mindmap associé à un cours."""
+    """Récupère le code Mermaid du diagramme mindmap associé à un cours (avec auto-réparation)."""
     conn = get_connection()
     try:
         cur = conn.cursor()
-        cur.execute("SELECT mindmap_code FROM courses WHERE id = ?", (course_id,))
+        try:
+            cur.execute("SELECT mindmap_code FROM courses WHERE id = ?", (course_id,))
+        except sqlite3.OperationalError:
+            # Auto-réparation si la colonne mindmap_code n'existe pas encore sur la base SQLite distante
+            try:
+                with conn:
+                    conn.execute("ALTER TABLE courses ADD COLUMN mindmap_code TEXT")
+                cur.execute("SELECT mindmap_code FROM courses WHERE id = ?", (course_id,))
+            except Exception:
+                return None
         row = cur.fetchone()
         return row["mindmap_code"] if row and row["mindmap_code"] else None
     finally:
@@ -1522,34 +1567,54 @@ def get_course_mindmap(course_id: int) -> Optional[str]:
 
 
 def save_course_mindmap(course_id: int, mindmap_code: str) -> None:
-    """Enregistre ou met à jour le schéma mindmap d'un cours en base."""
+    """Enregistre ou met à jour le schéma mindmap d'un cours en base (avec auto-réparation)."""
     conn = get_connection()
     try:
         with conn:
             cur = conn.cursor()
-            cur.execute(
-                "UPDATE courses SET mindmap_code = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-                (mindmap_code, course_id),
-            )
+            try:
+                cur.execute(
+                    "UPDATE courses SET mindmap_code = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                    (mindmap_code, course_id),
+                )
+            except sqlite3.OperationalError:
+                conn.execute("ALTER TABLE courses ADD COLUMN mindmap_code TEXT")
+                cur.execute(
+                    "UPDATE courses SET mindmap_code = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                    (mindmap_code, course_id),
+                )
     finally:
         conn.close()
 
 
 def get_student_concept_mastery(user_id: int, course_id: int) -> List[Dict[str, Any]]:
-    """Récupère les notions et leur statut d'assimilation pour un élève sur un cours."""
+    """Récupère les notions et leur statut d'assimilation pour un élève sur un cours (avec auto-réparation)."""
     conn = get_connection()
     try:
         cur = conn.cursor()
-        cur.execute(
-            """
-            SELECT id, user_id, course_id, concept_title, status, success_rate, attempts_count, last_context, updated_at
-            FROM concept_mastery
-            WHERE user_id = ? AND course_id = ?
-            ORDER BY id ASC
-            """,
-            (user_id, course_id),
-        )
-        return [dict(r) for r in cur.fetchall()]
+        try:
+            cur.execute(
+                """
+                SELECT id, user_id, course_id, concept_title, status, success_rate, attempts_count, last_context, updated_at
+                FROM concept_mastery
+                WHERE user_id = ? AND course_id = ?
+                ORDER BY id ASC
+                """,
+                (user_id, course_id),
+            )
+            return [dict(r) for r in cur.fetchall()]
+        except sqlite3.OperationalError:
+            _ensure_concept_mastery_table(conn)
+            cur.execute(
+                """
+                SELECT id, user_id, course_id, concept_title, status, success_rate, attempts_count, last_context, updated_at
+                FROM concept_mastery
+                WHERE user_id = ? AND course_id = ?
+                ORDER BY id ASC
+                """,
+                (user_id, course_id),
+            )
+            return [dict(r) for r in cur.fetchall()]
     finally:
         conn.close()
 
@@ -1563,13 +1628,12 @@ def save_concept_mastery(
     attempts_count: int = 0,
     last_context: Optional[str] = None,
 ) -> None:
-    """Enregistre ou met à jour l'état d'assimilation d'une notion pour un élève."""
+    """Enregistre ou met à jour l'état d'assimilation d'une notion pour un élève (avec auto-réparation)."""
     conn = get_connection()
     try:
         with conn:
             cur = conn.cursor()
-            cur.execute(
-                """
+            query = """
                 INSERT INTO concept_mastery (user_id, course_id, concept_title, status, success_rate, attempts_count, last_context, updated_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
                 ON CONFLICT(user_id, course_id, concept_title) DO UPDATE SET
@@ -1578,9 +1642,18 @@ def save_concept_mastery(
                     attempts_count = excluded.attempts_count,
                     last_context = excluded.last_context,
                     updated_at = CURRENT_TIMESTAMP
-                """,
-                (user_id, course_id, concept_title, status, success_rate, attempts_count, last_context),
-            )
+            """
+            try:
+                cur.execute(
+                    query,
+                    (user_id, course_id, concept_title, status, success_rate, attempts_count, last_context),
+                )
+            except sqlite3.OperationalError:
+                _ensure_concept_mastery_table(conn)
+                cur.execute(
+                    query,
+                    (user_id, course_id, concept_title, status, success_rate, attempts_count, last_context),
+                )
     finally:
         conn.close()
 
