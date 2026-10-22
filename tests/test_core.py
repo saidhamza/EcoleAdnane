@@ -98,7 +98,9 @@ from services.voice_manager import (
     generate_chat_mic_injector_html,
     generate_mic_speech_html,
     generate_tts_player_html,
+    get_server_tts_audio_base64,
     get_speech_config,
+    is_linux_platform,
 )
 
 
@@ -1119,8 +1121,8 @@ print("debug")
         self.assertEqual(cfg_default["lang_code"], "fr-FR")
 
     def test_generate_tts_player_html_structure(self):
-        # Mode compact (par défaut, sans texte, carré arrondi 8px)
-        html_code = generate_tts_player_html("Bravo champion, continue ainsi !", language="fr", player_id="test_player_1", compact=True)
+        # 1. Mode client Web Speech API forcé via force_server_tts=False
+        html_code = generate_tts_player_html("Bravo champion, continue ainsi !", language="fr", player_id="test_player_1", compact=True, force_server_tts=False)
         self.assertIn("speechSynthesis", html_code)
         self.assertIn("SpeechSynthesisUtterance", html_code)
         self.assertIn("fr-FR", html_code)
@@ -1130,12 +1132,45 @@ print("debug")
         self.assertIn("border-radius: 8px", html_code)
         self.assertIn("width: 32px; height: 32px", html_code)
 
-        # Mode avec auto_play
-        html_auto = generate_tts_player_html("Explication Sanad", language="fr", player_id="test_auto_1", auto_play=True)
+        # Mode avec auto_play en mode client
+        html_auto = generate_tts_player_html("Explication Sanad", language="fr", player_id="test_auto_1", auto_play=True, force_server_tts=False)
         self.assertIn("shouldAutoPlay = true", html_auto)
+
+        # 2. Mode serveur (gTTS HTML5 audio) forcé via force_server_tts=True
+        html_server = generate_tts_player_html("Bravo champion, continue ainsi !", language="fr", player_id="test_srv_1", compact=True, force_server_tts=True)
+        self.assertIn("<audio id=\"audio_test_srv_1\"", html_server)
+        self.assertIn("data:audio/mp3;base64,", html_server)
+        self.assertIn("toggleAudio_test_srv_1", html_server)
+        self.assertIn("border-radius: 8px", html_server)
+        self.assertIn("width: 32px; height: 32px", html_server)
+
+        # 3. Comportement par défaut sous Linux : utilisation automatique du lecteur serveur
+        if is_linux_platform():
+            html_default_linux = generate_tts_player_html("Explication Sanad", language="fr", player_id="test_linux_def")
+            self.assertIn("<audio id=\"audio_test_linux_def\"", html_default_linux)
+            self.assertIn("data:audio/mp3;base64,", html_default_linux)
 
         # Si texte vide
         self.assertEqual(generate_tts_player_html("", language="fr"), "")
+
+    def test_server_tts_audio_base64_generation_and_caching(self):
+        data_uri_fr = get_server_tts_audio_base64("Bonjour à tous !", language="fr")
+        self.assertIsNotNone(data_uri_fr)
+        self.assertTrue(data_uri_fr.startswith("data:audio/mp3;base64,"))
+        self.assertGreater(len(data_uri_fr), 100)
+
+        # Vérifier que le cache mémoire renvoie le même objet sans refaire d'appel
+        data_uri_fr_cached = get_server_tts_audio_base64("Bonjour à tous !", language="fr")
+        self.assertEqual(data_uri_fr, data_uri_fr_cached)
+
+        # En arabe avec voyelles
+        data_uri_ar = get_server_tts_audio_base64("مَرْحَباً بِكَ يَا بَطَلُ", language="ar")
+        self.assertIsNotNone(data_uri_ar)
+        self.assertTrue(data_uri_ar.startswith("data:audio/mp3;base64,"))
+
+        # Texte vide ou invalide
+        self.assertIsNone(get_server_tts_audio_base64("", language="fr"))
+        self.assertIsNone(get_server_tts_audio_base64("   ", language="fr"))
 
     def test_generate_chat_mic_injector_html_structure(self):
         mic_injector = generate_chat_mic_injector_html(language="ar", widget_id="test_mic_chat")
@@ -1159,8 +1194,9 @@ print("debug")
         self.assertEqual(cleaned, ar_vocalized)
 
     def test_tts_player_mobile_pill_mode(self):
-        # Mode pilule pour smartphone (compact=False)
-        html_pill_fr = generate_tts_player_html("Explication Sanad", language="fr", player_id="test_pill_fr", compact=False)
+        # Mode pilule pour smartphone (compact=False) - vérifié pour les modes client et serveur
+        # 1. Mode client Web Speech API
+        html_pill_fr = generate_tts_player_html("Explication Sanad", language="fr", player_id="test_pill_fr", compact=False, force_server_tts=False)
         self.assertIn("isCompact = false", html_pill_fr)
         self.assertIn("border-radius: 16px", html_pill_fr)
         self.assertIn("wave-bars_test_pill_fr", html_pill_fr)
@@ -1168,10 +1204,25 @@ print("debug")
         self.assertIn("Écouter l'explication", html_pill_fr)
 
         # Mode pilule en arabe (RTL avec justify-content: flex-end)
-        html_pill_ar = generate_tts_player_html("مرحباً يا بطل", language="ar", player_id="test_pill_ar", compact=False)
+        html_pill_ar = generate_tts_player_html("مرحباً يا بطل", language="ar", player_id="test_pill_ar", compact=False, force_server_tts=False)
         self.assertIn("justify-content: flex-end", html_pill_ar)
         self.assertIn("direction: rtl", html_pill_ar)
         self.assertIn("استمع للشرح", html_pill_ar)
+
+        # 2. Mode serveur gTTS
+        html_srv_pill_fr = generate_tts_player_html("Explication Sanad", language="fr", player_id="test_srv_pill_fr", compact=False, force_server_tts=True)
+        self.assertIn("<audio id=\"audio_test_srv_pill_fr\"", html_srv_pill_fr)
+        self.assertIn("data:audio/mp3;base64,", html_srv_pill_fr)
+        self.assertIn("border-radius: 16px", html_srv_pill_fr)
+        self.assertIn("wave-bars_test_srv_pill_fr", html_srv_pill_fr)
+        self.assertIn("justify-content: flex-start", html_srv_pill_fr)
+        self.assertIn("Écouter l'explication", html_srv_pill_fr)
+
+        html_srv_pill_ar = generate_tts_player_html("مرحباً يا بطل", language="ar", player_id="test_srv_pill_ar", compact=False, force_server_tts=True)
+        self.assertIn("<audio id=\"audio_test_srv_pill_ar\"", html_srv_pill_ar)
+        self.assertIn("justify-content: flex-end", html_srv_pill_ar)
+        self.assertIn("direction: rtl", html_srv_pill_ar)
+        self.assertIn("استمع للشرح", html_srv_pill_ar)
 
     def test_arabic_tutor_system_instruction_requires_tashkeel(self):
         with patch("services.ai_engine.call_llm") as mock_llm:

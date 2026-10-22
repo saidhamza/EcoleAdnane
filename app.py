@@ -2004,10 +2004,11 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
 
         st.divider()
 
-        st.markdown("### 🎙️ Voix de Sanad & Dictée Vocale (Web Speech API)")
+        st.markdown("### 🎙️ Voix de Sanad & Dictée Vocale")
         st.markdown(
             "Le tuteur socratique Sanad peut lire ses explications à voix haute et vous permettre de lui parler au micro. "
-            "Cette technologie s'exécute **100% dans votre navigateur** : **elle ne consomme aucun jeton de votre quota Gemini et est totalement gratuite.**"
+            "Cette technologie s'exécute avec **0 jeton consommé sur votre quota Gemini (100% gratuit)** : "
+            "synthèse audio haute qualité générée côté serveur sous Linux via gTTS, et via la Web Speech API native sur les autres appareils (Windows, Mac, smartphones)."
         )
         col_test_v1, col_test_v2, col_test_v3 = st.columns(3)
         with col_test_v1:

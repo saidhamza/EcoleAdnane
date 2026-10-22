@@ -9,10 +9,20 @@ Fournit :
 6. Zéro consommation de quota ou de jetons Google Gemini (100% gratuit côté client).
 """
 
+import base64
+import hashlib
 import html
+import io
 import json
+import logging
+import platform
 import re
-from typing import Any, Dict
+import sys
+from typing import Any, Dict, Optional
+
+logger = logging.getLogger(__name__)
+
+_TTS_MEMORY_CACHE: Dict[str, str] = {}
 
 
 def clean_text_for_speech(text: str) -> str:
@@ -123,8 +133,261 @@ SVG_STOP = """<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor
 SVG_MIC = """<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg>"""
 
 
-def generate_tts_player_html(
-    text: str,
+def is_linux_platform() -> bool:
+    """
+    Vérifie si le serveur de l'application s'exécute sous un système d'exploitation Linux.
+    Permet d'activer la génération audio côté serveur car les navigateurs sous Linux
+    ne disposent généralement pas de voix Web Speech API intégrées.
+    """
+    return sys.platform.startswith("linux") or platform.system().lower() == "linux"
+
+
+def get_server_tts_audio_base64(text: str, language: str = "fr") -> Optional[str]:
+    """
+    Génère un flux audio MP3 encodé en base64 via gTTS côté serveur.
+    Coût : 0 token / 0 quota Gemini (utilise l'API publique Google Translate TTS).
+    Met en cache les résultats en mémoire vive (hash SHA256) pour une latence quasi-nulle lors des réécoutes.
+    """
+    if not text or not text.strip():
+        return None
+
+    cleaned = clean_text_for_speech(text)
+    if not cleaned:
+        return None
+
+    lang = (language or "fr").lower().strip()
+    gtts_lang = "ar" if lang.startswith("ar") else ("en" if lang.startswith("en") else "fr")
+
+    cache_key = hashlib.sha256(f"{gtts_lang}:{cleaned}".encode("utf-8")).hexdigest()
+    if cache_key in _TTS_MEMORY_CACHE:
+        return _TTS_MEMORY_CACHE[cache_key]
+
+    try:
+        from gtts import gTTS
+    except ImportError:
+        logger.warning("gTTS n'est pas installé dans l'environnement Python.")
+        return None
+
+    try:
+        mp3_fp = io.BytesIO()
+        tts = gTTS(text=cleaned, lang=gtts_lang, slow=False)
+        tts.write_to_fp(mp3_fp)
+        mp3_fp.seek(0)
+        b64_audio = base64.b64encode(mp3_fp.read()).decode("ascii")
+        data_uri = f"data:audio/mp3;base64,{b64_audio}"
+
+        if len(_TTS_MEMORY_CACHE) > 200:
+            first_key = next(iter(_TTS_MEMORY_CACHE))
+            _TTS_MEMORY_CACHE.pop(first_key, None)
+
+        _TTS_MEMORY_CACHE[cache_key] = data_uri
+        return data_uri
+    except Exception as e:
+        logger.warning(f"Échec de la génération audio serveur gTTS : {e}")
+        return None
+
+
+def _generate_server_audio_player_html(
+    data_uri: str,
+    language: str = "fr",
+    player_id: str = "sanad_voice",
+    rate: float = 1.0,
+    compact: bool = True,
+    auto_play: bool = False,
+) -> str:
+    """
+    Génère le lecteur audio HTML5 autonome pour la lecture des flux audio MP3 générés côté serveur.
+    Offre une interface et des animations strictement identiques au lecteur Web Speech API client.
+    """
+    cfg = get_speech_config(language)
+    tooltip_play = cfg["tooltip_play"]
+    tooltip_stop = cfg["tooltip_stop"]
+    direction = cfg["dir"]
+    clean_id = re.sub(r"[^a-zA-Z0-9_]", "_", player_id)
+
+    if compact:
+        btn_content = SVG_SPEAKER
+        btn_style = (
+            "display: inline-flex; align-items: center; justify-content: center; "
+            "width: 32px; height: 32px; border-radius: 8px; "
+            "color: #2563eb; background: #eff6ff; border: 1px solid #bfdbfe; "
+            "cursor: pointer; transition: all 0.2s ease; padding: 0; box-shadow: 0 1px 2px rgba(0,0,0,0.05);"
+        )
+    else:
+        btn_content = f"{SVG_SPEAKER} <span id='label_{clean_id}' style='margin-left: 6px; margin-right: 6px;'>{cfg['play_label']}</span>"
+        btn_style = (
+            "display: inline-flex; align-items: center; justify-content: center; gap: 6px; "
+            "padding: 5px 14px; height: 32px; font-size: 12.5px; font-weight: 500; "
+            "color: #1e40af; background: #eff6ff; border: 1px solid #bfdbfe; "
+            "border-radius: 16px; cursor: pointer; transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); "
+            "box-shadow: 0 1px 2px rgba(37, 99, 235, 0.08); -webkit-tap-highlight-color: transparent;"
+        )
+
+    justify_style = "flex-end" if direction == "rtl" else "flex-start"
+
+    html_code = f"""
+    <div id="wrapper_{clean_id}" style="display: flex; align-items: center; justify-content: {justify_style}; margin: 3px 0 0 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; direction: {direction};">
+      <style>
+        #btn_{clean_id}:hover {{
+          transform: translateY(-1px);
+          background: #dbeafe !important;
+          border-color: #93c5fd !important;
+        }}
+        @keyframes pulseAudio_{clean_id} {{
+          0% {{ box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.35); }}
+          70% {{ box-shadow: 0 0 0 6px rgba(220, 38, 38, 0); }}
+          100% {{ box-shadow: 0 0 0 0 rgba(220, 38, 38, 0); }}
+        }}
+        .speaking-active_{clean_id} {{
+          animation: pulseAudio_{clean_id} 1.6s infinite;
+        }}
+        @keyframes soundWave_{clean_id} {{
+          0% {{ height: 3px; }}
+          100% {{ height: 12px; }}
+        }}
+        .wave-bars_{clean_id} {{
+          display: inline-flex;
+          align-items: center;
+          gap: 2px;
+          height: 12px;
+          margin: 0 4px;
+        }}
+        .wave-bar_{clean_id} {{
+          width: 2px;
+          background: #dc2626;
+          border-radius: 1px;
+          height: 3px;
+          animation: soundWave_{clean_id} 0.6s ease-in-out infinite alternate;
+        }}
+        .wave-bar_{clean_id}:nth-child(1) {{ animation-delay: 0.1s; }}
+        .wave-bar_{clean_id}:nth-child(2) {{ animation-delay: 0.3s; }}
+        .wave-bar_{clean_id}:nth-child(3) {{ animation-delay: 0.15s; }}
+        .wave-bar_{clean_id}:nth-child(4) {{ animation-delay: 0.35s; }}
+      </style>
+
+      <audio id="audio_{clean_id}" preload="auto" src="{data_uri}"></audio>
+
+      <button id="btn_{clean_id}" 
+              onclick="toggleAudio_{clean_id}()" 
+              title="{html.escape(tooltip_play)}"
+              style="{btn_style}">
+        <span id="icon_container_{clean_id}" style="display: flex; align-items: center; justify-content: center;">
+          {btn_content}
+        </span>
+      </button>
+
+      <script>
+        (function() {{
+          const audio = document.getElementById("audio_{clean_id}");
+          const isCompact = {'true' if compact else 'false'};
+          const shouldAutoPlay = {'true' if auto_play else 'false'};
+          const rateVal = {rate};
+
+          const svgSpeaker = `{SVG_SPEAKER}`;
+          const svgStop = `{SVG_STOP}`;
+
+          if (audio) {{
+            try {{ audio.playbackRate = rateVal; }} catch(e) {{}}
+          }}
+
+          function setIdleUI() {{
+            const btn = document.getElementById("btn_{clean_id}");
+            const icn = document.getElementById("icon_container_{clean_id}");
+            if (btn) {{
+              btn.title = "{html.escape(tooltip_play)}";
+              btn.classList.remove("speaking-active_{clean_id}");
+              btn.style.background = "#eff6ff";
+              btn.style.borderColor = "#bfdbfe";
+              btn.style.color = "#2563eb";
+              if (isCompact) {{
+                btn.style.borderRadius = "8px";
+              }} else {{
+                btn.style.borderRadius = "16px";
+              }}
+            }}
+            if (icn) {{
+              if (isCompact) {{
+                icn.innerHTML = svgSpeaker;
+              }} else {{
+                icn.innerHTML = svgSpeaker + " <span id='label_{clean_id}' style='margin-left:6px; margin-right:6px;'>{cfg['play_label']}</span>";
+              }}
+            }}
+          }}
+
+          function setSpeakingUI() {{
+            const btn = document.getElementById("btn_{clean_id}");
+            const icn = document.getElementById("icon_container_{clean_id}");
+            if (btn) {{
+              btn.title = "{html.escape(tooltip_stop)}";
+              btn.classList.add("speaking-active_{clean_id}");
+              btn.style.background = "#fee2e2";
+              btn.style.borderColor = "#fca5a5";
+              btn.style.color = "#dc2626";
+              if (isCompact) {{
+                btn.style.borderRadius = "8px";
+              }} else {{
+                btn.style.borderRadius = "16px";
+              }}
+            }}
+            if (icn) {{
+              if (isCompact) {{
+                icn.innerHTML = svgStop;
+              }} else {{
+                icn.innerHTML = svgStop + " <span id='label_{clean_id}' style='margin-left:6px; margin-right:6px;'>{cfg['stop_label']}</span><span class='wave-bars_{clean_id}'><span class='wave-bar_{clean_id}'></span><span class='wave-bar_{clean_id}'></span><span class='wave-bar_{clean_id}'></span><span class='wave-bar_{clean_id}'></span></span>";
+              }}
+            }}
+          }}
+
+          if (audio) {{
+            audio.onplay = setSpeakingUI;
+            audio.onpause = setIdleUI;
+            audio.onended = setIdleUI;
+            audio.onerror = setIdleUI;
+          }}
+
+          window.toggleAudio_{clean_id} = function() {{
+            if (!audio) return;
+            if (!audio.paused && !audio.ended) {{
+              audio.pause();
+              audio.currentTime = 0;
+              setIdleUI();
+            }} else {{
+              try {{
+                document.querySelectorAll('audio').forEach(function(a) {{
+                  if (a !== audio && !a.paused) {{
+                    a.pause();
+                    a.currentTime = 0;
+                  }}
+                }});
+              }} catch(e) {{}}
+              try {{ audio.playbackRate = rateVal; }} catch(e) {{}}
+              audio.play().catch(function(err) {{
+                console.warn("Lecture audio bloquée ou échouée:", err);
+                setIdleUI();
+              }});
+            }}
+          }};
+
+          if (shouldAutoPlay && audio) {{
+            setTimeout(function() {{
+              if (audio.paused) {{
+                window.toggleAudio_{clean_id}();
+              }}
+            }}, 350);
+          }}
+
+          window.addEventListener('beforeunload', function() {{
+            if (audio && !audio.paused) audio.pause();
+          }});
+        }})();
+      </script>
+    </div>
+    """
+    return html_code
+
+
+def _generate_client_tts_player_html(
+    cleaned: str,
     language: str = "fr",
     player_id: str = "sanad_voice",
     rate: float = 1.0,
@@ -133,16 +396,8 @@ def generate_tts_player_html(
     auto_play: bool = False,
 ) -> str:
     """
-    Génère un composant HTML/JavaScript autonome et réactif pour la synthèse vocale.
-    - Mode pilule (compact=False) : design moderne sous le message avec égaliseur animé.
-    - Mode icône (compact=True) : bouton carré 32x32px.
-    Supporte la lecture automatique (auto_play=True).
-    Coût : 0 token Gemini, latence 0ms, 100% gratuit.
+    Génère le composant HTML/JavaScript autonome basé sur la Web Speech API native du navigateur client.
     """
-    cleaned = clean_text_for_speech(text)
-    if not cleaned:
-        return ""
-
     cfg = get_speech_config(language)
     lang_code = cfg["lang_code"]
     tooltip_play = cfg["tooltip_play"]
@@ -374,6 +629,56 @@ def generate_tts_player_html(
     </div>
     """
     return html_code
+
+
+def generate_tts_player_html(
+    text: str,
+    language: str = "fr",
+    player_id: str = "sanad_voice",
+    rate: float = 1.0,
+    pitch: float = 1.0,
+    compact: bool = True,
+    auto_play: bool = False,
+    force_server_tts: Optional[bool] = None,
+) -> str:
+    """
+    Génère un composant HTML/JavaScript autonome et réactif pour la synthèse vocale.
+    - Sous Linux : génère le flux audio MP3 côté serveur via gTTS (100% gratuit, 0 quota Gemini,
+      compatibilité parfaite avec tous les navigateurs Linux qui ne disposent pas de Web Speech API native).
+    - Hors Linux (Windows, macOS, iOS, Android) : utilise la Web Speech API native du navigateur client.
+    - Mode pilule (compact=False) : design moderne sous le message avec égaliseur animé.
+    - Mode icône (compact=True) : bouton carré 32x32px.
+    Supporte la lecture automatique (auto_play=True) et le paramètre force_server_tts.
+    Coût : 0 token Gemini, 100% gratuit.
+    """
+    cleaned = clean_text_for_speech(text)
+    if not cleaned:
+        return ""
+
+    use_server = force_server_tts if force_server_tts is not None else is_linux_platform()
+
+    if use_server:
+        data_uri = get_server_tts_audio_base64(cleaned, language=language)
+        if data_uri:
+            return _generate_server_audio_player_html(
+                data_uri=data_uri,
+                language=language,
+                player_id=player_id,
+                rate=rate,
+                compact=compact,
+                auto_play=auto_play,
+            )
+        logger.info("Repli sur le lecteur Web Speech API client suite à une indisponibilité audio serveur.")
+
+    return _generate_client_tts_player_html(
+        cleaned=cleaned,
+        language=language,
+        player_id=player_id,
+        rate=rate,
+        pitch=pitch,
+        compact=compact,
+        auto_play=auto_play,
+    )
 
 
 def generate_chat_mic_injector_html(language: str = "fr", widget_id: str = "chat_mic") -> str:
