@@ -33,6 +33,8 @@ try:
         not hasattr(models.database, "get_pedagogical_cycle")
         or not hasattr(models.database, "update_user_age")
         or not hasattr(models.database, "update_user_name")
+        or not hasattr(models.database, "get_course_mindmap")
+        or not hasattr(models.database, "evaluate_and_sync_concept_mastery")
     ):
         models.database = importlib.reload(models.database)
     from models.database import (
@@ -42,12 +44,15 @@ try:
         delete_course,
         delete_user_account,
         delete_user_session,
+        evaluate_and_sync_concept_mastery,
         get_chat_history,
         get_course_by_id,
+        get_course_mindmap,
         get_global_admin_kpis,
         get_latest_quiz,
         get_pedagogical_cycle,
         get_quiz_stats,
+        get_student_concept_mastery,
         get_user_by_id,
         get_user_count,
         get_user_from_session_token,
@@ -55,7 +60,9 @@ try:
         init_db,
         list_courses,
         list_users,
+        save_concept_mastery,
         save_course,
+        save_course_mindmap,
         save_quiz,
         save_quiz_attempt,
         set_user_blocked_status,
@@ -72,18 +79,23 @@ except ImportError:
     from models.database import (
         add_chat_message,
         clear_chat_history,
+        create_user_session,
         delete_course,
         delete_user_account,
+        delete_user_session,
         evaluate_and_sync_concept_mastery,
         get_chat_history,
         get_course_by_id,
         get_course_mindmap,
         get_global_admin_kpis,
         get_latest_quiz,
+        get_pedagogical_cycle,
         get_quiz_stats,
         get_student_concept_mastery,
         get_user_by_id,
         get_user_count,
+        get_user_from_session_token,
+        get_user_setting,
         init_db,
         list_courses,
         list_users,
@@ -93,8 +105,11 @@ except ImportError:
         save_quiz,
         save_quiz_attempt,
         set_user_blocked_status,
+        set_user_setting,
         update_course_metadata,
         update_course_summary,
+        update_user_age,
+        update_user_name,
         update_user_role,
     )
     if hasattr(models.database, "get_pedagogical_cycle"):
@@ -125,7 +140,10 @@ except ImportError:
 # Safe, hot-reload resilient import of services.ai_engine
 try:
     import services.ai_engine
-    if not hasattr(services.ai_engine, "generate_quiz"):
+    if (
+        not hasattr(services.ai_engine, "generate_quiz")
+        or not hasattr(services.ai_engine, "generate_course_mindmap")
+    ):
         services.ai_engine = importlib.reload(services.ai_engine)
     from services.ai_engine import (
         classify_and_extract_metadata,
