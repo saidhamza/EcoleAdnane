@@ -603,40 +603,165 @@ Structure la fiche en Markdown clair et aéré en utilisant ces sections précis
 # 2b. Génération de Schéma Mindmap / Brainstorming (Mermaid.js)
 # ---------------------------------------------------------------------------
 
-def _fallback_mindmap(title: str, subject: str = "") -> str:
-    """Schéma Mermaid de secours par défaut si la génération LLM échoue."""
-    safe_title = re.sub(r'[()\[\]{}"\':;]', ' ', title).strip() or "Cours"
-    safe_subject = re.sub(r'[()\[\]{}"\':;]', ' ', subject).strip() or "Matière"
-    return f"""mindmap
-  root(({safe_title[:35]}))
-    Notions Fondamentales
-      Définitions clés
-      Vocabulaire essentiel
-    Propriétés et Formules
-      Règles d'application
-      Méthode de calcul
-    Méthodologie
-      Démarche de résolution
-      Vérification des étapes
-    Pièges d'Examen
-      Erreurs fréquentes à éviter
-      Astuces pour les points"""
+def convert_mermaid_to_markdown(mermaid_code: str, default_title: str = "Cours") -> str:
+    """
+    Convertit un ancien schéma Mermaid mindmap en structure Markdown Markmap réactive.
+    Permet la rétrocompatibilité immédiate avec les cartes créées précédemment.
+    """
+    lines = mermaid_code.strip().splitlines()
+    md_lines: List[str] = []
+    root_title = default_title
+
+    for line in lines:
+        stripped = line.strip()
+        if not stripped or stripped.lower() == "mindmap":
+            continue
+
+        if "root((" in stripped:
+            m = re.search(r"root\(\((.*?)\)\)", stripped)
+            if m:
+                root_title = m.group(1).strip()
+            md_lines.append(f"# {root_title}")
+            continue
+
+        indent = len(line) - len(line.lstrip(" "))
+        clean_text = re.sub(r"^[-*+]\s*", "", stripped)
+        clean_text = re.sub(r'[()\[\]{}"\':;]', ' ', clean_text)
+        clean_text = re.sub(r"\s+", " ", clean_text).strip()
+        if not clean_text:
+            continue
+
+        if indent <= 4:
+            md_lines.append(f"## {clean_text}")
+        elif indent <= 6:
+            md_lines.append(f"### {clean_text}")
+        else:
+            md_lines.append(f"- {clean_text}")
+
+    if not md_lines:
+        return f"# {root_title}\n## Notions Clés\n- Contenu du cours"
+
+    if not md_lines[0].startswith("# "):
+        md_lines.insert(0, f"# {root_title}")
+
+    return "\n".join(md_lines)
+
+
+def _fallback_mindmap(title: str, subject: str = "", summary_text: str = "") -> str:
+    """
+    Génère une carte mentale Markdown Markmap hiérarchique, riche et auto-suffisante pour l'apprentissage.
+    Exclut rigoureusement tout placeholder générique ('Pièges d'examen', 'Méthode d'application').
+    """
+    safe_title = re.sub(r'[#*`]', '', title).strip() or "Leçon"
+    safe_subject = re.sub(r'[#*`]', '', subject).strip()
+
+    # Si un texte de synthèse ou de cours est disponible, tenter d'extraire des sous-parties réelles
+    sections: List[Tuple[str, List[str]]] = []
+    if summary_text:
+        raw_bullets = re.findall(r"^[-*•]\s*\*\*([^*:\n]{3,65})\*\*\s*:\s*([^\n]+)", summary_text, flags=re.MULTILINE)
+        if raw_bullets:
+            grouped_bullets: List[str] = []
+            for b_name, b_desc in raw_bullets[:6]:
+                clean_name = re.sub(r"^[0-9\.\)\-\s]+", "", b_name.strip())
+                clean_name_lower = clean_name.lower()
+                if "piège" not in clean_name_lower and "méthode d" not in clean_name_lower:
+                    grouped_bullets.append(f"- **{clean_name}** : {b_desc.strip()[:140]}")
+            if grouped_bullets:
+                sections.append((f"Notions Clés de {safe_title}", grouped_bullets))
+
+    if not sections:
+        header = f"# {safe_title}" + (f" ({safe_subject})" if safe_subject else "")
+        return f"""{header}
+## 1. Définition & Notions Fondamentales
+- **Cadre & Objet d'étude** : Définition formelle, notations et vocabulaire de {safe_title}
+- **Concepts centraux** : Notions indispensables pour comprendre et manipuler {safe_title}
+## 2. Propriétés Majeures & Formules
+- **Règles fondamentales** : Énoncé précis des propriétés et théorèmes directeurs
+- **Conditions de validité** : Hypothèses obligatoires avant d'appliquer les relations
+## 3. Démarche de Résolution & Exemples Pratiques
+- **Méthode pas-à-pas** : 1. Analyser les données ; 2. Citer la propriété ; 3. Calculer avec rigueur
+- **Cas d'application type** : Modèle résolu avec formulation des étapes intermédiaires
+## 4. Vérifications & Points de Vigilance
+- **Contrôle de vraisemblance** : Vérification des unités, du signe et de l'ordre de grandeur
+- **Raisonnement & Rédaction** : Justifications complètes attendues lors des examens"""
+
+    header = f"# {safe_title}" + (f" ({safe_subject})" if safe_subject else "")
+    lines = [header]
+    for sec_title, sec_bullets in sections:
+        lines.append(f"## {sec_title}")
+        lines.extend(sec_bullets)
+    return "\n".join(lines)
+
+
+def clean_interactive_mindmap_markdown(
+    raw_output: str,
+    default_title: str = "Cours",
+    default_subject: str = "",
+    summary_text: str = "",
+) -> str:
+    """
+    Nettoie et valide la sortie brute LLM pour garantir une carte mentale Markdown hiérarchique
+    riche, interactive et compatible Markmap (D3.js).
+    """
+    if not raw_output:
+        return _fallback_mindmap(default_title, default_subject, summary_text)
+
+    cleaned = raw_output.strip()
+
+    # Si le texte renvoyé est au format Mermaid mindmap, le convertir automatiquement
+    if cleaned.startswith("mindmap") or "root((" in cleaned:
+        return convert_mermaid_to_markdown(cleaned, default_title=default_title)
+
+    # Retirer les blocs markdown ```markdown ou ```
+    cleaned = re.sub(r"^```(?:markdown|markmap)?\s*", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\s*```$", "", cleaned)
+    cleaned = cleaned.strip()
+
+    lines = [l.rstrip() for l in cleaned.splitlines() if l.strip()]
+    if not lines:
+        return _fallback_mindmap(default_title, default_subject, summary_text)
+
+    sanitized: List[str] = []
+    has_h1 = False
+
+    for line in lines:
+        line_lower = line.lower().strip()
+        # Filtrer les méta-catégories génériques solitaires
+        if re.search(r"^(?:#{1,3}|[-*•])\s*(?:pi[èe]ges?\s+d['’]examen|m[ée]thode\s+d['’]application|فخاخ\s+الامتحان)\s*$", line_lower):
+            continue
+
+        if line.startswith("# "):
+            has_h1 = True
+            sanitized.append(line)
+        elif line.startswith("## ") or line.startswith("### ") or line.startswith("#### "):
+            sanitized.append(line)
+        elif line.strip().startswith("- ") or line.strip().startswith("* ") or line.strip().startswith("+ "):
+            sanitized.append(line)
+        else:
+            sanitized.append(f"- {line.strip()}")
+
+    if not has_h1:
+        sanitized.insert(0, f"# {default_title}")
+
+    if len(sanitized) <= 2:
+        return _fallback_mindmap(default_title, default_subject, summary_text)
+
+    return "\n".join(sanitized)
 
 
 def clean_mermaid_mindmap(raw_output: str, default_title: str = "Cours", default_subject: str = "") -> str:
     """
-    Nettoie et valide la sortie brute LLM pour garantir une syntaxe Mermaid mindmap valide.
+    Nettoie et valide la sortie brute LLM pour garantir une syntaxe Mermaid mindmap valide (legacy).
     """
     if not raw_output:
-        return _fallback_mindmap(default_title, default_subject)
+        safe_title = re.sub(r'[()\[\]{}"\':;]', ' ', default_title).strip() or "Cours"
+        return f"mindmap\n  root(({safe_title}))\n    Notions Clés\n      Concepts essentiels\n    Propriétés\n      Règles et Formules"
 
     cleaned = raw_output.strip()
-    # Retirer les blocs markdown ```mermaid ou ```
     cleaned = re.sub(r"^```(?:mermaid|mindmap)?\s*", "", cleaned, flags=re.IGNORECASE)
     cleaned = re.sub(r"\s*```$", "", cleaned)
     cleaned = cleaned.strip()
 
-    # Trouver la position où 'mindmap' commence
     idx = cleaned.find("mindmap")
     if idx != -1:
         cleaned = cleaned[idx:]
@@ -645,7 +770,8 @@ def clean_mermaid_mindmap(raw_output: str, default_title: str = "Cours", default
 
     lines = cleaned.splitlines()
     if not lines or lines[0].strip() != "mindmap":
-        return _fallback_mindmap(default_title, default_subject)
+        safe_title = re.sub(r'[()\[\]{}"\':;]', ' ', default_title).strip() or "Cours"
+        return f"mindmap\n  root(({safe_title}))\n    Notions Clés\n      Concepts essentiels\n    Propriétés\n      Règles et Formules"
 
     sanitized_lines = ["mindmap"]
     for line in lines[1:]:
@@ -670,7 +796,8 @@ def clean_mermaid_mindmap(raw_output: str, default_title: str = "Cours", default
             sanitized_lines.append(f"{indent_str}{node_text[:50]}")
 
     if len(sanitized_lines) <= 2:
-        return _fallback_mindmap(default_title, default_subject)
+        safe_title = re.sub(r'[()\[\]{}"\':;]', ' ', default_title).strip() or "Cours"
+        return f"mindmap\n  root(({safe_title}))\n    Notions Clés\n      Concepts essentiels\n    Propriétés\n      Règles et Formules"
 
     return "\n".join(sanitized_lines)
 
@@ -683,71 +810,91 @@ def generate_course_mindmap(
     user_id: Optional[int] = None,
 ) -> str:
     """
-    Génère la syntaxe Mermaid mindmap structurant le cours sous forme de carte mentale / brainstorming.
-    S'appuie en priorité sur la fiche express ou l'extrait textuel pour minimiser la consommation de tokens.
+    Génère une carte mentale interactive Markmap (D3.js) hiérarchique, riche et auto-suffisante
+    pour l'apprentissage autonome de la leçon.
+    Exclut rigoureusement les méta-catégories génériques au profit des notions réelles et concrètes.
     """
-    excerpt = course_text_or_summary[:4000] if course_text_or_summary else course_title
+    excerpt = course_text_or_summary[:4500] if course_text_or_summary else course_title
 
     if language == "ar":
         sys_prompt = (
-            "أنت أستاذ خبير ومصمم خرائط ذهنية وبيداغوجية لمساعدة التلاميذ على الحفظ والفهم السريع.\n"
-            "مهمتك تحويل الدرس إلى خريطة ذهنية بصيغة Mermaid mindmap دقيقة، مرتبة، واضحة وخالية من أخطاء التركيب.\n"
-            "قواعد إلزامية:\n"
-            "1. ابدأ مباشرة بالكلمة mindmap بدون أي مقدمات أو شروح.\n"
-            "2. اجعل العقدة المركزية root((عنوان الدرس)).\n"
-            "3. أنشئ 3 إلى 5 فروع رئيسية (المفاهيم الأساسية، القواعد والصيغ، طريقة التطبيق، فخاخ الامتحانات).\n"
-            "4. تحت كل فرع، أضف 2 إلى 3 تفرعات فرعية موجزة (كلمتان إلى 5 كلمات لكل عقدة).\n"
-            "5. لا تستخدم أقواس () أو عوارض [] أو علامات تنصيص داخل نصوص العقد تجنباً لأخطاء Mermaid."
+            "أنت أستاذ خبير ومصمم خرائط ذهنية وبيداغوجية تفاعلية لمساعدة التلاميذ على الفهم والحفظ الذاتي الشامل.\n"
+            "مهمتك تحويل الدرس إلى خريطة ذهنية تفاعلية متكاملة ومستقلة بذاتها (Auto-suffisante) بصيغة Markdown Markmap.\n"
+            "يجب أن يتمكن التلميذ من استيعاب وفهم كامل تفاصيل الدرس بمجرد تصفح هذه الخريطة.\n"
+            "قواعد صارمة وإلزامية:\n"
+            "1. هيكلة Markdown دقيقة ومكتملة:\n"
+            "   - العنوان الرئيسي (# عنوان الدرس)\n"
+            "   - 3 إلى 5 محاور دراسية حقيقية للدرس (## 1. المفهوم الحقيقي الأول، ## 2. الخاصية أو المبرهنة، إلخ)\n"
+            "   - تفرعات فرعية (### التعريف والقاعدة، ### مثال تطبيقي مفصل، ### الحساب والبرهان)\n"
+            "   - عناصر مشروحة بالتفصيل (- **العنصر الأساسي**: شرح مفصل وكافٍ لتعلم الخاصية وتطبيقها)\n"
+            "2. منع التصنيفات العامة الجوفاء: يمنع منعاً باتاً وضع عناوين عامة فارغة مثل 'فخاخ الامتحانات' أو 'طريقة التطبيق' أو 'المفاهيم الأساسية' مجردة. يجب أن تكون جميع الفروع مبنية على مضامين ومفاهيم الدرس الحقيقية.\n"
+            "3. محتوى غني وتوضيحي: كتابة القواعد والصيغ بدقة، مع خطوات التطبيق وأمثلة عددية واضحة.\n"
+            "4. أخرج فقط نص Markdown للخريطة الذهنية بدون أي مقدمات أو علامات كود زائدة."
         )
         user_prompt = f"""
-قم بإنشاء خريطة ذهنية Mermaid mindmap لدرس: {course_title} (مادة: {subject}).
+قم بإنشاء خريطة ذهنية بيداغوجية تفاعلية ومفصلة بصيغة Markdown Markmap لدرس: {course_title} (مادة: {subject}).
 محتوى الدرس أو ملخصه:
 ---
 {excerpt}
 ---
-أخرج كود Mermaid mindmap فقط:
+نص Markdown للخريطة الذهنية التفاعلية:
 """
     elif language == "en":
         sys_prompt = (
-            "You are an expert educator and visual learning designer.\n"
-            "Your task is to convert the course content into a clean, hierarchical Mermaid mindmap.\n"
+            "You are an expert educator and visual learning designer specialized in interactive mind maps (Markmap).\n"
+            "Your mission is to transform the lesson into a COMPREHENSIVE, SELF-CONTAINED interactive mind map in Markdown format.\n"
+            "A student must be able to LEARN AND MASTER the entire lesson autonomously simply by exploring this diagram.\n"
             "Strict rules:\n"
-            "1. Output ONLY valid Mermaid mindmap syntax, starting with 'mindmap' on the first line.\n"
-            "2. Root node format: root((Course Title))\n"
-            "3. 3 to 5 main branches (Core Concepts, Rules and Formulas, Application Method, Exam Pitfalls).\n"
-            "4. 2 to 3 concise sub-branches per branch (2 to 6 words per node).\n"
-            "5. DO NOT use unescaped parentheses (), brackets [], braces {}, or quotes within node labels."
+            "1. Strict Markdown hierarchical outline:\n"
+            "   - Root node (# Course Title)\n"
+            "   - 3 to 5 real lesson topics (## 1. Real Concept A, ## 2. Core Theorem / Rule B, etc.)\n"
+            "   - Sub-sections (### Definition & Rule, ### Worked Example, ### Calculation Steps)\n"
+            "   - Detailed bullets (- **Key term** : Clear, self-contained explanation with formulas and context)\n"
+            "2. NO GENERIC PLACEHOLDERS: Do NOT use empty meta-labels like 'Exam Pitfalls', 'Application Method', or 'Core Concepts' in isolation. Every branch must name a specific subject topic.\n"
+            "3. Deep pedagogical value: Provide exact definitions, conditions, formulas, step-by-step procedures, and concrete examples.\n"
+            "4. Return ONLY the Markdown outline, without intro/outro commentary, and without code fences."
         )
         user_prompt = f"""
-Generate a Mermaid mindmap for the course: {course_title} (Subject: {subject}).
+Generate a comprehensive, self-contained interactive Markmap Markdown mind map for the course: {course_title} (Subject: {subject}).
 Content / Summary:
 ---
 {excerpt}
 ---
-Mermaid mindmap code:
+Markmap Markdown code:
 """
     else:  # fr
         sys_prompt = (
-            "Tu es un professeur pédagogue expert en pensée visuelle et cartes mentales (Mind Mapping).\n"
-            "Ta mission est de transformer le cours en une carte mentale structurée au format Mermaid mindmap.\n"
-            "Règles strictes :\n"
-            "1. Renvoie UNIQUEMENT le code Mermaid valide, commençant directement par 'mindmap'.\n"
-            "2. Racine centrale sous la forme : root((Titre du Cours))\n"
-            "3. 3 à 5 branches principales (Notions Clés, Propriétés & Formules, Méthode d'Application, Pièges d'Examen).\n"
-            "4. 2 à 3 sous-branches concises par branche (2 à 6 mots par étiquette).\n"
-            "5. N'utilise JAMAIS de parenthèses (), crochets [], accolades {} ou guillemets dans les étiquettes de nœuds."
+            "Tu es un professeur pédagogue d'élite, expert en schématisation visuelle et cartes mentales interactives (Markmap/Mind Mapping).\n"
+            "Ta mission est de structurer le cours sous la forme d'une CARTE MENTALE PÉDAGOGIQUE COMPLÈTE ET AUTO-SUFFISANTE au format Markdown.\n"
+            "L'élève doit pouvoir APPRENDRE ET COMPRENDRE L'INTÉGRALITÉ DE SA LEÇON directement en explorant ce diagramme.\n"
+            "Règles impératives :\n"
+            "1. STRUCTURE HIÉRARCHIQUE STRICTE EN MARKDOWN :\n"
+            "   - Titre principal (# Titre du cours)\n"
+            "   - 3 à 5 branches thématiques réelles du cours (## 1. Notion réelle A, ## 2. Propriété réelle B, etc.)\n"
+            "   - Sous-branches (### Définition & Règle, ### Exemple d'application concret, ### Formule ou Démonstration)\n"
+            "   - Puces détaillées (- **Nom du point clé** : Explication complète, claire et autosuffisante)\n"
+            "2. INTERDICTION DES LABELS GÉNÉRIQUES : N'utilise JAMAIS d'intitulés méta vagues comme 'Pièges d'examen', 'Méthode d'application', 'Notions fondamentales' seuls. Chaque branche doit porter le nom d'une notion réelle du cours (ex: 'Théorème direct de Pythagore', 'Calcul de l'hypoténuse', 'Réciproque pour démontrer un angle droit').\n"
+            "3. RICHESSE PÉDAGOGIQUE & CONTENU AUTO-SUFFISANT :\n"
+            "   - Donne les définitions exactes, les formules complètes, les conditions d'application et les étapes de calcul.\n"
+            "   - Inclus des exemples numériques ou cas types concrets pour chaque notion.\n"
+            "4. FORMAT DE SORTIE : Renvoie UNIQUEMENT le texte Markdown de la carte mentale, sans aucun texte d'introduction ni de conclusion, sans bloc ```markdown."
         )
         user_prompt = f"""
-Génère la carte mentale Mermaid mindmap pour le cours : {course_title} (Matière : {subject}).
+Génère la carte mentale Markdown Markmap complète et auto-suffisante pour le cours : {course_title} (Matière : {subject}).
 Contenu ou résumé du cours :
 ---
 {excerpt}
 ---
-Code Mermaid mindmap :
+Texte Markdown de la carte mentale :
 """
 
     raw = call_llm(user_prompt, system_instruction=sys_prompt, temperature=0.2, user_id=user_id)
-    return clean_mermaid_mindmap(raw, default_title=course_title, default_subject=subject)
+    return clean_interactive_mindmap_markdown(
+        raw,
+        default_title=course_title,
+        default_subject=subject,
+        summary_text=course_text_or_summary,
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -6,6 +6,7 @@ sauvegardes étanches et intégration Google Classroom.
 """
 
 import base64
+import html
 import os
 import sys
 from datetime import datetime
@@ -147,7 +148,9 @@ try:
         services.ai_engine = importlib.reload(services.ai_engine)
     from services.ai_engine import (
         classify_and_extract_metadata,
+        clean_interactive_mindmap_markdown,
         clean_mermaid_mindmap,
+        convert_mermaid_to_markdown,
         generate_course_mindmap,
         generate_quiz,
         generate_revision_sheet,
@@ -158,7 +161,9 @@ except ImportError:
     services.ai_engine = importlib.reload(services.ai_engine)
     from services.ai_engine import (
         classify_and_extract_metadata,
+        clean_interactive_mindmap_markdown,
         clean_mermaid_mindmap,
+        convert_mermaid_to_markdown,
         generate_course_mindmap,
         generate_quiz,
         generate_revision_sheet,
@@ -493,79 +498,165 @@ def get_subject_badge_class(subject: str) -> str:
     return mapping.get(subject, "badge-default")
 
 
-def render_mermaid_mindmap(mermaid_code: str, is_ar: bool = False) -> str:
-    """Génère le composant HTML5 pour afficher un diagramme Mermaid mindmap réactif et interactif."""
-    escaped_code = (
-        mermaid_code.strip()
-        .replace("\\", "\\\\")
-        .replace("`", "\\`")
-    )
+def render_interactive_mindmap(content: str, is_ar: bool = False) -> str:
+    """
+    Génère le composant HTML5 pour afficher une carte mentale interactive ultra-réactive
+    avec Markmap (D3.js), zoom/pan fluide, pliage/dépliage dynamique et mode plein écran.
+    Prend en charge la rétrocompatibilité si un ancien code Mermaid est fourni.
+    """
+    if not content:
+        content = "# Cours\n## Notions Clés\n- Contenu en cours de préparation"
+
+    stripped = content.strip()
+    if stripped.startswith("mindmap") or "root((" in stripped:
+        content = convert_mermaid_to_markdown(content)
+
+    escaped_content = html.escape(content)
     lang_attr = "ar" if is_ar else "fr"
     dir_attr = "rtl" if is_ar else "ltr"
+
+    hint_text = (
+        "💡 انقر على الدوائر لطي أو فتح المفاهيم • اسحب بالماوس للتحريك • استخدم العجلة للتكبير"
+        if is_ar
+        else "💡 Cliquez sur les cercles pour replier/déplier les notions • Glissez pour déplacer la carte • Molette pour zoomer"
+    )
+    fullscreen_label = "⛶ الشاشة الكاملة" if is_ar else "⛶ Plein écran"
+
     return f"""
     <!DOCTYPE html>
     <html lang="{lang_attr}" dir="{dir_attr}">
     <head>
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
       <style>
         * {{
           box-sizing: border-box;
-        }}
-        body {{
           margin: 0;
-          padding: 8px;
-          background: transparent;
-          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-          display: flex;
-          justify-content: center;
-          align-items: center;
+          padding: 0;
         }}
-        .mindmap-wrapper {{
+        html, body {{
           width: 100%;
+          height: 100%;
+          overflow: hidden;
+          background: #ffffff;
+          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        }}
+        #mindmap-card {{
+          position: relative;
+          width: 100%;
+          height: 100%;
+          display: flex;
+          flex-direction: column;
           background: #ffffff;
           border-radius: 12px;
           border: 1px solid rgba(0, 0, 0, 0.08);
-          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.04);
-          padding: 16px;
-          overflow-x: auto;
-          display: flex;
-          justify-content: center;
+          box-shadow: 0 4px 16px rgba(0, 0, 0, 0.04);
+          overflow: hidden;
         }}
-        .mermaid {{
+        .mindmap-topbar {{
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 8px 14px;
+          background: #f8fafc;
+          border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+          font-size: 12px;
+          color: #64748b;
+          z-index: 10;
+        }}
+        .mindmap-hint {{
+          font-weight: 500;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }}
+        .fullscreen-btn {{
+          background: #ffffff;
+          border: 1px solid #cbd5e1;
+          color: #1e293b;
+          padding: 4px 10px;
+          border-radius: 6px;
+          font-size: 12px;
+          font-weight: 600;
+          cursor: pointer;
+          transition: all 0.2s ease;
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+        }}
+        .fullscreen-btn:hover {{
+          background: #f1f5f9;
+          border-color: #94a3b8;
+          transform: translateY(-1px);
+        }}
+        .markmap-container {{
+          flex: 1;
           width: 100%;
-          display: flex;
-          justify-content: center;
-          min-height: 380px;
+          height: calc(100% - 37px);
+          position: relative;
         }}
-        .mermaid svg {{
-          max-width: 100%;
-          height: auto !important;
+        .markmap {{
+          width: 100%;
+          height: 100%;
+        }}
+        .markmap > svg {{
+          width: 100%;
+          height: 100%;
+          display: block;
+        }}
+        .mm-toolbar {{
+          background: rgba(255, 255, 255, 0.95) !important;
+          border-radius: 8px !important;
+          border: 1px solid rgba(0, 0, 0, 0.1) !important;
+          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08) !important;
         }}
       </style>
+      <script>
+        window.markmap = {{
+          autoLoader: {{
+            toolbar: true,
+            manual: false
+          }}
+        }};
+      </script>
+      <script src="https://cdn.jsdelivr.net/npm/markmap-autoloader@0.17.2"></script>
     </head>
     <body>
-      <div class="mindmap-wrapper">
-        <div class="mermaid">
-{escaped_code}
+      <div id="mindmap-card">
+        <div class="mindmap-topbar">
+          <span class="mindmap-hint">{hint_text}</span>
+          <button class="fullscreen-btn" onclick="toggleFullscreen()">{fullscreen_label}</button>
+        </div>
+        <div class="markmap-container">
+          <div class="markmap">
+{escaped_content}
+          </div>
         </div>
       </div>
       <script>
-        try {{
-          mermaid.initialize({{
-            startOnLoad: true,
-            theme: 'default',
-            securityLevel: 'loose',
-            fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
-          }});
-        }} catch(e) {{
-          console.error("Mermaid init error:", e);
+        function toggleFullscreen() {{
+          const el = document.getElementById("mindmap-card");
+          if (!document.fullscreenElement) {{
+            if (el.requestFullscreen) {{
+              el.requestFullscreen();
+            }} else if (el.webkitRequestFullscreen) {{
+              el.webkitRequestFullscreen();
+            }}
+          }} else {{
+            if (document.exitFullscreen) {{
+              document.exitFullscreen();
+            }}
+          }}
         }}
       </script>
     </body>
     </html>
     """
+
+
+def render_mermaid_mindmap(mermaid_code: str, is_ar: bool = False) -> str:
+    """Rétrocompatibilité : redirige vers le moteur de carte mentale interactive Markmap."""
+    return render_interactive_mindmap(mermaid_code, is_ar=is_ar)
 
 
 def render_gemini_key_instructions(expanded: bool = False) -> None:
@@ -1781,13 +1872,13 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
         with tab_schema:
             if is_ar:
                 st.markdown("<div class='rtl-section-title'>🧠 خريطة ذهنية ومخطط الدرس التفاعلي</div>", unsafe_allow_html=True)
-                st.caption("مخطط هيكلي بيداغوجي لربط المفاهيم وتسهيل الحفظ والاستيعاب السريع (100% مجاني ومحفوظ في قاعدة البيانات).")
+                st.caption("خريطة ذهنية تفاعلية بالذكاء الاصطناعي، شاملة ومستقلة بذاتها لتعلم وفهم الدرس كاملاً، مع إمكانية التكبير والتصغير وتوسيع المفاهيم ووضع الشاشة الكاملة.")
             elif is_en:
                 st.markdown("### 🧠 Interactive Course Mind Map")
-                st.caption("Visual brainstorming diagram mapping core branches, formulas and exam traps (persisted in DB).")
+                st.caption("Rich, self-contained interactive mind map for autonomous lesson study. Features expandable nodes, smooth zoom/pan, and fullscreen mode.")
             else:
                 st.markdown("### 🧠 Carte Mentale & Schéma Visuel du Cours")
-                st.caption("Schéma visuel et arborescence du cours pour mémoriser les notions, formules et pièges d'examen (100% gratuit et mis en cache).")
+                st.caption("Carte mentale interactive et auto-suffisante pour apprendre l'intégralité du cours. Nœuds dépliables, zoom/pan fluide et mode plein écran.")
 
             cached_mindmap = get_course_mindmap(current_course["id"]) or current_course.get("mindmap_code")
 
@@ -1816,9 +1907,21 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                             st.success("Carte mentale générée avec succès !" if not is_en else "Mind map generated successfully!")
                             st.rerun()
             else:
-                # Affichage du diagramme Mermaid dans un composant HTML5 isolé et réactif
-                html_component = render_mermaid_mindmap(cached_mindmap, is_ar=is_ar)
-                st.components.v1.html(html_component, height=480, scrolling=True)
+                if cached_mindmap.strip().startswith("mindmap"):
+                    legacy_hint = (
+                        "💡 هذا الدرس يستخدم مخططاً سابقاً. انقر على **🔄 إعادة توليد الخريطة الذهنية** للترقية إلى الخريطة التفاعلية الشاملة الجديدة."
+                        if is_ar
+                        else (
+                            "💡 This course uses an earlier diagram format. Click **🔄 Regenerate Mind Map** to upgrade to the new rich interactive mind map."
+                            if is_en
+                            else "💡 Ce cours dispose d'un schéma Mermaid antérieur. Cliquez sur **🔄 Régénérer la Carte Mentale** pour générer la nouvelle carte interactive enrichie et auto-suffisante."
+                        )
+                    )
+                    st.info(legacy_hint)
+
+                # Affichage de la carte interactive Markmap (D3.js)
+                html_component = render_interactive_mindmap(cached_mindmap, is_ar=is_ar)
+                st.components.v1.html(html_component, height=580, scrolling=False)
 
                 col_map_actions1, col_map_actions2 = st.columns([0.5, 0.5])
                 with col_map_actions1:
@@ -1827,7 +1930,7 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                         if not user_api_key:
                             st.error("⚠️ Clé API Gemini requise." if not is_en else "⚠️ Gemini API key required.")
                         else:
-                            with st.spinner("Régénération du schéma..." if not is_en else "Regenerating..."):
+                            with st.spinner("Régénération de la carte mentale..." if not is_en else "Regenerating..."):
                                 course_content = current_course.get("summary_markdown") or current_course.get("raw_text") or ""
                                 generated_mindmap = generate_course_mindmap(
                                     course_text_or_summary=course_content,
@@ -1840,9 +1943,10 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                                 st.rerun()
 
                 with col_map_actions2:
-                    exp_title = "📋 عرض كود المخطط (Mermaid)" if is_ar else ("📋 View Mermaid Code" if is_en else "📋 Voir le code du schéma")
+                    exp_title = "📋 عرض هيكل المخطط (Markdown)" if is_ar else ("📋 View Mind Map Outline" if is_en else "📋 Voir la structure de la carte")
                     with st.expander(exp_title):
-                        st.code(cached_mindmap, language="mermaid")
+                        code_lang = "mermaid" if cached_mindmap.strip().startswith("mindmap") else "markdown"
+                        st.code(cached_mindmap, language=code_lang)
 
         with tab_notions:
             if is_ar:

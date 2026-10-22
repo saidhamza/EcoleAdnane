@@ -28,6 +28,7 @@ from models.database import (
     delete_user_account,
     delete_user_session,
     evaluate_and_sync_concept_mastery,
+    extract_real_course_concepts,
     get_chat_history,
     get_course_by_hash,
     get_course_by_id,
@@ -44,6 +45,7 @@ from models.database import (
     get_user_count,
     get_user_setting,
     init_db,
+    is_generic_concept,
     list_courses,
     list_users,
     save_concept_mastery,
@@ -63,8 +65,10 @@ from models.database import (
 )
 from services.ai_engine import (
     _fallback_mindmap,
+    clean_interactive_mindmap_markdown,
     clean_json_output,
     clean_mermaid_mindmap,
+    convert_mermaid_to_markdown,
     generate_course_mindmap,
     resolve_student_age,
     socratic_tutor_response,
@@ -1509,10 +1513,119 @@ class TestMindmapAndConceptMastery(unittest.TestCase):
 
     def test_fallback_mindmap_structure(self):
         fb = _fallback_mindmap("Géométrie 3AC", "Mathématiques")
-        self.assertTrue(fb.startswith("mindmap"))
-        self.assertIn("root((Géométrie 3AC))", fb)
-        self.assertIn("Notions Fondamentales", fb)
-        self.assertIn("Propriétés et Formules", fb)
+        self.assertTrue(fb.startswith("# Géométrie 3AC"))
+        self.assertIn("Définition & Notions Fondamentales", fb)
+        self.assertIn("Propriétés Majeures & Formules", fb)
+        self.assertIn("Démarche de Résolution", fb)
+        self.assertNotIn("Pièges d'Examen", fb)
+
+    def test_is_generic_concept(self):
+        # Méta-catégories génériques à proscrire
+        self.assertTrue(is_generic_concept("Pièges d'examen & Erreurs fréquentes"))
+        self.assertTrue(is_generic_concept("Méthode d'application & Démarche de résolution"))
+        self.assertTrue(is_generic_concept("Définitions & Principes fondamentaux (Théorème)"))
+        self.assertTrue(is_generic_concept("Propriétés, Théorèmes et Formules (Maths)"))
+        self.assertTrue(is_generic_concept("فخاخ الامتحانات وأخطاء شائعة"))
+        self.assertTrue(is_generic_concept("طريقة التطبيق ومنهجية الحل"))
+        self.assertTrue(is_generic_concept("Exam Pitfalls & Frequent Traps"))
+        self.assertTrue(is_generic_concept("Propriétés"))
+        self.assertTrue(is_generic_concept("Formules"))
+        self.assertTrue(is_generic_concept(""))
+
+        # Notions réelles et concrètes de cours qui doivent être acceptées
+        self.assertFalse(is_generic_concept("Théorème direct de Pythagore"))
+        self.assertFalse(is_generic_concept("Réciproque du théorème de Thalès"))
+        self.assertFalse(is_generic_concept("Calcul de l'hypoténuse"))
+        self.assertFalse(is_generic_concept("مبرهنة فيتاغورس المباشرة"))
+        self.assertFalse(is_generic_concept("حساب جيب تمام زاوية حادة"))
+        self.assertFalse(is_generic_concept("Newton's Second Law of Motion"))
+
+    def test_extract_real_course_concepts(self):
+        course = {
+            "title": "Théorème de Pythagore",
+            "subject": "Mathématiques",
+            "language": "fr",
+            "summary_markdown": """
+# Fiche Express
+## 1. Propriétés Fondamentales
+- **Théorème direct de Pythagore** : Dans tout triangle rectangle, le carré de l'hypoténuse est égal à la somme des carrés.
+- **Calcul de l'hypoténuse** : Application de la formule $BC = \\sqrt{AB^2 + AC^2}$.
+- **Réciproque du théorème** : Démontrer qu'un triangle est rectangle.
+## ⚠️ Pièges d'examen & Erreurs fréquentes
+- Oublier de vérifier l'angle droit
+""",
+        }
+        concepts = extract_real_course_concepts(course)
+        self.assertIn("Théorème direct de Pythagore", concepts)
+        self.assertIn("Calcul de l'hypoténuse", concepts)
+        self.assertIn("Réciproque du théorème", concepts)
+        for c in concepts:
+            self.assertFalse(is_generic_concept(c), f"Found generic concept: {c}")
+
+    def test_evaluate_and_sync_purges_legacy_generic_concepts(self):
+        pdf_file = Path(self.temp_dir.name) / "cours_generic.pdf"
+        pdf_file.write_bytes(b"%PDF-1.4 Fake")
+        c_id = save_course(
+            title="Racines Carrées",
+            subject="Mathématiques",
+            language="fr",
+            file_path=str(pdf_file),
+            file_hash="hash_generic_01",
+            file_name="racines.pdf",
+            raw_text="Les racines carrées permettent de résoudre des équations de type x² = a.",
+            summary_markdown="## 1. Définition\n- **Racine carrée d'un nombre positif** : Définition de √a.\n- **Propriété du produit** : √(a×b) = √a × √b.\n## ⚠️ Pièges d'examen\nAttention aux nombres négatifs.",
+            key_concepts=[
+                "Définitions & Principes fondamentaux (Racines Carrées)",
+                "Propriétés, Théorèmes et Formules (Mathématiques)",
+                "Méthode d'application & Démarche de résolution",
+                "Pièges d'examen & Erreurs fréquentes",
+            ],
+            user_id=self.student["id"],
+        )
+
+        save_concept_mastery(self.student["id"], c_id, "Pièges d'examen & Erreurs fréquentes", "to_review")
+        save_concept_mastery(self.student["id"], c_id, "Méthode d'application & Démarche de résolution", "in_progress")
+
+        synced = evaluate_and_sync_concept_mastery(self.student["id"], c_id)
+
+        concept_titles = [item["concept_title"] for item in synced]
+        self.assertNotIn("Pièges d'examen & Erreurs fréquentes", concept_titles)
+        self.assertNotIn("Méthode d'application & Démarche de résolution", concept_titles)
+        for t in concept_titles:
+            self.assertFalse(is_generic_concept(t), f"Retained generic concept: {t}")
+
+        db_mastery = get_student_concept_mastery(self.student["id"], c_id)
+        db_titles = [m["concept_title"] for m in db_mastery]
+        self.assertNotIn("Pièges d'examen & Erreurs fréquentes", db_titles)
+        self.assertNotIn("Méthode d'application & Démarche de résolution", db_titles)
+
+    def test_convert_mermaid_to_markdown(self):
+        mermaid_sample = """mindmap
+  root((Théorème de Thalès))
+    Propriétés
+      Calcul de longueurs
+      Rapports égaux
+    Réciproque
+      Prouver le parallélisme"""
+        md = convert_mermaid_to_markdown(mermaid_sample)
+        self.assertTrue(md.startswith("# Théorème de Thalès"))
+        self.assertIn("## Propriétés", md)
+        self.assertIn("### Calcul de longueurs", md)
+        self.assertIn("## Réciproque", md)
+
+    def test_clean_interactive_mindmap_markdown(self):
+        raw = "```markdown\n# Mon Cours\n## Notion 1\n- Point important\n```"
+        cleaned = clean_interactive_mindmap_markdown(raw, default_title="Mon Cours")
+        self.assertTrue(cleaned.startswith("# Mon Cours"))
+        self.assertNotIn("```", cleaned)
+
+        raw_mermaid = "mindmap\n  root((Cours Mermaid))\n    Branche 1"
+        converted = clean_interactive_mindmap_markdown(raw_mermaid)
+        self.assertTrue(converted.startswith("# Cours Mermaid"))
+
+        fb = clean_interactive_mindmap_markdown("", default_title="Physique 3AC", default_subject="Optique")
+        self.assertTrue(fb.startswith("# Physique 3AC"))
+        self.assertIn("Définition & Notions Fondamentales", fb)
 
     def test_save_and_get_concept_mastery(self):
         save_concept_mastery(

@@ -57,6 +57,8 @@ __all__ = [
     "get_student_concept_mastery",
     "save_concept_mastery",
     "evaluate_and_sync_concept_mastery",
+    "is_generic_concept",
+    "extract_real_course_concepts",
     "get_setting",
     "set_setting",
     "get_user_setting",
@@ -1658,30 +1660,163 @@ def save_concept_mastery(
         conn.close()
 
 
+GENERIC_CONCEPT_PATTERNS = [
+    r"pi[èe]ge[s]?",
+    r"erreur[s]?\s+fr[ée]quente[s]?",
+    r"m[ée]thode\s+d['’]application",
+    r"d[ée]marche\s+de\s+r[ée]solution",
+    r"d[ée]finitions?\s*&\s*principes\s+fondamentaux",
+    r"propri[ée]t[ée]s?,\s*th[ée]or[èe]mes?\s+et\s+formules?",
+    r"notions?\s+cl[ée]s?",
+    r"notions?\s+fondamentales?",
+    r"astuces?\s+r[ée]daction",
+    r"astuces?\s+pour\s+les\s+points",
+    r"id[ée]e\s+cl[ée]\s+en\s+1\s+minute",
+    r"فخاخ",
+    r"فخ\s+الامتحان",
+    r"طريقة\s+التطبيق",
+    r"منهجية\s+الحل",
+    r"أخطاء\s+شائعة",
+    r"المفاهيم\s+الأساسية",
+    r"المفاهيم\s+الاساسية",
+    r"القواعد\s+والصيغ",
+    r"نصيحة\s+التحرير",
+    r"الفكرة\s+الرئيسية",
+    r"exam\s+pitfall",
+    r"exam\s+trap",
+    r"frequent\s+error",
+    r"application\s+method",
+    r"core\s+concept",
+    r"rules\s+and\s+formulas",
+    r"writing\s+tip",
+]
+
+LONE_GENERIC_WORDS = {
+    "propriété", "propriétés", "propriete", "proprietes",
+    "formule", "formules", "définition", "définitions", "definition", "definitions",
+    "généralités", "generalites", "introduction", "conclusion", "fiche", "résumé", "resume",
+    "cours", "leçon", "lecon", "notion", "notions", "méthode", "methode",
+    "الخاصيات", "التعاريف", "القواعد", "الدرس", "ملخص", "مقدمة",
+    "properties", "rules", "definitions", "summary", "lesson", "notes",
+}
+
+
+def is_generic_concept(text: str) -> bool:
+    """
+    Vérifie si un intitulé est une méta-catégorie générique (ex: Pièges d'examen,
+    Méthode d'application, Définitions fondamentales, Formules) plutôt qu'une notion réelle du cours.
+    """
+    if not text or not text.strip():
+        return True
+
+    clean = text.strip().lower()
+    clean_stripped = re.sub(r"^[0-9\W_]+|[0-9\W_]+$", "", clean).strip()
+
+    if clean_stripped in LONE_GENERIC_WORDS:
+        return True
+
+    for pattern in GENERIC_CONCEPT_PATTERNS:
+        if re.search(pattern, clean, re.IGNORECASE):
+            return True
+
+    return False
+
+
+def extract_real_course_concepts(course: Dict[str, Any]) -> List[str]:
+    """
+    Extrait les notions pédagogiques réelles et concrètes d'un cours à partir de sa fiche/résumé
+    ou de son texte brut, en éliminant strictement les méta-catégories génériques.
+    """
+    # 1. Vérifier si des notions non génériques existent déjà dans key_concepts
+    raw_concepts = course.get("key_concepts") or []
+    valid_concepts = [c.strip() for c in raw_concepts if c and not is_generic_concept(c)]
+    if len(valid_concepts) >= 2:
+        return valid_concepts
+
+    # 2. Extraire depuis le résumé markdown ou le texte brut
+    summary = course.get("summary_markdown") or course.get("raw_text") or ""
+    extracted: List[str] = []
+
+    if summary:
+        # a) Puces en gras : "- **Notion réelle** : explication..."
+        bold_bullets = re.findall(r"^[-*•]\s*\*\*([^*:\n]{3,65})\*\*", summary, flags=re.MULTILINE)
+        for b in bold_bullets:
+            b_clean = re.sub(r"^[0-9\.\)\-\s]+", "", b.strip())
+            b_clean = re.sub(r"[()\[\]{}]+", "", b_clean).strip()
+            if len(b_clean) >= 3 and not is_generic_concept(b_clean) and b_clean not in extracted:
+                extracted.append(b_clean)
+
+        # b) Titres Markdown : "## 1. Titre de section" ou "### Notion"
+        headings = re.findall(r"^#{2,3}\s+(?:[0-9]+[.\-)]\s*)?([^\n#]{3,70})", summary, flags=re.MULTILINE)
+        for h in headings:
+            h_clean = re.sub(r"^[^\w\s]+", "", h.strip())  # retire emojis
+            h_clean = re.sub(r"^[0-9\.\)\-\s]+", "", h_clean).strip()
+            if len(h_clean) >= 3 and not is_generic_concept(h_clean) and h_clean not in extracted:
+                extracted.append(h_clean)
+
+    # 3. Si l'extraction n'a rien donné ou trop peu (< 2), générer des notions concrètes rattachées au titre du cours
+    if len(extracted) < 2:
+        title = (course.get("title") or "Leçon").strip()
+        lang = course.get("language", "fr")
+        if lang == "ar":
+            extracted = [
+                f"مفهوم وتعريف ({title})",
+                f"الخاصيات والقواعد الأساسية لـ {title}",
+                f"تطبيقات وتمارين نموذجية ({title})",
+                f"حالات خاصة وملاحظات هامة ({title})",
+            ]
+        elif lang == "en":
+            extracted = [
+                f"Definition and Core Principles of {title}",
+                f"Essential Formulas and Properties ({title})",
+                f"Practical Worked Examples ({title})",
+                f"Special Cases and Applications ({title})",
+            ]
+        else:
+            extracted = [
+                f"Définition et principes de {title}",
+                f"Propriétés et formules de {title}",
+                f"Applications et démarches types ({title})",
+                f"Cas particuliers et vérifications ({title})",
+            ]
+
+    return extracted[:6]
+
+
 def evaluate_and_sync_concept_mastery(user_id: int, course_id: int) -> List[Dict[str, Any]]:
     """
     Évalue localement (0 appel API IA, 100% gratuit) le niveau d'assimilation de chaque notion clé
-    d'un cours pour un élève donné en analysant ses quiz et son historique de chat avec Sanad.
+    RÉELLE d'un cours pour un élève donné en analysant ses quiz et son historique de chat avec Sanad.
+    Nettoie et purge automatiquement les anciennes méta-catégories génériques obsolètes.
     """
     course = get_course_by_id(course_id)
     if not course:
         return []
 
-    # 1. Notions clés du cours
-    concepts = course.get("key_concepts") or []
-    if not concepts:
-        title = course.get("title", "")
-        subject = course.get("subject", "")
-        concepts = [
-            f"Définitions & Principes fondamentaux ({title})",
-            f"Propriétés, Théorèmes et Formules ({subject})",
-            "Méthode d'application & Démarche de résolution",
-            "Pièges d'examen & Erreurs fréquentes",
-        ]
+    # 1. Extraction et garantie de notions concrètes et réelles du cours
+    concepts = extract_real_course_concepts(course)
 
-    # 2. Récupérer les quiz et tentatives de l'élève sur ce cours
     conn = get_connection()
     try:
+        with conn:
+            cur = conn.cursor()
+            _ensure_concept_mastery_table(conn)
+
+            # Purger toute ancienne ligne contenant des notions génériques pour cet utilisateur et ce cours
+            cur.execute("SELECT id, concept_title FROM concept_mastery WHERE user_id = ? AND course_id = ?", (user_id, course_id))
+            for row in cur.fetchall():
+                if is_generic_concept(row["concept_title"]):
+                    cur.execute("DELETE FROM concept_mastery WHERE id = ?", (row["id"],))
+
+            # Mettre à jour key_concepts_json du cours si nécessaire
+            existing_kc = course.get("key_concepts") or []
+            if not existing_kc or any(is_generic_concept(c) for c in existing_kc):
+                cur.execute(
+                    "UPDATE courses SET key_concepts_json = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                    (json.dumps(concepts, ensure_ascii=False), course_id),
+                )
+
+        # 2. Récupérer les quiz et tentatives de l'élève sur ce cours
         cur = conn.cursor()
         cur.execute(
             """
@@ -1716,6 +1851,7 @@ def evaluate_and_sync_concept_mastery(user_id: int, course_id: int) -> List[Dict
         overall_rate = round((total_score / total_q * 100), 1) if total_q > 0 else 0.0
 
     chat_text = " ".join([c["content"].lower() for c in chats])
+    course_lang = course.get("language", "fr")
     results = []
 
     for concept in concepts:
@@ -1740,15 +1876,31 @@ def evaluate_and_sync_concept_mastery(user_id: int, course_id: int) -> List[Dict
                 status = "in_progress"
             else:
                 status = "to_review"
-            context = f"Évalué sur {concept_attempts} entraînement(s) (Moyenne : {concept_rate}%)"
+
+            if course_lang == "ar":
+                context = f"تم التقييم بناءً على {concept_attempts} اختبار(ات) (المعدل: {concept_rate}%)"
+            elif course_lang == "en":
+                context = f"Assessed across {concept_attempts} quiz attempt(s) (Average: {concept_rate}%)"
+            else:
+                context = f"Évalué sur {concept_attempts} entraînement(s) (Moyenne : {concept_rate}%)"
         else:
             concept_rate = 0.0
             if in_chat:
                 status = "in_progress"
-                context = "Abordé et discuté lors des échanges avec le tuteur Sanad"
+                if course_lang == "ar":
+                    context = "تمت مناقشتها وتوضيحها خلال المحادثة مع الأستاذ سند"
+                elif course_lang == "en":
+                    context = "Discussed and reviewed in tutor conversations with Sanad"
+                else:
+                    context = "Abordé et discuté lors des échanges avec le tuteur Sanad"
             else:
                 status = "untested"
-                context = "Pas encore évalué dans un quiz ou une discussion"
+                if course_lang == "ar":
+                    context = "لم يتم تقييمها بعد في اختبار أو مناقشة"
+                elif course_lang == "en":
+                    context = "Not yet evaluated in quizzes or tutor chat"
+                else:
+                    context = "Pas encore évalué dans un quiz ou une discussion"
 
         save_concept_mastery(
             user_id=user_id,
