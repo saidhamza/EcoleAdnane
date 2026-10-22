@@ -960,6 +960,51 @@ class TestPedagogicalAdaptationAndUserProfiles(unittest.TestCase):
         self.assertEqual(s2_summary["course_count"], 2)
         self.assertEqual(s2_summary["attempt_count"], 0)
 
+    def test_admin_student_progression_metrics_and_subject_breakdown(self):
+        # 1. Cours et quiz pour Student 1
+        c_math = save_course("Maths 3AC", "Mathématiques", "fr", "/f/m.pdf", "hash_m", "m.pdf", user_id=self.student_1["id"])
+        c_pc = save_course("Physique 3AC", "Physique-Chimie", "fr", "/f/pc.pdf", "hash_pc", "pc.pdf", user_id=self.student_1["id"])
+
+        q_math = save_quiz(c_math, [{"question": "Q1", "options": ["A", "B"], "answer_index": 0}], user_id=self.student_1["id"])
+        q_pc = save_quiz(c_pc, [{"question": "Q2", "options": ["C", "D"], "answer_index": 1}], user_id=self.student_1["id"])
+
+        # 2. Tentatives : 2 en Maths (100% et 80%), 1 en PC (40%)
+        save_quiz_attempt(c_math, q_math, score=5, total_questions=5, answers={0: 0}, user_id=self.student_1["id"])
+        save_quiz_attempt(c_math, q_math, score=4, total_questions=5, answers={0: 0}, user_id=self.student_1["id"])
+        save_quiz_attempt(c_pc, q_pc, score=2, total_questions=5, answers={0: 1}, user_id=self.student_1["id"])
+
+        # 3. Récupération de la progression de Student 1
+        prog_s1 = get_quiz_stats(user_id=self.student_1["id"])
+        self.assertEqual(prog_s1["total_attempts"], 3)
+        self.assertEqual(prog_s1["total_questions"], 15)
+        self.assertEqual(prog_s1["total_score"], 11)
+        self.assertEqual(prog_s1["average_success_rate"], 73.3)
+
+        # Vérification de la maîtrise par matière
+        subjects_dict = {s["subject"]: s for s in prog_s1["by_subject"]}
+        self.assertIn("Mathématiques", subjects_dict)
+        self.assertEqual(subjects_dict["Mathématiques"]["attempts"], 2)
+        self.assertEqual(subjects_dict["Mathématiques"]["success_rate"], 90.0)
+
+        self.assertIn("Physique-Chimie", subjects_dict)
+        self.assertEqual(subjects_dict["Physique-Chimie"]["attempts"], 1)
+        self.assertEqual(subjects_dict["Physique-Chimie"]["success_rate"], 40.0)
+
+        # Dernières tentatives
+        self.assertEqual(len(prog_s1["recent_attempts"]), 3)
+        recent_titles = [a["course_title"] for a in prog_s1["recent_attempts"]]
+        self.assertIn("Physique 3AC", recent_titles)
+        self.assertIn("Maths 3AC", recent_titles)
+
+        # 4. Student 2 n'a aucun entraînement
+        prog_s2 = get_quiz_stats(user_id=self.student_2["id"])
+        self.assertEqual(prog_s2["total_attempts"], 0)
+        self.assertEqual(prog_s2["total_questions"], 0)
+        self.assertEqual(prog_s2["total_score"], 0)
+        self.assertEqual(prog_s2["average_success_rate"], 0.0)
+        self.assertEqual(len(prog_s2["by_subject"]), 0)
+        self.assertEqual(len(prog_s2["recent_attempts"]), 0)
+
     def test_list_courses_deduplication_personal_over_global(self):
         # Un cours de base global partagé
         save_course("Histoire Maroc Base", "الاجتماعيات", "ar", "/f/hist.pdf", "hash_same_history", "hist.pdf", user_id=None)

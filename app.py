@@ -539,6 +539,104 @@ Ce fichier permet à Ecole Adnane d'importer directement vos cours, devoirs et s
         )
 
 
+def render_student_progress_details(
+    student_id: int,
+    student_name: str,
+    student_email: Optional[str] = None,
+    student_age: Optional[int] = None,
+    student_cycle: Optional[Dict[str, Any]] = None,
+    is_blocked: bool = False,
+    created_at: Optional[Any] = None,
+    show_nav_buttons: bool = True,
+) -> None:
+    """Affiche la progression détaillée et les résultats de quiz d'un élève."""
+    stats = get_quiz_stats(user_id=student_id)
+    if student_age is None or not student_email:
+        u_info = get_user_by_id(student_id)
+        if u_info:
+            student_age = u_info.get("age", 14)
+            student_email = student_email or u_info.get("email", "")
+            if created_at is None:
+                created_at = u_info.get("created_at", "")
+            is_blocked = (u_info.get("is_blocked", 0) == 1)
+        else:
+            student_age = 14
+
+    if student_cycle is None:
+        student_cycle = get_pedagogical_cycle(int(student_age or 14))
+
+    with st.container(border=True):
+        head_col1, head_col2 = st.columns([3, 1.4])
+        with head_col1:
+            st.markdown(f"### 📊 Progression de l'Élève : **{student_name}**")
+            status_text = "🔴 Compte Suspendu" if is_blocked else "🟢 Compte Actif"
+            meta_info = f"📧 `{student_email}` | 🎯 Âge : **{student_age} ans** ({student_cycle['cycle_name']}) | {status_text}"
+            if created_at:
+                meta_info += f" | 📅 Inscrit le {str(created_at)[:10]}"
+            st.caption(meta_info)
+
+        with head_col2:
+            if show_nav_buttons:
+                b_c1, b_c2 = st.columns([1.2, 0.8])
+                with b_c1:
+                    if st.button("🚀 Ouvrir son espace", key=f"btn_open_space_{student_id}", use_container_width=True, help="Basculer vers l'espace complet de cet élève"):
+                        st.session_state["admin_space_selector"] = str(student_id)
+                        st.session_state["admin_student_menu_choice"] = "📊 Mes Progrès"
+                        st.rerun()
+                with b_c2:
+                    if st.button("✖️ Fermer", key=f"btn_close_prog_{student_id}", use_container_width=True, help="Masquer cette fiche"):
+                        st.session_state["view_student_progress_id"] = None
+                        if "admin_students_summary_table" in st.session_state:
+                            st.session_state["admin_students_summary_table"] = {"selection": {"rows": []}}
+                        st.rerun()
+
+        st.divider()
+
+        # Cartes métriques
+        m1, m2, m3, m4 = st.columns(4)
+        with m1:
+            st.metric("Total Quiz passés", stats.get("total_attempts", 0))
+        with m2:
+            st.metric("Questions répondues", stats.get("total_questions", 0))
+        with m3:
+            st.metric("Bonnes réponses", stats.get("total_score", 0))
+        with m4:
+            st.metric("Moyenne générale", f"{stats.get('average_success_rate', 0.0)}%")
+
+        st.divider()
+
+        col_sub, col_hist = st.columns([1, 1])
+        with col_sub:
+            st.markdown("#### 🎯 Maîtrise par matière")
+            by_subj = stats.get("by_subject", [])
+            if by_subj:
+                for s in by_subj:
+                    rate = s["success_rate"]
+                    badge_cls = get_subject_badge_class(s["subject"])
+                    st.markdown(
+                        f"<div><span class='badge-subject {badge_cls}'>{s['subject']}</span> "
+                        f"<strong>{rate}%</strong> ({s['attempts']} quiz)</div>",
+                        unsafe_allow_html=True,
+                    )
+                    st.progress(rate / 100.0)
+                    st.write("")
+            else:
+                st.info("ℹ️ Aucun quiz passé pour le moment par cet élève.")
+
+        with col_hist:
+            st.markdown("#### 🕒 Derniers entraînements")
+            recent = stats.get("recent_attempts", [])
+            if recent:
+                for a in recent:
+                    date_str = str(a.get("completed_at", ""))[:16]
+                    st.markdown(
+                        f"- **{a['course_title']}** ({a['subject']}) : `{a['score']}/{a['total_questions']}` — <small>{date_str}</small>",
+                        unsafe_allow_html=True,
+                    )
+            else:
+                st.caption("L'historique des quiz récents apparaîtra ici dès ses premiers entraînements.")
+
+
 # ===========================================================================
 # 0. GESTION DE L'AUTHENTIFICATION & SESSIONS GOOGLE OAUTH
 # ===========================================================================
@@ -821,10 +919,23 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
             is_global_admin_view = False
             active_user_id = int(chosen_space)
             active_student_info = get_user_by_id(active_user_id)
+            student_menu_items = [
+                "📚 Mes Cours (Révisions)",
+                "➕ Ajouter un Cours",
+                "📊 Mes Progrès",
+                "⚙️ Sauvegardes & Paramètres de l'élève",
+            ]
+            default_menu_idx = 0
+            if "admin_student_menu_choice" in st.session_state:
+                choice = st.session_state.pop("admin_student_menu_choice")
+                if choice in student_menu_items:
+                    default_menu_idx = student_menu_items.index(choice)
+
             menu = st.sidebar.radio(
                 f"Espace de {active_student_info['name']}",
-                ["📚 Mes Cours (Révisions)", "➕ Ajouter un Cours", "📊 Mes Progrès", "⚙️ Sauvegardes & Paramètres de l'élève"],
-                index=0,
+                student_menu_items,
+                index=default_menu_idx,
+                key=f"admin_student_menu_{active_user_id}",
             )
     else:
         # ÉLÈVE : Navigation complète d'apprentissage personnel
@@ -887,25 +998,77 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
         st.markdown("### 🎒 Liste des Élèves & Assiduité")
         students_summary = kpis.get("students_summary", [])
         if students_summary:
-            st.dataframe(
-                [
-                    {
-                        "ID": s["user_id"],
-                        "Nom": s["name"],
-                        "Email": s["email"],
-                        "Âge & Niveau": f"{s.get('age', 14)} ans ({s.get('cycle', {}).get('stage_label', 'Collège')})",
-                        "Statut": "🔴 Suspendu" if s.get("is_blocked") == 1 else "🟢 Actif",
-                        "Cours disponibles": s["course_count"],
-                        "Quiz terminés": s["attempt_count"],
-                        "Moyenne Quiz": f"{s['average_rate']}%",
-                        "Date d'inscription": str(s.get("created_at", ""))[:16],
-                    }
-                    for s in students_summary
-                ],
+            st.caption("💡 *Cliquez sur la ligne d'un élève dans le tableau ou sur son nom ci-dessous pour afficher sa progression.*")
+
+            # Table interactive avec sélection de ligne unique
+            df_rows = [
+                {
+                    "ID": s["user_id"],
+                    "Nom": s["name"],
+                    "Email": s["email"],
+                    "Âge & Niveau": f"{s.get('age', 14)} ans ({s.get('cycle', {}).get('stage_label', 'Collège')})",
+                    "Statut": "🔴 Suspendu" if s.get("is_blocked") == 1 else "🟢 Actif",
+                    "Cours disponibles": s["course_count"],
+                    "Quiz terminés": s["attempt_count"],
+                    "Moyenne Quiz": f"{s['average_rate']}%",
+                    "Date d'inscription": str(s.get("created_at", ""))[:16],
+                }
+                for s in students_summary
+            ]
+
+            df_selection = st.dataframe(
+                df_rows,
                 use_container_width=True,
                 hide_index=True,
+                on_select="rerun",
+                selection_mode="single-row",
+                key="admin_students_summary_table",
             )
-            st.caption("💡 *Sélectionnez un élève dans la barre latérale pour naviguer directement dans ses cours et ses devoirs.*")
+
+            # Prise en compte du clic sur une ligne du tableau
+            if df_selection and hasattr(df_selection, "selection") and df_selection.selection:
+                selected_rows = getattr(df_selection.selection, "rows", [])
+                if selected_rows:
+                    sel_idx = selected_rows[0]
+                    if 0 <= sel_idx < len(students_summary):
+                        st.session_state["view_student_progress_id"] = students_summary[sel_idx]["user_id"]
+
+            # Boutons cliquables avec les noms de chaque élève pour un accès direct
+            st.markdown("**👤 Cliquez sur le nom d'un élève pour voir sa progression :**")
+            cols_per_row = min(max(len(students_summary), 1), 4)
+            st_cols = st.columns(cols_per_row)
+            for idx, s in enumerate(students_summary):
+                col = st_cols[idx % cols_per_row]
+                is_selected = (st.session_state.get("view_student_progress_id") == s["user_id"])
+                status_emoji = "🔴" if s.get("is_blocked") == 1 else "🎒"
+                if col.button(
+                    f"{status_emoji} {s['name']}",
+                    key=f"btn_st_click_name_{s['user_id']}",
+                    type="primary" if is_selected else "secondary",
+                    use_container_width=True,
+                    help=f"Consulter la progression de {s['name']} ({s['email']})",
+                ):
+                    st.session_state["view_student_progress_id"] = s["user_id"]
+                    st.rerun()
+
+            # Affichage de la progression de l'élève sélectionné
+            active_prog_id = st.session_state.get("view_student_progress_id")
+            if active_prog_id:
+                target_st = next((s for s in students_summary if s["user_id"] == active_prog_id), None)
+                if not target_st:
+                    target_st = get_user_by_id(active_prog_id)
+                if target_st:
+                    st.write("")
+                    render_student_progress_details(
+                        student_id=target_st.get("user_id") or target_st.get("id"),
+                        student_name=target_st.get("name", "Élève"),
+                        student_email=target_st.get("email"),
+                        student_age=target_st.get("age"),
+                        student_cycle=target_st.get("cycle"),
+                        is_blocked=(target_st.get("is_blocked", 0) == 1),
+                        created_at=target_st.get("created_at"),
+                        show_nav_buttons=True,
+                    )
         else:
             st.info("Aucun élève inscrit pour l'instant. Les nouveaux utilisateurs connectés via Google OAuth apparaîtront ici.")
 
@@ -1063,6 +1226,21 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                                     st.rerun()
                                 else:
                                     st.error(msg)
+
+                if not is_u_admin:
+                    st.divider()
+                    st.markdown("##### 📊 Suivi & Progression Pédagogique")
+                    show_manage_prog = st.checkbox("Afficher la progression détaillée de cet élève", key=f"chk_manage_prog_{u_id}")
+                    if show_manage_prog:
+                        render_student_progress_details(
+                            student_id=u_id,
+                            student_name=u["name"],
+                            student_email=u["email"],
+                            student_age=u.get("age"),
+                            is_blocked=is_u_blocked,
+                            created_at=u.get("created_at"),
+                            show_nav_buttons=True,
+                        )
 
         return
 
