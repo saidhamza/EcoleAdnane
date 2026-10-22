@@ -2793,7 +2793,7 @@ def get_course_trophies_overview(user_id: int, course_id: int) -> Dict[str, Any]
     - Liste des 8 trophées avec statut (débloqué / en cours), progression et encouragement.
     """
     # 1. Évaluation dynamique préalable pour ce cours
-    evaluate_and_award_course_badges(user_id, course_id)
+    newly_awarded = evaluate_and_award_course_badges(user_id, course_id)
 
     course = get_course_by_id(course_id)
     if not course:
@@ -2807,6 +2807,7 @@ def get_course_trophies_overview(user_id: int, course_id: int) -> Dict[str, Any]
             "unlocked_count": 0,
             "completion_rate": 0.0,
             "badges": [],
+            "newly_awarded": [],
         }
 
     unlocked_list = get_user_badges(user_id, course_id=course_id)
@@ -2916,6 +2917,7 @@ def get_course_trophies_overview(user_id: int, course_id: int) -> Dict[str, Any]
         "unlocked_count": unlocked_count,
         "completion_rate": rate,
         "badges": badges_detail,
+        "newly_awarded": newly_awarded,
     }
 
 

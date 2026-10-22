@@ -258,12 +258,14 @@ except Exception:
 
 try:
     import services.voice_manager
-    if not hasattr(services.voice_manager, "generate_tts_player_html"):
+    if not hasattr(services.voice_manager, "generate_trophy_celebration_html"):
         services.voice_manager = importlib.reload(services.voice_manager)
     from services.voice_manager import (
         clean_text_for_speech,
         generate_chat_mic_injector_html,
         generate_mic_speech_html,
+        generate_trophy_celebration_html,
+        generate_trophy_sound_wav_base64,
         generate_tts_player_html,
         get_speech_config,
     )
@@ -272,6 +274,8 @@ except Exception:
         clean_text_for_speech,
         generate_chat_mic_injector_html,
         generate_mic_speech_html,
+        generate_trophy_celebration_html,
+        generate_trophy_sound_wav_base64,
         generate_tts_player_html,
         get_speech_config,
     )
@@ -2276,16 +2280,50 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                         evaluate_and_sync_concept_mastery(active_user_id, current_course["id"])
                         new_badges = evaluate_and_award_course_badges(active_user_id, current_course["id"])
                         if new_badges:
-                            for nb in new_badges:
-                                st.toast(f"🎉 Nouveau trophée conquis sur {current_course['title']} : {nb['icon']} {nb['title']} !", icon="🏆")
+                            st.session_state["pending_trophy_celebration"] = {
+                                "course_title": current_course["title"],
+                                "badges": new_badges,
+                            }
                         st.session_state[submission_key] = True
-                        if score >= len(questions) * 0.8 or new_badges:
-                            st.balloons()
                         st.rerun()
                 else:
+                    celebration = st.session_state.pop("pending_trophy_celebration", None)
+                    if celebration:
+                        c_badges = celebration.get("badges", [])
+                        c_title = celebration.get("course_title", "")
+                        st.balloons()
+                        # Lecture de la fanfare royale triomphante
+                        st.components.v1.html(
+                            generate_trophy_celebration_html(
+                                auto_play=True,
+                                widget_id=f"quiz_cel_{current_course['id']}",
+                            ),
+                            height=0,
+                        )
+                        for nb in c_badges:
+                            st.toast(f"🎉 Nouveau trophée débloqué sur {c_title} : {nb['icon']} {nb['title']} !", icon="🏆")
+
+                        badges_str = " &bull; ".join([f"{b['icon']} <strong>{b['title']}</strong>" for b in c_badges])
+                        st.markdown(
+                            f"""
+                            <div style="background: linear-gradient(135deg, rgba(245, 158, 11, 0.22) 0%, rgba(180, 83, 9, 0.18) 100%); border: 1.5px solid #f59e0b; border-radius: 12px; padding: 14px 18px; margin-bottom: 16px; box-shadow: 0 4px 15px rgba(245, 158, 11, 0.25);">
+                                <div style="font-size: 1.05rem; font-weight: 800; color: #fbbf24;">
+                                    🏆 Félicitations ! Nouveau(x) trophée(s) conquis :
+                                </div>
+                                <div style="margin-top: 4px; color: #fef08a; font-size: 0.95rem;">
+                                    {badges_str}
+                                </div>
+                            </div>
+                            """,
+                            unsafe_allow_html=True,
+                        )
+
                     score = sum(1 for idx, q in enumerate(questions) if answers_chosen.get(idx) == q.get("answer_index", 0))
                     score_txt = f"### Score obtenu : **{score} / {len(questions)}**" if not is_en else f"### Score: **{score} / {len(questions)}**"
                     st.markdown(score_txt)
+                    if score >= len(questions) * 0.8 and not celebration:
+                        st.balloons()
+
                     retry_label = "🔁 Recommencer ce quiz" if not is_en else "🔁 Retake Quiz"
                     if st.button(retry_label):
                         st.session_state[submission_key] = False
@@ -2467,6 +2505,20 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
             c_unlocked = c_overview["unlocked_trophies"]
             c_total = c_overview["total_trophies"]
             c_rate = c_overview["completion_rate"]
+            just_unlocked = c_overview.get("newly_awarded", [])
+
+            # Célébration sonore et visuelle si un ou plusieurs trophées viennent d'être remportés
+            if just_unlocked:
+                st.balloons()
+                st.components.v1.html(
+                    generate_trophy_celebration_html(
+                        auto_play=True,
+                        widget_id=f"tab_trophies_cel_{current_course['id']}",
+                    ),
+                    height=0,
+                )
+                for nb in just_unlocked:
+                    st.toast(f"🎉 Nouveau trophée débloqué : {nb['icon']} {nb['title']} !", icon="🏆")
 
             t_header_txt = (
                 f"### 🏆 شارات وكؤوس الدرس — {current_course['title']}"
@@ -2504,7 +2556,23 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                 """,
                 unsafe_allow_html=True,
             )
-            st.progress(c_rate / 100.0)
+            if c_unlocked > 0:
+                col_bar, col_snd = st.columns([3.8, 1.2])
+                with col_bar:
+                    st.progress(c_rate / 100.0)
+                with col_snd:
+                    st.components.v1.html(
+                        generate_trophy_celebration_html(
+                            auto_play=False,
+                            widget_id=f"btn_course_fanfare_{current_course['id']}",
+                            show_button=True,
+                            button_label="🎺 Fanfare",
+                        ),
+                        height=38,
+                    )
+            else:
+                st.progress(c_rate / 100.0)
+
             st.write("")
             render_magnificent_trophy_grid(c_overview.get("badges", []), cols_count=2)
 
@@ -2739,7 +2807,22 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
             """,
             unsafe_allow_html=True,
         )
-        st.progress(overall_rate / 100.0)
+        if unlocked_t > 0:
+            col_bar, col_sound = st.columns([3.8, 1.2])
+            with col_bar:
+                st.progress(overall_rate / 100.0)
+            with col_sound:
+                st.components.v1.html(
+                    generate_trophy_celebration_html(
+                        auto_play=False,
+                        widget_id="fanfare_hall_btn",
+                        show_button=True,
+                        button_label="🎺 Fanfare Royale",
+                    ),
+                    height=38,
+                )
+        else:
+            st.progress(overall_rate / 100.0)
 
         st.divider()
 

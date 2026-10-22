@@ -8,12 +8,14 @@ les sauvegardes étanches (élève et globale) avec sécurité anti-traversal,
 et les scopes officiels Google Classroom.
 """
 
+import base64
 import io
 import json
 import os
 import sqlite3
 import tempfile
 import unittest
+import wave
 import zipfile
 from pathlib import Path
 from unittest.mock import patch
@@ -127,6 +129,8 @@ from services.voice_manager import (
     clean_text_for_speech,
     generate_chat_mic_injector_html,
     generate_mic_speech_html,
+    generate_trophy_celebration_html,
+    generate_trophy_sound_wav_base64,
     generate_tts_player_html,
     get_server_tts_audio_base64,
     get_speech_config,
@@ -1312,6 +1316,47 @@ print("debug")
             self.assertTrue("التَّشْكِيلُ" in sys_instruction or "التشكيل" in sys_instruction)
             self.assertTrue("الحَرَكَاتُ" in sys_instruction or "الحركات" in sys_instruction)
             self.assertTrue("مشكولاً" in prompt or "التشكيل" in prompt)
+
+    def test_generate_trophy_sound_wav_base64(self):
+        wav_uri = generate_trophy_sound_wav_base64()
+        self.assertIsNotNone(wav_uri)
+        self.assertTrue(wav_uri.startswith("data:audio/wav;base64,"))
+
+        # Check caching
+        wav_uri_cached = generate_trophy_sound_wav_base64()
+        self.assertEqual(wav_uri, wav_uri_cached)
+
+        # Validate that payload is a genuine 44.1kHz mono WAV
+        b64_part = wav_uri.replace("data:audio/wav;base64,", "")
+        raw_bytes = base64.b64decode(b64_part)
+        self.assertTrue(raw_bytes.startswith(b"RIFF"))
+        self.assertEqual(raw_bytes[8:12], b"WAVE")
+        with wave.open(io.BytesIO(raw_bytes), "rb") as wf:
+            self.assertEqual(wf.getnchannels(), 1)
+            self.assertEqual(wf.getsampwidth(), 2)
+            self.assertEqual(wf.getframerate(), 44100)
+            self.assertGreater(wf.getnframes(), 0)
+
+    def test_generate_trophy_celebration_html(self):
+        # 1. Autoplay mode without button (for automatic reward playback)
+        html_auto = generate_trophy_celebration_html(auto_play=True, widget_id="test_trophy_auto", show_button=False)
+        self.assertIn("data:audio/wav;base64,", html_auto)
+        self.assertIn("<audio id=\"audio_test_trophy_auto\"", html_auto)
+        self.assertIn("playTrophySound_test_trophy_auto", html_auto)
+        self.assertIn("AudioContext", html_auto)
+        self.assertIn("display: none", html_auto)
+
+        # 2. Manual button mode (for Royal Trophy Hall or replay button)
+        html_btn = generate_trophy_celebration_html(
+            auto_play=False,
+            widget_id="test_trophy_btn",
+            show_button=True,
+            button_label="🎺 Fanfare Royale",
+        )
+        self.assertIn("<button id=\"btn_test_trophy_btn\"", html_btn)
+        self.assertIn("🎺 Fanfare Royale", html_btn)
+        self.assertIn("display: inline-block", html_btn)
+        self.assertIn("playTrophySound_test_trophy_btn()", html_btn)
 
 
 class TestCourseDeletion(unittest.TestCase):

@@ -15,14 +15,18 @@ import html
 import io
 import json
 import logging
+import math
 import platform
 import re
+import struct
 import sys
+import wave
 from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
 
 _TTS_MEMORY_CACHE: Dict[str, str] = {}
+_TROPHY_SOUND_CACHE: Optional[str] = None
 
 
 def clean_text_for_speech(text: str) -> str:
@@ -922,3 +926,177 @@ def generate_chat_mic_injector_html(language: str = "fr", widget_id: str = "chat
 def generate_mic_speech_html(language: str = "fr", widget_id: str = "sanad_mic") -> str:
     """Conservé pour rétrocompatibilité : délègue à l'injecteur moderne."""
     return generate_chat_mic_injector_html(language=language, widget_id=widget_id)
+
+
+def generate_trophy_sound_wav_base64() -> str:
+    """
+    Génère un flux audio WAV (16 bits, 44.1 kHz) contenant une fanfare royale triomphante
+    synthétisée via les fonctions harmoniques pures (accord C5 -> E5 -> G5 -> C6 avec overtones et carillon).
+    Mise en cache mémoire pour une restitution instantanée sans latence ni dépendance réseau.
+    """
+    global _TROPHY_SOUND_CACHE
+    if _TROPHY_SOUND_CACHE:
+        return _TROPHY_SOUND_CACHE
+
+    sample_rate = 44100
+    # Séquence triomphante : Arpège C5, E5, G5 vers accord majestueux C6 soutenu avec harmoniques de carillon
+    notes = [
+        # (fréquence en Hz, début en s, durée en s, amplitude relative)
+        (523.25, 0.00, 0.16, 0.45),   # C5 (Do)
+        (659.25, 0.12, 0.16, 0.45),   # E5 (Mi)
+        (783.99, 0.24, 0.20, 0.55),   # G5 (Sol)
+        (1046.50, 0.38, 0.95, 0.70),  # C6 (Do aigu - fondation de l'accord victorieux)
+        (783.99,  0.38, 0.85, 0.35),  # G5 (Sol - plénitude harmonique)
+        (1318.51, 0.38, 0.80, 0.40),  # E6 (Mi aigu - éclat royal)
+        (2093.00, 0.40, 0.65, 0.25),  # C7 (Carillon scintillant)
+    ]
+    total_dur = 1.35
+    total_samples = int(sample_rate * total_dur)
+    buffer = [0.0] * total_samples
+
+    for freq, start, dur, amp in notes:
+        start_idx = int(start * sample_rate)
+        n_samples = int(dur * sample_rate)
+        for i in range(n_samples):
+            idx = start_idx + i
+            if idx >= total_samples:
+                break
+            t = i / sample_rate
+            # Attaque rapide (12 ms) et déclin exponentiel de type cloche/cuivre
+            attack = min(1.0, t / 0.012)
+            decay = math.exp(-3.2 * (t / dur))
+            env = attack * decay
+
+            # Modélisation harmonique (fondamentale + harmonique 2 + harmonique 3)
+            val = amp * env * (
+                0.65 * math.sin(2 * math.pi * freq * t) +
+                0.25 * math.sin(2 * math.pi * (freq * 2) * t) +
+                0.10 * math.sin(2 * math.pi * (freq * 3) * t)
+            )
+            buffer[idx] += val
+
+    # Normalisation propre sans saturation (0.92 crête)
+    peak = max(abs(x) for x in buffer) if buffer else 1.0
+    scale = (0.92 / peak) if peak > 0.92 else 1.0
+    buffer = [x * scale for x in buffer]
+
+    out = io.BytesIO()
+    with wave.open(out, "wb") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(sample_rate)
+        raw = b"".join(struct.pack("<h", int(s * 32767)) for s in buffer)
+        wf.writeframes(raw)
+
+    _TROPHY_SOUND_CACHE = "data:audio/wav;base64," + base64.b64encode(out.getvalue()).decode("ascii")
+    return _TROPHY_SOUND_CACHE
+
+
+def generate_trophy_celebration_html(
+    auto_play: bool = True,
+    widget_id: str = "trophy_celebration",
+    show_button: bool = False,
+    button_label: str = "🎺 Fanfare Royale",
+) -> str:
+    """
+    Génère le composant HTML5 / Web Audio pour jouer la fanfare de victoire lors de la remise d'un trophée.
+    - Joue le son via l'API Web Audio native (ultra-basse latence, synthèse en temps réel).
+    - Dispose d'un repli audio HTML5 avec le flux WAV intégré en base64.
+    - Fonctionne de manière 100% autonome et hors-ligne, sans dépendance externe.
+    """
+    wav_uri = generate_trophy_sound_wav_base64()
+    clean_id = re.sub(r"[^a-zA-Z0-9_]", "_", widget_id)
+    auto_play_js = "true" if auto_play else "false"
+
+    btn_html = ""
+    if show_button:
+        btn_html = f"""
+        <button id="btn_{clean_id}" onclick="playTrophySound_{clean_id}()" 
+          title="Écouter la fanfare royale des trophées"
+          style="background: linear-gradient(135deg, #d97706 0%, #b45309 100%); color: #ffffff; border: 1.2px solid #fbbf24; border-radius: 20px; padding: 6px 14px; font-size: 0.82rem; font-weight: 700; cursor: pointer; box-shadow: 0 4px 12px rgba(245, 158, 11, 0.35); display: inline-flex; align-items: center; gap: 6px; transition: transform 0.15s ease;">
+          <span>{html.escape(button_label)}</span>
+        </button>
+        """
+
+    return f"""
+    <div id="container_{clean_id}" style="display: {'inline-block' if show_button else 'none'}; margin: 0; padding: 0;">
+      <audio id="audio_{clean_id}" preload="auto" src="{wav_uri}"></audio>
+      {btn_html}
+      <script>
+        (function() {{
+          function playTrophySound_{clean_id}() {{
+            let audioPlayed = false;
+            // 1. Essai via Web Audio API native (supporté universellement sans restriction codec)
+            try {{
+              let AudioCtx = window.AudioContext || window.webkitAudioContext;
+              try {{
+                if (window.parent && (window.parent.AudioContext || window.parent.webkitAudioContext)) {{
+                  AudioCtx = window.parent.AudioContext || window.parent.webkitAudioContext;
+                }}
+              }} catch(e) {{}}
+
+              if (AudioCtx) {{
+                const ctx = new AudioCtx();
+                if (ctx.state === 'suspended') {{
+                  ctx.resume();
+                }}
+                const now = ctx.currentTime;
+                const master = ctx.createGain();
+                master.gain.setValueAtTime(0.45, now);
+                master.connect(ctx.destination);
+
+                const notes = [
+                  {{ f: 523.25, start: 0.00, dur: 0.18, type: 'triangle' }},
+                  {{ f: 659.25, start: 0.12, dur: 0.18, type: 'triangle' }},
+                  {{ f: 783.99, start: 0.24, dur: 0.22, type: 'triangle' }},
+                  {{ f: 1046.50, start: 0.38, dur: 0.95, type: 'sine' }},
+                  {{ f: 783.99,  start: 0.38, dur: 0.85, type: 'sine' }},
+                  {{ f: 1318.51, start: 0.38, dur: 0.80, type: 'sine' }},
+                  {{ f: 2093.00, start: 0.40, dur: 0.65, type: 'sine' }}
+                ];
+
+                notes.forEach(function(n) {{
+                  const osc = ctx.createOscillator();
+                  const g = ctx.createGain();
+                  osc.type = n.type;
+                  osc.frequency.setValueAtTime(n.f, now + n.start);
+
+                  g.gain.setValueAtTime(0.0001, now + n.start);
+                  g.gain.linearRampToValueAtTime(0.35, now + n.start + 0.015);
+                  g.gain.exponentialRampToValueAtTime(0.0001, now + n.start + n.dur);
+
+                  osc.connect(g);
+                  g.connect(master);
+                  osc.start(now + n.start);
+                  osc.stop(now + n.start + n.dur);
+                }});
+                audioPlayed = true;
+              }}
+            }} catch(err) {{
+              audioPlayed = false;
+            }}
+
+            // 2. Repli immédiat sur l'élément audio HTML5 pré-chargé en WAV base64
+            if (!audioPlayed) {{
+              const a = document.getElementById("audio_{clean_id}");
+              if (a) {{
+                try {{
+                  a.currentTime = 0;
+                  a.play().catch(function(e) {{
+                    console.log("Lecture audio automatique reportée :", e);
+                  }});
+                }} catch(e) {{}}
+              }}
+            }}
+          }}
+
+          window.playTrophySound_{clean_id} = playTrophySound_{clean_id};
+
+          if ({auto_play_js}) {{
+            // Délai léger pour synchronisation parfaite avec les ballons et le rendu
+            setTimeout(playTrophySound_{clean_id}, 180);
+          }}
+        }})();
+      </script>
+    </div>
+    """
