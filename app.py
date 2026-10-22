@@ -9,6 +9,7 @@ import base64
 import html
 import os
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -1716,14 +1717,14 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
         col_tst1, col_tst2 = st.columns([1.5, 2.5])
         with col_tst1:
             if st.button("🎺 Tester la célébration royale (MP3 + Pluie d'or)", type="primary", use_container_width=True, key="admin_test_trophy_btn"):
-                st.session_state["admin_trophy_test_triggered"] = True
+                st.session_state["admin_trophy_test_nonce"] = int(time.time() * 1000)
 
-        if st.session_state.get("admin_trophy_test_triggered"):
-            st.session_state.pop("admin_trophy_test_triggered", None)
+        test_nonce = st.session_state.pop("admin_trophy_test_nonce", None)
+        if test_nonce:
             st.components.v1.html(
                 generate_trophy_celebration_html(
                     auto_play=True,
-                    widget_id="admin_test_celebration",
+                    widget_id=f"admin_test_{test_nonce}",
                     show_button=False,
                 ),
                 height=0,
@@ -2322,7 +2323,7 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                         st.components.v1.html(
                             generate_trophy_celebration_html(
                                 auto_play=True,
-                                widget_id=f"quiz_cel_{current_course['id']}",
+                                widget_id=f"quiz_cel_{current_course['id']}_{int(time.time() * 1000)}",
                             ),
                             height=0,
                         )
@@ -2539,7 +2540,7 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                 st.components.v1.html(
                     generate_trophy_celebration_html(
                         auto_play=True,
-                        widget_id=f"tab_trophies_cel_{current_course['id']}",
+                        widget_id=f"tab_trophies_cel_{current_course['id']}_{int(time.time() * 1000)}",
                     ),
                     height=0,
                 )

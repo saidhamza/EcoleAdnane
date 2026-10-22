@@ -21,6 +21,7 @@ import platform
 import re
 import struct
 import sys
+import time
 import wave
 from typing import Any, Dict, Optional
 
@@ -1070,9 +1071,9 @@ def generate_trophy_celebration_html(
               targetDoc = document;
             }}
 
-            const existingCanvas = targetDoc.getElementById("royal_fanfare_canvas_{clean_id}");
-            if (existingCanvas) {{
-              try {{ existingCanvas.remove(); }} catch (e) {{}}
+            const oldCanvases = targetDoc.querySelectorAll("canvas[id^='royal_fanfare_canvas']");
+            for (let k = 0; k < oldCanvases.length; k++) {{
+              try {{ oldCanvases[k].remove(); }} catch (e) {{}}
             }}
 
             const canvas = targetDoc.createElement("canvas");
@@ -1239,10 +1240,19 @@ def generate_trophy_celebration_html(
                 const prom = a.play();
                 if (prom && prom.catch) {{
                   prom.catch(function(e) {{
-                    console.log("Lecture audio auto reportée :", e);
+                    console.log("Lecture audio HTML5 différée, essai direct Audio() :", e);
+                    try {{
+                      const snd = new Audio("{audio_uri}");
+                      snd.play().catch(function() {{}});
+                    }} catch(err) {{}}
                   }});
                 }}
-              }} catch (e) {{}}
+              }} catch (e) {{
+                try {{
+                  const snd = new Audio("{audio_uri}");
+                  snd.play().catch(function() {{}});
+                }} catch(err) {{}}
+              }}
             }}
           }}
 
@@ -1254,5 +1264,6 @@ def generate_trophy_celebration_html(
           }}
         }})();
       </script>
+      <!-- stream_nonce_{int(time.time() * 1000)} -->
     </div>
     """
