@@ -16,6 +16,7 @@ import io
 import json
 import logging
 import math
+import os
 import platform
 import re
 import struct
@@ -992,6 +993,40 @@ def generate_trophy_sound_wav_base64() -> str:
     return _TROPHY_SOUND_CACHE
 
 
+_ROYAL_FANFARE_MP3_CACHE: Optional[str] = None
+
+
+def get_royal_fanfare_mp3_base64() -> str:
+    """
+    Retourne la fanfare royale MP3 officielle sous forme d'URI data base64 (data:audio/mp3;base64,...).
+    Mise en cache en mémoire pour une performance instantanée.
+    Repli automatique vers le générateur WAV si le fichier venait à manquer.
+    """
+    global _ROYAL_FANFARE_MP3_CACHE
+    if _ROYAL_FANFARE_MP3_CACHE is not None:
+        return _ROYAL_FANFARE_MP3_CACHE
+
+    candidate_paths = [
+        os.path.join(os.path.dirname(os.path.dirname(__file__)), "assets", "audio", "fanfare_royale.mp3"),
+        os.path.join(os.path.dirname(__file__), "..", "assets", "audio", "fanfare_royale.mp3"),
+        os.path.abspath("assets/audio/fanfare_royale.mp3"),
+    ]
+
+    for p in candidate_paths:
+        if os.path.exists(p):
+            try:
+                with open(p, "rb") as f:
+                    data = f.read()
+                if len(data) > 0:
+                    _ROYAL_FANFARE_MP3_CACHE = "data:audio/mp3;base64," + base64.b64encode(data).decode("ascii")
+                    return _ROYAL_FANFARE_MP3_CACHE
+            except Exception as e:
+                logger.warning(f"Impossible de charger fanfare_royale.mp3 depuis {p}: {e}")
+
+    # Repli de secours vers la synthèse WAV
+    return generate_trophy_sound_wav_base64()
+
+
 def generate_trophy_celebration_html(
     auto_play: bool = True,
     widget_id: str = "trophy_celebration",
@@ -999,19 +1034,20 @@ def generate_trophy_celebration_html(
     button_label: str = "🎺 Fanfare Royale",
 ) -> str:
     """
-    Génère le composant HTML5 / Web Audio pour jouer la fanfare de victoire lors de la remise d'un trophée.
-    - Joue le son via l'API Web Audio native (ultra-basse latence, synthèse en temps réel).
-    - Dispose d'un repli audio HTML5 avec le flux WAV intégré en base64.
-    - Fonctionne de manière 100% autonome et hors-ligne, sans dépendance externe.
+    Génère le composant HTML5 / Web Audio pour jouer la fanfare royale MP3 lors de la remise d'un trophée,
+    accompagnée d'une animation grandiose de couronnement : double canon héraldique projetant
+    des étincelles dorées, des étoiles scintillantes et des couronnes royales (Canvas).
+    - Audio MP3 officiel embarqué en base64 pour un déclenchement instantané.
+    - Animation de particules Canvas plein écran, fluide, sans dépendance externe et auto-nettoyante.
     """
-    wav_uri = generate_trophy_sound_wav_base64()
+    audio_uri = get_royal_fanfare_mp3_base64()
     clean_id = re.sub(r"[^a-zA-Z0-9_]", "_", widget_id)
     auto_play_js = "true" if auto_play else "false"
 
     btn_html = ""
     if show_button:
         btn_html = f"""
-        <button id="btn_{clean_id}" onclick="playTrophySound_{clean_id}()" 
+        <button id="btn_{clean_id}" onclick="playRoyalCelebration_{clean_id}()" 
           title="Écouter la fanfare royale des trophées"
           style="background: linear-gradient(135deg, #d97706 0%, #b45309 100%); color: #ffffff; border: 1.2px solid #fbbf24; border-radius: 20px; padding: 6px 14px; font-size: 0.82rem; font-weight: 700; cursor: pointer; box-shadow: 0 4px 12px rgba(245, 158, 11, 0.35); display: inline-flex; align-items: center; gap: 6px; transition: transform 0.15s ease;">
           <span>{html.escape(button_label)}</span>
@@ -1020,81 +1056,201 @@ def generate_trophy_celebration_html(
 
     return f"""
     <div id="container_{clean_id}" style="display: {'inline-block' if show_button else 'none'}; margin: 0; padding: 0;">
-      <audio id="audio_{clean_id}" preload="auto" src="{wav_uri}"></audio>
+      <audio id="audio_{clean_id}" preload="auto" src="{audio_uri}"></audio>
       {btn_html}
       <script>
         (function() {{
-          function playTrophySound_{clean_id}() {{
-            let audioPlayed = false;
-            // 1. Essai via Web Audio API native (supporté universellement sans restriction codec)
+          function launchRoyalAnimation_{clean_id}() {{
+            let targetDoc = document;
             try {{
-              let AudioCtx = window.AudioContext || window.webkitAudioContext;
-              try {{
-                if (window.parent && (window.parent.AudioContext || window.parent.webkitAudioContext)) {{
-                  AudioCtx = window.parent.AudioContext || window.parent.webkitAudioContext;
-                }}
-              }} catch(e) {{}}
-
-              if (AudioCtx) {{
-                const ctx = new AudioCtx();
-                if (ctx.state === 'suspended') {{
-                  ctx.resume();
-                }}
-                const now = ctx.currentTime;
-                const master = ctx.createGain();
-                master.gain.setValueAtTime(0.45, now);
-                master.connect(ctx.destination);
-
-                const notes = [
-                  {{ f: 523.25, start: 0.00, dur: 0.18, type: 'triangle' }},
-                  {{ f: 659.25, start: 0.12, dur: 0.18, type: 'triangle' }},
-                  {{ f: 783.99, start: 0.24, dur: 0.22, type: 'triangle' }},
-                  {{ f: 1046.50, start: 0.38, dur: 0.95, type: 'sine' }},
-                  {{ f: 783.99,  start: 0.38, dur: 0.85, type: 'sine' }},
-                  {{ f: 1318.51, start: 0.38, dur: 0.80, type: 'sine' }},
-                  {{ f: 2093.00, start: 0.40, dur: 0.65, type: 'sine' }}
-                ];
-
-                notes.forEach(function(n) {{
-                  const osc = ctx.createOscillator();
-                  const g = ctx.createGain();
-                  osc.type = n.type;
-                  osc.frequency.setValueAtTime(n.f, now + n.start);
-
-                  g.gain.setValueAtTime(0.0001, now + n.start);
-                  g.gain.linearRampToValueAtTime(0.35, now + n.start + 0.015);
-                  g.gain.exponentialRampToValueAtTime(0.0001, now + n.start + n.dur);
-
-                  osc.connect(g);
-                  g.connect(master);
-                  osc.start(now + n.start);
-                  osc.stop(now + n.start + n.dur);
-                }});
-                audioPlayed = true;
+              if (window.parent && window.parent.document && window.parent.document.body) {{
+                targetDoc = window.parent.document;
               }}
-            }} catch(err) {{
-              audioPlayed = false;
+            }} catch (e) {{
+              targetDoc = document;
             }}
 
-            // 2. Repli immédiat sur l'élément audio HTML5 pré-chargé en WAV base64
-            if (!audioPlayed) {{
-              const a = document.getElementById("audio_{clean_id}");
-              if (a) {{
-                try {{
-                  a.currentTime = 0;
-                  a.play().catch(function(e) {{
-                    console.log("Lecture audio automatique reportée :", e);
-                  }});
-                }} catch(e) {{}}
+            const existingCanvas = targetDoc.getElementById("royal_fanfare_canvas_{clean_id}");
+            if (existingCanvas) {{
+              try {{ existingCanvas.remove(); }} catch (e) {{}}
+            }}
+
+            const canvas = targetDoc.createElement("canvas");
+            canvas.id = "royal_fanfare_canvas_{clean_id}";
+            canvas.style.position = "fixed";
+            canvas.style.top = "0";
+            canvas.style.left = "0";
+            canvas.style.width = "100vw";
+            canvas.style.height = "100vh";
+            canvas.style.pointerEvents = "none";
+            canvas.style.zIndex = "9999999";
+            targetDoc.body.appendChild(canvas);
+
+            const targetWin = targetDoc.defaultView || window;
+            const w = targetWin.innerWidth || 1280;
+            const h = targetWin.innerHeight || 720;
+            canvas.width = w;
+            canvas.height = h;
+            const ctx = canvas.getContext("2d");
+            if (!ctx) return;
+
+            const particles = [];
+            const goldPalette = ["#FFD700", "#F59E0B", "#FBBF24", "#FEF08A", "#D97706", "#FFFBEB", "#FFFFFF"];
+            const starSymbols = ["✨", "⭐", "★", "✦"];
+
+            // 1. Canons héraldiques latéraux (gauche et droite)
+            const cannonCount = 70;
+            for (let i = 0; i < cannonCount; i++) {{
+              // Canon gauche
+              particles.push({{
+                x: w * 0.12,
+                y: h * 0.88,
+                vx: 3 + Math.random() * 11,
+                vy: -(12 + Math.random() * 14),
+                gravity: 0.38,
+                friction: 0.985,
+                angle: Math.random() * Math.PI * 2,
+                vRot: (Math.random() - 0.5) * 0.18,
+                size: 14 + Math.random() * 16,
+                color: goldPalette[Math.floor(Math.random() * goldPalette.length)],
+                shape: Math.random() < 0.22 ? "crown" : (Math.random() < 0.55 ? "star" : "diamond"),
+                symbol: starSymbols[Math.floor(Math.random() * starSymbols.length)],
+                alpha: 1.0,
+              }});
+              // Canon droit
+              particles.push({{
+                x: w * 0.88,
+                y: h * 0.88,
+                vx: -(3 + Math.random() * 11),
+                vy: -(12 + Math.random() * 14),
+                gravity: 0.38,
+                friction: 0.985,
+                angle: Math.random() * Math.PI * 2,
+                vRot: (Math.random() - 0.5) * 0.18,
+                size: 14 + Math.random() * 16,
+                color: goldPalette[Math.floor(Math.random() * goldPalette.length)],
+                shape: Math.random() < 0.22 ? "crown" : (Math.random() < 0.55 ? "star" : "diamond"),
+                symbol: starSymbols[Math.floor(Math.random() * starSymbols.length)],
+                alpha: 1.0,
+              }});
+            }}
+
+            // 2. Pluie centrale scintillante
+            const showerCount = 35;
+            for (let i = 0; i < showerCount; i++) {{
+              particles.push({{
+                x: w * (0.25 + 0.5 * Math.random()),
+                y: h * (0.15 + 0.2 * Math.random()),
+                vx: (Math.random() - 0.5) * 5,
+                vy: -(3 + Math.random() * 6),
+                gravity: 0.22,
+                friction: 0.99,
+                angle: Math.random() * Math.PI * 2,
+                vRot: (Math.random() - 0.5) * 0.12,
+                size: 12 + Math.random() * 14,
+                color: goldPalette[Math.floor(Math.random() * goldPalette.length)],
+                shape: Math.random() < 0.3 ? "crown" : "star",
+                symbol: starSymbols[Math.floor(Math.random() * starSymbols.length)],
+                alpha: 1.0,
+              }});
+            }}
+
+            const startTime = performance.now();
+            const duration = 2600; // ms synchronisé avec la fanfare MP3
+
+            function renderFrame(now) {{
+              const elapsed = now - startTime;
+              if (elapsed >= duration || !canvas.parentNode) {{
+                try {{ canvas.remove(); }} catch (e) {{}}
+                return;
               }}
+
+              ctx.clearRect(0, 0, canvas.width, canvas.height);
+              const progress = elapsed / duration;
+              const globalFade = progress > 0.65 ? Math.max(0, 1 - (progress - 0.65) / 0.35) : 1;
+
+              for (let i = 0; i < particles.length; i++) {{
+                const p = particles[i];
+                p.x += p.vx;
+                p.y += p.vy;
+                p.vy += p.gravity;
+                p.vx *= p.friction;
+                p.vy *= p.friction;
+                p.angle += p.vRot;
+
+                ctx.save();
+                ctx.translate(p.x, p.y);
+                ctx.rotate(p.angle);
+                ctx.globalAlpha = Math.max(0, p.alpha * globalFade);
+
+                if (p.shape === "crown") {{
+                  ctx.font = Math.round(p.size) + "px serif";
+                  ctx.textAlign = "center";
+                  ctx.textBaseline = "middle";
+                  ctx.fillText("👑", 0, 0);
+                }} else if (p.shape === "star") {{
+                  ctx.font = Math.round(p.size) + "px serif";
+                  ctx.textAlign = "center";
+                  ctx.textBaseline = "middle";
+                  ctx.fillText(p.symbol || "✨", 0, 0);
+                }} else if (p.shape === "diamond") {{
+                  ctx.fillStyle = p.color;
+                  ctx.shadowColor = "#FBBF24";
+                  ctx.shadowBlur = 8;
+                  const s = p.size * 0.45;
+                  ctx.beginPath();
+                  ctx.moveTo(0, -s);
+                  ctx.lineTo(s * 0.8, 0);
+                  ctx.lineTo(0, s);
+                  ctx.lineTo(-s * 0.8, 0);
+                  ctx.closePath();
+                  ctx.fill();
+                }} else {{
+                  ctx.fillStyle = p.color;
+                  ctx.shadowColor = "#FFD700";
+                  ctx.shadowBlur = 6;
+                  ctx.beginPath();
+                  ctx.arc(0, 0, p.size * 0.3, 0, Math.PI * 2);
+                  ctx.fill();
+                }}
+
+                ctx.restore();
+              }}
+
+              requestAnimationFrame(renderFrame);
+            }}
+
+            requestAnimationFrame(renderFrame);
+          }}
+
+          function playRoyalCelebration_{clean_id}() {{
+            // 1. Déclenchement de l'animation royale Canvas
+            try {{
+              launchRoyalAnimation_{clean_id}();
+            }} catch (e) {{
+              console.log("Animation royale:", e);
+            }}
+
+            // 2. Déclenchement du son MP3 royal
+            const a = document.getElementById("audio_{clean_id}");
+            if (a) {{
+              try {{
+                a.currentTime = 0;
+                const prom = a.play();
+                if (prom && prom.catch) {{
+                  prom.catch(function(e) {{
+                    console.log("Lecture audio auto reportée :", e);
+                  }});
+                }}
+              }} catch (e) {{}}
             }}
           }}
 
-          window.playTrophySound_{clean_id} = playTrophySound_{clean_id};
+          window.playRoyalCelebration_{clean_id} = playRoyalCelebration_{clean_id};
+          window.playTrophySound_{clean_id} = playRoyalCelebration_{clean_id};
 
           if ({auto_play_js}) {{
-            // Délai léger pour synchronisation parfaite avec les ballons et le rendu
-            setTimeout(playTrophySound_{clean_id}, 180);
+            setTimeout(playRoyalCelebration_{clean_id}, 120);
           }}
         }})();
       </script>

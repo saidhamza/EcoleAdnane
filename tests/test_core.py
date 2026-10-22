@@ -132,6 +132,7 @@ from services.voice_manager import (
     generate_trophy_celebration_html,
     generate_trophy_sound_wav_base64,
     generate_tts_player_html,
+    get_royal_fanfare_mp3_base64,
     get_server_tts_audio_base64,
     get_speech_config,
     is_linux_platform,
@@ -1337,16 +1338,29 @@ print("debug")
             self.assertEqual(wf.getframerate(), 44100)
             self.assertGreater(wf.getnframes(), 0)
 
+    def test_get_royal_fanfare_mp3_base64(self):
+        mp3_uri = get_royal_fanfare_mp3_base64()
+        self.assertIsNotNone(mp3_uri)
+        self.assertTrue(mp3_uri.startswith("data:audio/mp3;base64,") or mp3_uri.startswith("data:audio/wav;base64,"))
+        b64_part = mp3_uri.split(",", 1)[1]
+        raw_bytes = base64.b64decode(b64_part)
+        self.assertGreater(len(raw_bytes), 1000)
+        # Check caching
+        mp3_uri_cached = get_royal_fanfare_mp3_base64()
+        self.assertEqual(mp3_uri, mp3_uri_cached)
+
     def test_generate_trophy_celebration_html(self):
-        # 1. Autoplay mode without button (for automatic reward playback)
+        # 1. Mode célébration automatique sans bouton (après quiz ou déblocage)
         html_auto = generate_trophy_celebration_html(auto_play=True, widget_id="test_trophy_auto", show_button=False)
-        self.assertIn("data:audio/wav;base64,", html_auto)
+        self.assertIn("data:audio/", html_auto)
         self.assertIn("<audio id=\"audio_test_trophy_auto\"", html_auto)
-        self.assertIn("playTrophySound_test_trophy_auto", html_auto)
-        self.assertIn("AudioContext", html_auto)
+        self.assertIn("playRoyalCelebration_test_trophy_auto", html_auto)
+        self.assertIn("royal_fanfare_canvas_test_trophy_auto", html_auto)
+        self.assertIn("👑", html_auto)
+        self.assertIn("✨", html_auto)
         self.assertIn("display: none", html_auto)
 
-        # 2. Manual button mode (for Royal Trophy Hall or replay button)
+        # 2. Mode bouton manuel (pour test admin exclusif)
         html_btn = generate_trophy_celebration_html(
             auto_play=False,
             widget_id="test_trophy_btn",
@@ -1356,7 +1370,7 @@ print("debug")
         self.assertIn("<button id=\"btn_test_trophy_btn\"", html_btn)
         self.assertIn("🎺 Fanfare Royale", html_btn)
         self.assertIn("display: inline-block", html_btn)
-        self.assertIn("playTrophySound_test_trophy_btn()", html_btn)
+        self.assertIn("playRoyalCelebration_test_trophy_btn()", html_btn)
 
 
 class TestCourseDeletion(unittest.TestCase):

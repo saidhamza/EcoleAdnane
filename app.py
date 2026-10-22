@@ -267,6 +267,7 @@ try:
         generate_trophy_celebration_html,
         generate_trophy_sound_wav_base64,
         generate_tts_player_html,
+        get_royal_fanfare_mp3_base64,
         get_speech_config,
     )
 except Exception:
@@ -277,6 +278,7 @@ except Exception:
         generate_trophy_celebration_html,
         generate_trophy_sound_wav_base64,
         generate_tts_player_html,
+        get_royal_fanfare_mp3_base64,
         get_speech_config,
     )
 
@@ -1705,6 +1707,30 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                         else:
                             st.error(f"❌ {res_cib['error']}")
 
+        st.divider()
+        st.markdown("### 🎺 Test de la Fanfare Royale & Célébration des Trophées")
+        st.markdown(
+            "Testez en conditions réelles la fanfare royale MP3 officielle ainsi que la pluie d'étoiles dorées et de couronnes "
+            "qui retentissent lorsqu'un élève débloque un trophée d'excellence. *(Outil réservé exclusivement à l'administrateur)*"
+        )
+        col_tst1, col_tst2 = st.columns([1.5, 2.5])
+        with col_tst1:
+            if st.button("🎺 Tester la célébration royale (MP3 + Pluie d'or)", type="primary", use_container_width=True, key="admin_test_trophy_btn"):
+                st.session_state["admin_trophy_test_triggered"] = True
+
+        if st.session_state.get("admin_trophy_test_triggered"):
+            st.session_state.pop("admin_trophy_test_triggered", None)
+            st.components.v1.html(
+                generate_trophy_celebration_html(
+                    auto_play=True,
+                    widget_id="admin_test_celebration",
+                    show_button=False,
+                ),
+                height=0,
+            )
+            st.balloons()
+            st.success("👑 **Célébration royale déclenchée avec succès !** La fanfare MP3 retentit et les particules d'or et couronnes s'animent.")
+
         return
 
     # -----------------------------------------------------------------------
@@ -2556,22 +2582,7 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                 """,
                 unsafe_allow_html=True,
             )
-            if c_unlocked > 0:
-                col_bar, col_snd = st.columns([3.8, 1.2])
-                with col_bar:
-                    st.progress(c_rate / 100.0)
-                with col_snd:
-                    st.components.v1.html(
-                        generate_trophy_celebration_html(
-                            auto_play=False,
-                            widget_id=f"btn_course_fanfare_{current_course['id']}",
-                            show_button=True,
-                            button_label="🎺 Fanfare",
-                        ),
-                        height=38,
-                    )
-            else:
-                st.progress(c_rate / 100.0)
+            st.progress(c_rate / 100.0)
 
             st.write("")
             render_magnificent_trophy_grid(c_overview.get("badges", []), cols_count=2)
@@ -2807,22 +2818,7 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
             """,
             unsafe_allow_html=True,
         )
-        if unlocked_t > 0:
-            col_bar, col_sound = st.columns([3.8, 1.2])
-            with col_bar:
-                st.progress(overall_rate / 100.0)
-            with col_sound:
-                st.components.v1.html(
-                    generate_trophy_celebration_html(
-                        auto_play=False,
-                        widget_id="fanfare_hall_btn",
-                        show_button=True,
-                        button_label="🎺 Fanfare Royale",
-                    ),
-                    height=38,
-                )
-        else:
-            st.progress(overall_rate / 100.0)
+        st.progress(overall_rate / 100.0)
 
         st.divider()
 
