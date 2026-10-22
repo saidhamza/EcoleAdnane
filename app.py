@@ -775,14 +775,13 @@ def render_student_progress_details(
                 b_c1, b_c2 = st.columns([1.2, 0.8])
                 with b_c1:
                     if st.button("🚀 Ouvrir son espace", key=f"btn_open_space_{student_id}", use_container_width=True, help="Basculer vers l'espace complet de cet élève"):
-                        st.session_state["admin_space_selector"] = str(student_id)
+                        st.session_state["pending_admin_space"] = str(student_id)
                         st.session_state["admin_student_menu_choice"] = "📊 Mes Progrès"
                         st.rerun()
                 with b_c2:
                     if st.button("✖️ Fermer", key=f"btn_close_prog_{student_id}", use_container_width=True, help="Masquer cette fiche"):
                         st.session_state["view_student_progress_id"] = None
-                        if "admin_students_summary_table" in st.session_state:
-                            st.session_state["admin_students_summary_table"] = {"selection": {"rows": []}}
+                        st.session_state["clear_students_summary_table_selection"] = True
                         st.rerun()
 
         st.divider()
@@ -1090,6 +1089,11 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
             blocked_tag = " [SUSPENDU]" if s.get("is_blocked") else ""
             student_options[str(s["id"])] = f"{s_cycle['badge_text']} — {s['name']} ({s['email']}){blocked_tag}"
 
+        if "pending_admin_space" in st.session_state:
+            pending_space = str(st.session_state.pop("pending_admin_space"))
+            if pending_space in student_options:
+                st.session_state["admin_space_selector"] = pending_space
+
         chosen_space = st.sidebar.selectbox(
             "Espace de travail :",
             options=list(student_options.keys()),
@@ -1210,6 +1214,11 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                 }
                 for s in students_summary
             ]
+
+            if st.session_state.get("clear_students_summary_table_selection"):
+                st.session_state.pop("clear_students_summary_table_selection", None)
+                if "admin_students_summary_table" in st.session_state:
+                    st.session_state["admin_students_summary_table"] = {"selection": {"rows": []}}
 
             df_selection = st.dataframe(
                 df_rows,
