@@ -2473,6 +2473,50 @@ class TestSchoolLevelAndTrophies(unittest.TestCase):
             else:
                 os.environ.pop("DATABASE_PATH", None)
 
+    def test_init_db_migrates_legacy_unique_user_badges_constraint(self):
+        legacy_db_file = Path(self.temp_dir.name) / "legacy_unique_badges.db"
+        conn = sqlite3.connect(legacy_db_file)
+        # Create legacy table with UNIQUE(user_id, badge_key) as in commit b6bee79
+        conn.execute("""
+            CREATE TABLE user_badges (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                badge_key TEXT NOT NULL,
+                unlocked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                metadata_json TEXT,
+                UNIQUE(user_id, badge_key)
+            )
+        """)
+        conn.commit()
+        conn.close()
+
+        old_db_env = os.environ.get("DATABASE_PATH")
+        try:
+            os.environ["DATABASE_PATH"] = str(legacy_db_file)
+            init_db()
+
+            # Create a user and 2 courses
+            st_user = create_or_get_google_user("learner_unique@test.ma", "Élève Multi")
+            uid = st_user["id"]
+            c1 = save_course("Maths 1", "Maths", "fr", "/fake/m1.pdf", "m1.pdf", "hash_m1", user_id=uid)
+            c2 = save_course("Maths 2", "Maths", "fr", "/fake/m2.pdf", "m2.pdf", "hash_m2", user_id=uid)
+
+            # Award course_explored to course 1 and course 2
+            res1 = award_badge(uid, "course_explored", course_id=c1)
+            res2 = award_badge(uid, "course_explored", course_id=c2)
+            self.assertTrue(res1)
+            self.assertTrue(res2)
+
+            # get_student_trophies_by_course must run smoothly without IntegrityError!
+            overview = get_student_trophies_by_course(uid)
+            self.assertEqual(overview["total_courses"], 2)
+            self.assertEqual(overview["unlocked_trophies"], 2)
+        finally:
+            if old_db_env is not None:
+                os.environ["DATABASE_PATH"] = old_db_env
+            else:
+                os.environ.pop("DATABASE_PATH", None)
+
 
 if __name__ == "__main__":
     unittest.main()

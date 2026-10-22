@@ -272,6 +272,53 @@ def init_db(db_path: Optional[Path] = None) -> None:
                     FOREIGN KEY (course_id) REFERENCES courses (id) ON DELETE CASCADE
                 )
             """)
+
+            # Migration user_badges : suppression de l'ancienne contrainte UNIQUE(user_id, badge_key)
+            cur.execute("PRAGMA index_list(user_badges)")
+            badge_indexes = cur.fetchall()
+            has_bad_badge_unique = False
+            for idx in badge_indexes:
+                idx_name = idx["name"] if isinstance(idx, dict) or hasattr(idx, "keys") else idx[1]
+                is_unique = idx["unique"] if isinstance(idx, dict) or hasattr(idx, "keys") else idx[2]
+                if is_unique == 1:
+                    cur.execute(f"PRAGMA index_info({idx_name})")
+                    idx_cols = [c["name"] if isinstance(c, dict) or hasattr(c, "keys") else c[2] for c in cur.fetchall()]
+                    if idx_cols in (["user_id", "badge_key"], ["badge_key", "user_id"]):
+                        has_bad_badge_unique = True
+                        break
+
+            if has_bad_badge_unique:
+                logger.info("Migration user_badges : suppression de la contrainte UNIQUE(user_id, badge_key) pour supporter les trophées par cours...")
+                conn.execute("PRAGMA foreign_keys = OFF")
+                conn.execute("DROP TABLE IF EXISTS user_badges_migration_temp")
+                conn.execute("""
+                    CREATE TABLE user_badges_migration_temp (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        user_id INTEGER NOT NULL,
+                        course_id INTEGER,
+                        badge_key TEXT NOT NULL,
+                        unlocked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        metadata_json TEXT,
+                        FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
+                        FOREIGN KEY (course_id) REFERENCES courses (id) ON DELETE CASCADE
+                    )
+                """)
+                cur.execute("PRAGMA table_info(user_badges)")
+                existing_cols = [c["name"] if isinstance(c, dict) or hasattr(c, "keys") else c[1] for c in cur.fetchall()]
+                if "course_id" in existing_cols:
+                    conn.execute("""
+                        INSERT INTO user_badges_migration_temp (id, user_id, course_id, badge_key, unlocked_at, metadata_json)
+                        SELECT id, user_id, course_id, badge_key, unlocked_at, metadata_json FROM user_badges
+                    """)
+                else:
+                    conn.execute("""
+                        INSERT INTO user_badges_migration_temp (id, user_id, badge_key, unlocked_at, metadata_json)
+                        SELECT id, user_id, badge_key, unlocked_at, metadata_json FROM user_badges
+                    """)
+                conn.execute("DROP TABLE user_badges")
+                conn.execute("ALTER TABLE user_badges_migration_temp RENAME TO user_badges")
+                conn.execute("PRAGMA foreign_keys = ON")
+
             cur.execute("PRAGMA table_info(user_badges)")
             badge_cols = [row["name"] for row in cur.fetchall()]
             if "course_id" not in badge_cols:
@@ -287,6 +334,8 @@ def init_db(db_path: Optional[Path] = None) -> None:
             refreshed_badge_cols = [row["name"] for row in cur.fetchall()]
             if "course_id" in refreshed_badge_cols:
                 cur.execute("CREATE INDEX IF NOT EXISTS idx_user_badges_course ON user_badges(user_id, course_id)")
+                cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_user_badges_course_unique ON user_badges(user_id, course_id, badge_key) WHERE course_id IS NOT NULL")
+                cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_user_badges_global_unique ON user_badges(user_id, badge_key) WHERE course_id IS NULL")
 
             cur.execute("PRAGMA table_info(courses)")
             course_cols = [row["name"] for row in cur.fetchall()]
@@ -2678,14 +2727,18 @@ def award_badge(
                 return False
 
             meta_json = json.dumps(metadata or {}, ensure_ascii=False)
-            cur.execute(
-                """
-                INSERT INTO user_badges (user_id, course_id, badge_key, metadata_json)
-                VALUES (?, ?, ?, ?)
-                """,
-                (user_id, course_id, badge_key, meta_json),
-            )
-            return cur.rowcount > 0
+            try:
+                cur.execute(
+                    """
+                    INSERT INTO user_badges (user_id, course_id, badge_key, metadata_json)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    (user_id, course_id, badge_key, meta_json),
+                )
+                return cur.rowcount > 0
+            except sqlite3.IntegrityError:
+                # Déjà enregistré concurremment ou contrainte satisfaite
+                return False
     finally:
         conn.close()
 
