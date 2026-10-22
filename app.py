@@ -37,10 +37,14 @@ try:
         or not hasattr(models.database, "update_user_level")
         or not hasattr(models.database, "get_course_mindmap")
         or not hasattr(models.database, "evaluate_and_sync_concept_mastery")
-        or not hasattr(models.database, "get_student_trophies_overview")
+        or not hasattr(models.database, "get_course_trophies_overview")
+        or not hasattr(models.database, "evaluate_and_award_course_badges")
+        or not hasattr(models.database, "get_student_trophies_by_course")
     ):
         models.database = importlib.reload(models.database)
     from models.database import (
+        COURSE_BADGE_CATALOG,
+        COURSE_BADGE_CATALOG_MAP,
         MOROCCAN_SCHOOL_LEVELS,
         add_chat_message,
         award_badge,
@@ -50,16 +54,19 @@ try:
         delete_user_account,
         delete_user_session,
         evaluate_and_award_badges,
+        evaluate_and_award_course_badges,
         evaluate_and_sync_concept_mastery,
         get_badge_catalog,
         get_chat_history,
         get_course_by_id,
         get_course_mindmap,
+        get_course_trophies_overview,
         get_global_admin_kpis,
         get_latest_quiz,
         get_pedagogical_cycle,
         get_quiz_stats,
         get_student_concept_mastery,
+        get_student_trophies_by_course,
         get_student_trophies_overview,
         get_user_badges,
         get_user_by_id,
@@ -88,6 +95,8 @@ except ImportError:
     import models.database
     models.database = importlib.reload(models.database)
     from models.database import (
+        COURSE_BADGE_CATALOG,
+        COURSE_BADGE_CATALOG_MAP,
         MOROCCAN_SCHOOL_LEVELS,
         add_chat_message,
         award_badge,
@@ -97,16 +106,19 @@ except ImportError:
         delete_user_account,
         delete_user_session,
         evaluate_and_award_badges,
+        evaluate_and_award_course_badges,
         evaluate_and_sync_concept_mastery,
         get_badge_catalog,
         get_chat_history,
         get_course_by_id,
         get_course_mindmap,
+        get_course_trophies_overview,
         get_global_admin_kpis,
         get_latest_quiz,
         get_pedagogical_cycle,
         get_quiz_stats,
         get_student_concept_mastery,
+        get_student_trophies_by_course,
         get_student_trophies_overview,
         get_user_badges,
         get_user_by_id,
@@ -1057,6 +1069,84 @@ if not st.session_state.get("is_authenticated"):
         st.stop()
 
 
+def render_magnificent_trophy_grid(badges: List[Dict[str, Any]], cols_count: int = 2) -> None:
+    """Affiche une grille de trophées avec un design somptueux, immersif et stimulant."""
+    if not badges:
+        st.info("Aucun trophée à afficher dans cette catégorie.")
+        return
+
+    cols = st.columns(cols_count)
+    for idx, badge in enumerate(badges):
+        col = cols[idx % cols_count]
+        with col:
+            is_unlocked = badge.get("is_unlocked", False)
+            unlocked_at = badge.get("unlocked_at")
+
+            if is_unlocked:
+                bg_style = "linear-gradient(135deg, rgba(30, 41, 59, 0.95) 0%, rgba(15, 23, 42, 0.98) 100%)"
+                border_color = "#f59e0b"
+                shadow_style = "0 8px 20px -4px rgba(245, 158, 11, 0.35), inset 0 1px 1px rgba(255, 255, 255, 0.15)"
+                title_color = "#fef08a"
+                desc_color = "#e2e8f0"
+                glow_aura = "radial-gradient(circle, rgba(245, 158, 11, 0.3) 0%, transparent 70%)"
+                badge_tag = (
+                    "<span style='background: linear-gradient(135deg, #10b981 0%, #059669 100%); "
+                    "color: #ffffff; padding: 4px 12px; border-radius: 20px; font-size: 0.75rem; "
+                    "font-weight: 800; letter-spacing: 0.5px; box-shadow: 0 2px 6px rgba(16, 185, 129, 0.4);'>"
+                    "✨ DÉBLOQUÉ</span>"
+                )
+                icon_filter = "drop-shadow(0 0 10px rgba(251, 191, 36, 0.65))"
+                pct = 100
+                prog_val = 1.0
+            else:
+                bg_style = "linear-gradient(135deg, rgba(15, 23, 42, 0.75) 0%, rgba(2, 6, 23, 0.85) 100%)"
+                border_color = "#334155"
+                shadow_style = "0 4px 12px rgba(0, 0, 0, 0.3)"
+                title_color = "#cbd5e1"
+                desc_color = "#94a3b8"
+                glow_aura = "none"
+                badge_tag = (
+                    "<span style='background: rgba(51, 65, 85, 0.8); color: #94a3b8; padding: 4px 12px; "
+                    "border-radius: 20px; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.5px; "
+                    "border: 1px solid #475569;'>🔒 EN COURS</span>"
+                )
+                icon_filter = "grayscale(100%) opacity(0.38)"
+                pct = badge.get("progress_percent", 0)
+                prog_val = badge.get("progress_ratio", 0.0)
+
+            card_html = f"""
+            <div style="background: {bg_style}; border: 1.5px solid {border_color}; border-radius: 16px; padding: 18px 20px; margin-bottom: 14px; box-shadow: {shadow_style}; backdrop-filter: blur(12px); position: relative; overflow: hidden;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                    <div style="width: 52px; height: 52px; display: flex; align-items: center; justify-content: center; background: {glow_aura}; border-radius: 50%;">
+                        <span style="font-size: 2.2rem; filter: {icon_filter}; line-height: 1;">{badge['icon']}</span>
+                    </div>
+                    <div>{badge_tag}</div>
+                </div>
+                <div style="font-size: 1.15rem; font-weight: 800; color: {title_color}; margin-bottom: 4px; letter-spacing: -0.2px;">
+                    {badge['title']}
+                </div>
+                <div style="display: inline-block; background: rgba(59, 130, 246, 0.15); color: #93c5fd; padding: 2px 8px; border-radius: 6px; font-size: 0.72rem; font-weight: 600; margin-bottom: 8px;">
+                    {badge.get('category', 'Trophée')}
+                </div>
+                <div style="font-size: 0.85rem; color: {desc_color}; line-height: 1.45; margin-bottom: 12px; min-height: 38px;">
+                    🎯 <strong>Mission :</strong> {badge['description']}
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.8rem; color: #94a3b8; margin-bottom: 6px;">
+                    <span>Objectif : <strong>{badge['current_value']} / {badge['target_value']} {badge['unit']}</strong></span>
+                    <span style="font-weight: 700; color: {'#34d399' if is_unlocked else '#60a5fa'};">{pct}%</span>
+                </div>
+            </div>
+            """
+            st.markdown(card_html, unsafe_allow_html=True)
+            st.progress(prog_val)
+            if is_unlocked and unlocked_at:
+                date_str = str(unlocked_at)[:16]
+                st.caption(f"🎖️ Décroché le {date_str} • *{badge['encouragement']}*")
+            else:
+                st.caption(f"💡 *{badge['encouragement']}*")
+            st.write("")
+
+
 # ===========================================================================
 # APPLICATION AUTHENTIFIÉE
 # ===========================================================================
@@ -1843,31 +1933,34 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
         st.write("")
 
         if is_ar:
-            tab_doc, tab_fiche, tab_schema, tab_notions, tab_quiz, tab_tuteur = st.tabs([
+            tab_doc, tab_fiche, tab_schema, tab_notions, tab_quiz, tab_tuteur, tab_trophies = st.tabs([
                 "📄 وثيقة الدرس",
                 "⚡ بطاقة المراجعة",
                 "🧠 خريطة ذهنية",
                 "🎯 المفاهيم والمكتسبات",
                 "📝 تدريب الامتحان",
                 "🤖 الأستاذ سند",
+                "🏆 شارات وكؤوس الدرس",
             ])
         elif is_en:
-            tab_doc, tab_fiche, tab_schema, tab_notions, tab_quiz, tab_tuteur = st.tabs([
+            tab_doc, tab_fiche, tab_schema, tab_notions, tab_quiz, tab_tuteur, tab_trophies = st.tabs([
                 "📄 Course Document",
                 "⚡ Revision Sheet",
                 "🧠 Mind Map",
                 "🎯 Key Concepts",
                 "📝 Exam Quiz",
                 "🤖 AI Tutor (Sanad)",
+                "🏆 Course Trophies",
             ])
         else:
-            tab_doc, tab_fiche, tab_schema, tab_notions, tab_quiz, tab_tuteur = st.tabs([
+            tab_doc, tab_fiche, tab_schema, tab_notions, tab_quiz, tab_tuteur, tab_trophies = st.tabs([
                 "📄 Le Document",
                 "⚡ Fiche Express",
                 "🧠 Carte Mentale",
                 "🎯 Notions & Acquis",
                 "📝 Entraînement Examen",
                 "🤖 Tuteur Virtuel (Sanad)",
+                "🏆 Trophées du Cours",
             ])
 
         with tab_doc:
@@ -2181,10 +2274,10 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                             user_id=active_user_id,
                         )
                         evaluate_and_sync_concept_mastery(active_user_id, current_course["id"])
-                        new_badges = evaluate_and_award_badges(active_user_id)
+                        new_badges = evaluate_and_award_course_badges(active_user_id, current_course["id"])
                         if new_badges:
                             for nb in new_badges:
-                                st.toast(f"🎉 Nouveau trophée débloqué : {nb['icon']} {nb['title']} !", icon="🏆")
+                                st.toast(f"🎉 Nouveau trophée conquis sur {current_course['title']} : {nb['icon']} {nb['title']} !", icon="🏆")
                         st.session_state[submission_key] = True
                         if score >= len(questions) * 0.8 or new_badges:
                             st.balloons()
@@ -2369,6 +2462,52 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                     clear_chat_history(current_course["id"], user_id=active_user_id)
                     st.rerun()
 
+        with tab_trophies:
+            c_overview = get_course_trophies_overview(active_user_id, current_course["id"])
+            c_unlocked = c_overview["unlocked_trophies"]
+            c_total = c_overview["total_trophies"]
+            c_rate = c_overview["completion_rate"]
+
+            t_header_txt = (
+                f"### 🏆 شارات وكؤوس الدرس — {current_course['title']}"
+                if is_ar
+                else (
+                    f"### 🏆 Course Trophies — {current_course['title']}"
+                    if is_en
+                    else f"### 🏆 Trophées de la Leçon — {current_course['title']}"
+                )
+            )
+            st.markdown(t_header_txt)
+            banner_title = "لوحة تميز الدرس" if is_ar else ("Course Trophy Showcase" if is_en else "Vitrine d'Excellence du Cours")
+            banner_sub = (
+                f"حصلت على <strong>{c_unlocked} من أصل {c_total}</strong> شارات في هذا الدرس ({c_rate}%)."
+                if is_ar
+                else (
+                    f"You have conquered <strong>{c_unlocked} out of {c_total}</strong> trophies on this lesson ({c_rate}%)."
+                    if is_en
+                    else f"Vous avez conquis <strong>{c_unlocked} sur {c_total}</strong> trophées sur cette leçon ({c_rate}%)."
+                )
+            )
+            st.markdown(
+                f"""
+                <div style="background: linear-gradient(135deg, rgba(30, 41, 59, 0.95) 0%, rgba(15, 23, 42, 0.98) 100%); border: 1.5px solid #f59e0b; border-radius: 14px; padding: 16px 20px; margin-bottom: 20px; box-shadow: 0 4px 14px rgba(245, 158, 11, 0.2);">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <span style="font-size: 1.15rem; font-weight: 800; color: #fef08a;">{banner_title}</span>
+                            <div style="color: #cbd5e1; font-size: 0.85rem; margin-top: 4px;">{banner_sub}</div>
+                        </div>
+                        <div style="font-size: 1.6rem; font-weight: 900; color: #fbbf24;">
+                            {c_unlocked}/{c_total} 🎖️
+                        </div>
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+            st.progress(c_rate / 100.0)
+            st.write("")
+            render_magnificent_trophy_grid(c_overview.get("badges", []), cols_count=2)
+
     # -----------------------------------------------------------------------
     # GESTION & AJOUT DES COURS (ADMINISTRATEUR)
     # -----------------------------------------------------------------------
@@ -2491,18 +2630,19 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
         active_u_cycle = get_pedagogical_cycle(active_u_dict.get("age"), level=active_u_dict.get("level"))
         st.title(f"📊 Progression & Révisions — {active_u_cycle.get('level', 'Collège')}")
 
-        trophies_ov = get_student_trophies_overview(active_user_id)
+        trophies_ov = get_student_trophies_by_course(active_user_id)
         u_trophies = trophies_ov.get("unlocked_trophies", 0)
-        tot_trophies = trophies_ov.get("total_trophies", 8)
+        tot_trophies = trophies_ov.get("total_trophies", 0)
         rate_trophies = trophies_ov.get("completion_rate", 0.0)
+        rank_tag = trophies_ov.get("rank", "🥉 Apprenti")
 
         t_col1, t_col2 = st.columns([3, 1])
         with t_col1:
-            st.markdown(f"### 🏆 Trophées & Objectifs ({u_trophies}/{tot_trophies} débloqués — {rate_trophies}%)")
+            st.markdown(f"### 🏆 Trophées par Cours : **{rank_tag}** ({u_trophies}/{tot_trophies} conquis — {rate_trophies}%)")
             st.progress(rate_trophies / 100.0)
         with t_col2:
             st.write("")
-            st.caption("Consultez l'onglet **🏆 Mes Trophées** pour voir tous les objectifs à accomplir !")
+            st.caption("Consultez l'onglet **🏆 Mes Trophées** pour voir vos trophées leçon par leçon !")
 
         st.divider()
 
@@ -2545,7 +2685,7 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                 st.caption("L'historique des quiz récents apparaîtra ici.")
 
     # -----------------------------------------------------------------------
-    # VUE ÉLÈVE : MES TROPHÉES & OBJECTIFS
+    # VUE ÉLÈVE : MES TROPHÉES PAR COURS & OBJECTIFS
     # -----------------------------------------------------------------------
     elif menu in ("🏆 Mes Trophées", "🏆 Trophées & Badges"):
         if is_admin and active_student_info:
@@ -2553,90 +2693,118 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
 
         active_u_dict = active_student_info if (is_admin and active_student_info) else current_user
         active_u_cycle = get_pedagogical_cycle(active_u_dict.get("age"), level=active_u_dict.get("level"))
-        st.title(f"🏆 Mes Trophées & Objectifs — {active_u_cycle.get('level', 'Collège')}")
+        st.title(f"🏆 Salle des Trophées par Cours — {active_u_cycle.get('level', 'Collège')}")
         st.markdown(
-            "Relevez les défis d'apprentissage, complétez vos entraînements et dialoguez avec votre tuteur Sanad "
-            "pour remporter tous les trophées d'excellence !"
+            "Chaque cours dispose de ses propres **8 défis d'excellence**. "
+            "Explorez vos leçons, maîtrisez les notions et réussissez vos quiz pour débloquer toutes les couronnes !"
         )
 
-        trophies_data = get_student_trophies_overview(active_user_id)
-        unlocked_cnt = trophies_data.get("unlocked_trophies", 0)
-        total_cnt = trophies_data.get("total_trophies", 8)
-        c_rate = trophies_data.get("completion_rate", 0.0)
+        trophies_data = get_student_trophies_by_course(active_user_id)
+        tot_c = trophies_data.get("total_courses", 0)
+        tot_t = trophies_data.get("total_trophies", 0)
+        unlocked_t = trophies_data.get("unlocked_trophies", 0)
+        overall_rate = trophies_data.get("completion_rate", 0.0)
+        rank_title = trophies_data.get("rank", "🥉 Apprenti Explorateur")
+        rank_color = trophies_data.get("rank_color", "#f97316")
+        rank_quote = trophies_data.get("rank_quote", "Chaque grand voyage commence par une première leçon !")
 
-        # Cartes récapitulatives d'objectifs
-        m_col1, m_col2, m_col3 = st.columns([1.5, 1.5, 3])
-        with m_col1:
-            st.metric("Trophées Débloqués", f"{unlocked_cnt} / {total_cnt}")
-        with m_col2:
-            st.metric("Taux d'accomplissement", f"{c_rate}%")
-        with m_col3:
-            st.write("")
-            st.progress(c_rate / 100.0)
-            if unlocked_cnt == total_cnt:
-                st.caption("🌟 **Félicitations exceptionnelles ! Tous les trophées sont débloqués !**")
-            else:
-                st.caption(f"💪 Continuez sur cette lancée ! Encore **{total_cnt - unlocked_cnt}** trophée(s) à débloquer.")
+        # -------------------------------------------------------------------
+        # HERO BANNER SOMPTUEUX & RANG D'EXCELLENCE
+        # -------------------------------------------------------------------
+        st.markdown(
+            f"""
+            <div style="background: linear-gradient(135deg, #090d16 0%, #1e1b4b 50%, #0f172a 100%); border: 1.8px solid #f59e0b; border-radius: 18px; padding: 22px 26px; margin-bottom: 24px; box-shadow: 0 10px 30px -5px rgba(245, 158, 11, 0.25); position: relative; overflow: hidden;">
+                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 14px;">
+                    <div>
+                        <div style="display: inline-block; background: rgba(245, 158, 11, 0.15); border: 1px solid {rank_color}; color: {rank_color}; padding: 4px 14px; border-radius: 20px; font-size: 0.82rem; font-weight: 800; margin-bottom: 8px; letter-spacing: 0.5px;">
+                            {rank_title}
+                        </div>
+                        <div style="font-size: 1.55rem; font-weight: 900; color: #ffffff; letter-spacing: -0.5px;">
+                            Salle Royale des Trophées
+                        </div>
+                        <div style="color: #cbd5e1; font-size: 0.9rem; margin-top: 4px;">
+                            <em>"{rank_quote}"</em>
+                        </div>
+                    </div>
+                    <div style="text-align: right;">
+                        <div style="font-size: 2.2rem; font-weight: 900; color: #fbbf24; text-shadow: 0 0 12px rgba(251, 191, 36, 0.4);">
+                            {unlocked_t} <span style="font-size: 1.2rem; color: #94a3b8; font-weight: 600;">/ {tot_t}</span> 🎖️
+                        </div>
+                        <div style="color: #94a3b8; font-size: 0.82rem; font-weight: 600;">
+                            {tot_c} cours en apprentissage • {overall_rate}% accompli
+                        </div>
+                    </div>
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        st.progress(overall_rate / 100.0)
 
         st.divider()
 
-        filter_choice = st.radio(
-            "Afficher les trophées :",
-            ["Tous les trophées", "🏆 Débloqués uniquement", "🔒 En cours d'obtention"],
-            horizontal=True,
-            key="trophy_status_filter_radio",
-        )
-
-        all_badges = trophies_data.get("badges", [])
-        if filter_choice == "🏆 Débloqués uniquement":
-            display_badges = [b for b in all_badges if b["is_unlocked"]]
-        elif filter_choice == "🔒 En cours d'obtention":
-            display_badges = [b for b in all_badges if not b["is_unlocked"]]
+        if tot_c == 0:
+            st.info("ℹ️ Aucun cours n'est actuellement disponible dans votre espace. Ajoutez ou synchronisez vos premiers cours pour commencer à débloquer vos trophées !")
         else:
-            display_badges = all_badges
+            courses_list = trophies_data.get("courses_trophies", [])
+            subjects = sorted(list({c["subject"] for c in courses_list if c.get("subject")}))
 
-        if not display_badges:
-            st.info("Aucun trophée à afficher dans ce filtre.")
-        else:
-            cols = st.columns(2)
-            for idx, badge in enumerate(display_badges):
-                col = cols[idx % 2]
-                with col:
-                    is_unlocked = badge["is_unlocked"]
-                    bg_style = "linear-gradient(135deg, #1e293b 0%, #172554 100%)" if is_unlocked else "linear-gradient(135deg, #0f172a 0%, #1e293b 100%)"
-                    border_style = "#eab308" if is_unlocked else "#334155"
-                    badge_status_tag = (
-                        "<span style='background:#16a34a; color:#ffffff; padding:3px 10px; border-radius:12px; font-size:0.75rem; font-weight:700;'>🎉 DÉBLOQUÉ</span>"
-                        if is_unlocked
-                        else "<span style='background:#334155; color:#94a3b8; padding:3px 10px; border-radius:12px; font-size:0.75rem; font-weight:700;'>🔒 EN COURS</span>"
+            # Filtres ergonomiques
+            f_col1, f_col2, f_col3 = st.columns([1.5, 2.5, 1.5])
+            with f_col1:
+                subj_opts = ["Toutes les matières"] + subjects
+                selected_subj = st.selectbox("Filtrer par matière :", options=subj_opts, key="trophy_subj_filter")
+            with f_col2:
+                filtered_by_subj = [c for c in courses_list if selected_subj == "Toutes les matières" or c["subject"] == selected_subj]
+                course_opts = ["all"] + [c["course_id"] for c in filtered_by_subj]
+                def _fmt_course(cid):
+                    if cid == "all":
+                        return f"📚 Tous les cours ({len(filtered_by_subj)} leçons)"
+                    c_item = next((c for c in filtered_by_subj if c["course_id"] == cid), None)
+                    if c_item:
+                        return f"📘 {c_item['course_title']} ({c_item['unlocked_trophies']}/8 🏆)"
+                    return str(cid)
+                selected_cid = st.selectbox("Sélectionner la leçon :", options=course_opts, format_func=_fmt_course, key="trophy_course_filter")
+            with f_col3:
+                status_filter = st.selectbox("Affichage :", ["Tous les trophées", "✨ Débloqués uniquement", "🔒 En cours d'obtention"], key="trophy_status_filter")
+
+            st.write("")
+
+            if selected_cid != "all":
+                target_course = next((c for c in filtered_by_subj if c["course_id"] == selected_cid), None)
+                if target_course:
+                    b_list = target_course.get("badges", [])
+                    if status_filter == "✨ Débloqués uniquement":
+                        b_list = [b for b in b_list if b["is_unlocked"]]
+                    elif status_filter == "🔒 En cours d'obtention":
+                        b_list = [b for b in b_list if not b["is_unlocked"]]
+
+                    badge_cls = get_subject_badge_class(target_course["subject"])
+                    st.markdown(
+                        f"<div><span class='badge-subject {badge_cls}'>{target_course['subject']}</span> "
+                        f"<span style='font-size: 1.35rem; font-weight: 800; color: #f8fafc; margin-left: 8px;'>{target_course['course_title']}</span> "
+                        f"— <strong>{target_course['unlocked_trophies']}/8 trophées débloqués</strong> ({target_course['completion_rate']}%)</div>",
+                        unsafe_allow_html=True,
                     )
-                    icon_filter = "none" if is_unlocked else "grayscale(100%) opacity(0.5)"
-
-                    card_html = f"""
-                    <div style="background:{bg_style}; border:1.5px solid {border_style}; border-radius:12px; padding:16px; margin-bottom:12px; box-shadow:0 4px 6px -1px rgba(0,0,0,0.25);">
-                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-                            <div style="font-size:2.2rem; filter:{icon_filter}; line-height:1;">{badge['icon']}</div>
-                            <div>{badge_status_tag}</div>
-                        </div>
-                        <div style="font-size:1.15rem; font-weight:700; color:{'#fbbf24' if is_unlocked else '#f8fafc'}; margin-bottom:4px;">
-                            {badge['title']}
-                        </div>
-                        <div style="font-size:0.85rem; color:#cbd5e1; margin-bottom:10px; line-height:1.4;">
-                            🎯 <strong>Objectif :</strong> {badge['description']}
-                        </div>
-                        <div style="font-size:0.8rem; color:#94a3b8; margin-bottom:6px;">
-                            Progression : <strong>{badge['current_value']} / {badge['target_value']} {badge['unit']}</strong> ({badge['progress_percent']}%)
-                        </div>
-                    </div>
-                    """
-                    st.markdown(card_html, unsafe_allow_html=True)
-                    st.progress(badge["progress_ratio"])
-                    if is_unlocked and badge.get("unlocked_at"):
-                        unlocked_time = str(badge["unlocked_at"])[:16]
-                        st.caption(f"🎖️ Débloqué le {unlocked_time} • *{badge['encouragement']}*")
-                    else:
-                        st.caption(f"💡 *{badge['encouragement']}*")
+                    st.progress(target_course["completion_rate"] / 100.0)
                     st.write("")
+                    render_magnificent_trophy_grid(b_list, cols_count=2)
+            else:
+                for idx, c in enumerate(filtered_by_subj):
+                    b_list = c.get("badges", [])
+                    if status_filter == "✨ Débloqués uniquement":
+                        b_list = [b for b in b_list if b["is_unlocked"]]
+                    elif status_filter == "🔒 En cours d'obtention":
+                        b_list = [b for b in b_list if not b["is_unlocked"]]
+
+                    expander_title = (
+                        f"📘 {c['course_title']} ({c['subject']}) — "
+                        f"{c['unlocked_trophies']}/8 🏆 Débloqués ({c['completion_rate']}%)"
+                    )
+                    with st.expander(expander_title, expanded=(idx < 2)):
+                        st.progress(c["completion_rate"] / 100.0)
+                        st.write("")
+                        render_magnificent_trophy_grid(b_list, cols_count=2)
 
     # -----------------------------------------------------------------------
     # VUE ÉLÈVE : PARAMÈTRES INDIVIDUELS & SAUVEGARDE ÉLÈVE

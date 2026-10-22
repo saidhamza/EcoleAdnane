@@ -395,20 +395,22 @@ def restore_student_backup(file_bytes: bytes, target_user_id: int) -> Dict[str, 
                 )
                 restored_cards += 1
 
-        # Ingestion des badges
+        # Ingestion des badges & trophées (globaux et par cours)
         restored_badges = 0
         for b in data.get("badges", []):
             try:
                 b_key = b.get("badge_key")
+                old_cid = b.get("course_id")
+                new_cid = course_id_map.get(old_cid) if old_cid else None
                 if b_key:
                     conn = get_connection()
                     with conn:
                         conn.execute(
                             """
-                            INSERT OR IGNORE INTO user_badges (user_id, badge_key, unlocked_at, metadata_json)
-                            VALUES (?, ?, COALESCE(?, CURRENT_TIMESTAMP), ?)
+                            INSERT OR IGNORE INTO user_badges (user_id, course_id, badge_key, unlocked_at, metadata_json)
+                            VALUES (?, ?, ?, COALESCE(?, CURRENT_TIMESTAMP), ?)
                             """,
-                            (target_user_id, b_key, b.get("unlocked_at"), b.get("metadata_json")),
+                            (target_user_id, new_cid, b_key, b.get("unlocked_at"), b.get("metadata_json")),
                         )
                     restored_badges += 1
             except Exception:

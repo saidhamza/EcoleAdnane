@@ -20,6 +20,8 @@ from unittest.mock import patch
 
 from models.database import (
     MOROCCAN_SCHOOL_LEVELS,
+    COURSE_BADGE_CATALOG,
+    COURSE_BADGE_CATALOG_MAP,
     add_chat_message,
     award_badge,
     cleanup_expired_sessions,
@@ -30,9 +32,12 @@ from models.database import (
     delete_user_account,
     delete_user_session,
     evaluate_and_award_badges,
+    evaluate_and_award_course_badges,
     evaluate_and_sync_concept_mastery,
     extract_real_course_concepts,
     get_badge_catalog,
+    get_course_trophies_overview,
+    get_student_trophies_by_course,
     get_chat_history,
     get_course_by_hash,
     get_course_by_id,
@@ -2173,6 +2178,216 @@ class TestSchoolLevelAndTrophies(unittest.TestCase):
         restored_keys = [b["badge_key"] for b in restored_badges]
         self.assertIn("first_quiz", restored_keys)
         self.assertIn("mindmap_pioneer", restored_keys)
+
+    def test_course_badge_catalog_and_structure(self):
+        self.assertEqual(len(COURSE_BADGE_CATALOG), 8)
+        expected_keys = [
+            "course_explored",
+            "course_mindmap",
+            "course_first_quiz",
+            "course_perfect_score",
+            "course_three_quizzes",
+            "course_sanad_dialogue",
+            "course_concept_master",
+            "course_grand_master",
+        ]
+        keys = [b["key"] for b in COURSE_BADGE_CATALOG]
+        for ek in expected_keys:
+            self.assertIn(ek, keys)
+            self.assertIn(ek, COURSE_BADGE_CATALOG_MAP)
+
+        for b in COURSE_BADGE_CATALOG:
+            self.assertTrue(b.get("title"))
+            self.assertTrue(b.get("description"))
+            self.assertTrue(b.get("category"))
+            self.assertTrue(b.get("icon"))
+            self.assertGreater(b.get("target_value", 0), 0)
+            self.assertTrue(b.get("unit"))
+
+    def test_award_course_badge_idempotency_and_isolation(self):
+        cid1 = save_course(
+            title="Cours 1",
+            subject="Physique",
+            language="fr",
+            file_path=str(Path(self.temp_dir.name) / "p1.pdf"),
+            file_name="p1.pdf",
+            file_hash="hash_p1",
+            user_id=self.user_id,
+        )
+        cid2 = save_course(
+            title="Cours 2",
+            subject="Physique",
+            language="fr",
+            file_path=str(Path(self.temp_dir.name) / "p2.pdf"),
+            file_name="p2.pdf",
+            file_hash="hash_p2",
+            user_id=self.user_id,
+        )
+
+        # 1st award for course 1 -> True
+        res1 = award_badge(self.user_id, "course_first_quiz", course_id=cid1)
+        self.assertTrue(res1)
+
+        # 2nd award for same course 1 -> False (idempotent)
+        res1_dup = award_badge(self.user_id, "course_first_quiz", course_id=cid1)
+        self.assertFalse(res1_dup)
+
+        # Award same badge for course 2 -> True (isolated per course)
+        res2 = award_badge(self.user_id, "course_first_quiz", course_id=cid2)
+        self.assertTrue(res2)
+
+        badges_c1 = get_user_badges(self.user_id, course_id=cid1)
+        self.assertEqual(len(badges_c1), 1)
+        self.assertEqual(badges_c1[0]["badge_key"], "course_first_quiz")
+        self.assertEqual(badges_c1[0]["course_id"], cid1)
+
+        badges_c2 = get_user_badges(self.user_id, course_id=cid2)
+        self.assertEqual(len(badges_c2), 1)
+        self.assertEqual(badges_c2[0]["badge_key"], "course_first_quiz")
+        self.assertEqual(badges_c2[0]["course_id"], cid2)
+
+    def test_evaluate_and_award_course_badges_lifecycle(self):
+        cid = save_course(
+            title="Histoire-Géo : Maroc Moderne",
+            subject="Histoire-Géographie",
+            language="ar",
+            file_path=str(Path(self.temp_dir.name) / "hg.pdf"),
+            file_name="hg.pdf",
+            file_hash="hash_hg",
+            user_id=self.user_id,
+        )
+
+        # Initial course overview (no summary, no mindmap, no quizzes, no chat)
+        overview_start = get_course_trophies_overview(self.user_id, cid)
+        self.assertEqual(overview_start["total_trophies"], 8)
+        self.assertEqual(overview_start["unlocked_trophies"], 0)
+        self.assertEqual(overview_start["completion_rate"], 0.0)
+
+        # Add summary and mindmap to course
+        update_course_summary(cid, "Résumé du cours sur l'histoire moderne du Maroc.")
+        save_course_mindmap(cid, "mindmap\n  root((Maroc))\n")
+
+        # Evaluate should trigger course_explored and course_mindmap
+        new_badges = evaluate_and_award_course_badges(self.user_id, cid)
+        new_keys = [b["key"] for b in new_badges]
+        self.assertIn("course_explored", new_keys)
+        self.assertIn("course_mindmap", new_keys)
+
+        overview_mid = get_course_trophies_overview(self.user_id, cid)
+        self.assertEqual(overview_mid["unlocked_trophies"], 2)
+        self.assertEqual(overview_mid["completion_rate"], 25.0)
+
+        # Add 3 quiz attempts with 1 perfect score
+        qid = save_quiz(cid, [{"question": "Q1", "options": ["A", "B"], "answer_index": 0}], user_id=self.user_id)
+        save_quiz_attempt(cid, qid, 1, 1, {0: 0}, user_id=self.user_id)
+        save_quiz_attempt(cid, qid, 0, 1, {0: 1}, user_id=self.user_id)
+        save_quiz_attempt(cid, qid, 1, 1, {0: 0}, user_id=self.user_id)
+
+        # Add 2 sanad chat questions
+        add_chat_message(cid, "user", "Peux-tu expliquer cet événement ?", user_id=self.user_id)
+        add_chat_message(cid, "assistant", "Certainement...", user_id=self.user_id)
+        add_chat_message(cid, "user", "Et quelles sont les dates clés ?", user_id=self.user_id)
+        add_chat_message(cid, "assistant", "Les dates clés sont...", user_id=self.user_id)
+
+        # Add 2 mastered concepts
+        save_concept_mastery(self.user_id, cid, "Règne de Mohammed V", "mastered")
+        save_concept_mastery(self.user_id, cid, "Indépendance et Renaissance", "mastered")
+
+        # Evaluate all
+        awarded_all = evaluate_and_award_course_badges(self.user_id, cid)
+        awarded_keys = [b["key"] for b in awarded_all]
+        self.assertIn("course_first_quiz", awarded_keys)
+        self.assertIn("course_perfect_score", awarded_keys)
+        self.assertIn("course_three_quizzes", awarded_keys)
+        self.assertIn("course_sanad_dialogue", awarded_keys)
+        self.assertIn("course_concept_master", awarded_keys)
+        # All 7 non-grand-master badges are unlocked -> grand master should also be unlocked!
+        self.assertIn("course_grand_master", awarded_keys)
+
+        overview_final = get_course_trophies_overview(self.user_id, cid)
+        self.assertEqual(overview_final["unlocked_trophies"], 8)
+        self.assertEqual(overview_final["completion_rate"], 100.0)
+
+        gm = next(b for b in overview_final["badges"] if b["key"] == "course_grand_master")
+        self.assertTrue(gm["is_unlocked"])
+        self.assertEqual(gm["progress_percent"], 100)
+
+    def test_get_student_trophies_by_course_multi_and_ranks(self):
+        # Create 2 courses
+        c1 = save_course(
+            title="Maths",
+            subject="Mathématiques",
+            language="fr",
+            file_path=str(Path(self.temp_dir.name) / "m.pdf"),
+            file_name="m.pdf",
+            file_hash="hash_m",
+            user_id=self.user_id,
+        )
+        c2 = save_course(
+            title="SVT",
+            subject="Sciences de la Vie et de la Terre",
+            language="fr",
+            file_path=str(Path(self.temp_dir.name) / "svt.pdf"),
+            file_name="svt.pdf",
+            file_hash="hash_svt",
+            user_id=self.user_id,
+        )
+
+        # Initial rank: Apprenti
+        ov1 = get_student_trophies_by_course(self.user_id)
+        self.assertEqual(ov1["total_courses"], 2)
+        self.assertEqual(ov1["total_trophies"], 16)
+        self.assertIn("Apprenti", ov1["rank"])
+
+        # Award several badges to c1 and c2
+        for key in ["course_explored", "course_mindmap", "course_first_quiz", "course_perfect_score"]:
+            award_badge(self.user_id, key, course_id=c1)
+            award_badge(self.user_id, key, course_id=c2)
+
+        # 8 unlocked out of 16 = 50% -> Maître des Épreuves
+        ov2 = get_student_trophies_by_course(self.user_id)
+        self.assertEqual(ov2["unlocked_trophies"], 8)
+        self.assertEqual(ov2["completion_rate"], 50.0)
+        self.assertIn("Maître", ov2["rank"])
+
+    def test_backup_and_restore_user_badges_preserves_course_id(self):
+        cid = save_course(
+            title="Informatique",
+            subject="Informatique",
+            language="fr",
+            file_path=str(Path(self.temp_dir.name) / "info.pdf"),
+            file_name="info.pdf",
+            file_hash="hash_info_unique",
+            user_id=self.user_id,
+        )
+        award_badge(self.user_id, "course_explored", course_id=cid)
+        award_badge(self.user_id, "course_first_quiz", course_id=cid)
+        award_badge(self.user_id, "first_quiz")  # Global badge
+
+        zip_bytes = export_student_backup(self.user_id)
+        self.assertIsNotNone(zip_bytes)
+
+        target_student = create_or_get_google_user("new_learner@test.com", "Nouvel Élève")
+        res = restore_student_backup(zip_bytes, target_user_id=target_student["id"])
+        self.assertTrue(res["success"])
+
+        # Check restored course
+        restored_courses = list_courses(user_id=target_student["id"])
+        self.assertEqual(len(restored_courses), 1)
+        restored_cid = restored_courses[0]["id"]
+
+        # Check restored badges have remapped course_id
+        restored_course_badges = get_user_badges(target_student["id"], course_id=restored_cid)
+        self.assertEqual(len(restored_course_badges), 2)
+        restored_c_keys = [b["badge_key"] for b in restored_course_badges]
+        self.assertIn("course_explored", restored_c_keys)
+        self.assertIn("course_first_quiz", restored_c_keys)
+        for b in restored_course_badges:
+            self.assertEqual(b["course_id"], restored_cid)
+
+        # Check all badges count
+        all_restored = get_user_badges(target_student["id"])
+        self.assertEqual(len(all_restored), 3)
 
 
 if __name__ == "__main__":

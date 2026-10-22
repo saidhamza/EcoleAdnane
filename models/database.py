@@ -68,11 +68,16 @@ __all__ = [
     "get_user_setting",
     "set_user_setting",
     "BADGE_CATALOG",
+    "COURSE_BADGE_CATALOG",
+    "COURSE_BADGE_CATALOG_MAP",
     "get_badge_catalog",
     "get_user_badges",
     "award_badge",
     "evaluate_and_award_badges",
+    "evaluate_and_award_course_badges",
     "get_student_trophies_overview",
+    "get_course_trophies_overview",
+    "get_student_trophies_by_course",
 ]
 
 DEFAULT_DB_DIR = Path(__file__).parent.parent / "storage"
@@ -221,11 +226,12 @@ def init_db(db_path: Optional[Path] = None) -> None:
                 CREATE TABLE IF NOT EXISTS user_badges (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     user_id INTEGER NOT NULL,
+                    course_id INTEGER,
                     badge_key TEXT NOT NULL,
                     unlocked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     metadata_json TEXT,
                     FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
-                    UNIQUE(user_id, badge_key)
+                    FOREIGN KEY (course_id) REFERENCES courses (id) ON DELETE CASCADE
                 );
 
                 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
@@ -238,6 +244,7 @@ def init_db(db_path: Optional[Path] = None) -> None:
                 CREATE INDEX IF NOT EXISTS idx_sessions_user ON user_sessions(user_id);
                 CREATE INDEX IF NOT EXISTS idx_concept_mastery_user_course ON concept_mastery(user_id, course_id);
                 CREATE INDEX IF NOT EXISTS idx_user_badges_user ON user_badges(user_id);
+                CREATE INDEX IF NOT EXISTS idx_user_badges_course ON user_badges(user_id, course_id);
             """)
 
             # 2. Migrations dynamiques pour bases existantes
@@ -258,14 +265,23 @@ def init_db(db_path: Optional[Path] = None) -> None:
                 CREATE TABLE IF NOT EXISTS user_badges (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     user_id INTEGER NOT NULL,
+                    course_id INTEGER,
                     badge_key TEXT NOT NULL,
                     unlocked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     metadata_json TEXT,
                     FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
-                    UNIQUE(user_id, badge_key)
+                    FOREIGN KEY (course_id) REFERENCES courses (id) ON DELETE CASCADE
                 )
             """)
+            cur.execute("PRAGMA table_info(user_badges)")
+            badge_cols = [row["name"] for row in cur.fetchall()]
+            if "course_id" not in badge_cols:
+                try:
+                    cur.execute("ALTER TABLE user_badges ADD COLUMN course_id INTEGER REFERENCES courses(id) ON DELETE CASCADE")
+                except Exception:
+                    pass
             cur.execute("CREATE INDEX IF NOT EXISTS idx_user_badges_user ON user_badges(user_id)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_user_badges_course ON user_badges(user_id, course_id)")
 
             cur.execute("PRAGMA table_info(courses)")
             course_cols = [row["name"] for row in cur.fetchall()]
@@ -2411,10 +2427,89 @@ def evaluate_and_sync_concept_mastery(user_id: int, course_id: int) -> List[Dict
 
 
 # ===========================================================================
-# SYSTÈME DE RÉCOMPENSES & TROPHÉES PAR BADGE
+# SYSTÈME DE RÉCOMPENSES & TROPHÉES PAR COURS (GAMIFICATION PÉDAGOGIQUE)
 # ===========================================================================
 
-BADGE_CATALOG: List[Dict[str, Any]] = [
+# 1. Catalogue des 8 Trophées Dédiés à Chaque Leçon / Cours
+COURSE_BADGE_CATALOG: List[Dict[str, Any]] = [
+    {
+        "key": "course_explored",
+        "title": "📖 Explorateur du Cours",
+        "category": "Fiche & Découverte",
+        "description": "Consulter et étudier la fiche synthétique express de ce cours.",
+        "target_value": 1,
+        "unit": "fiche consultée",
+        "icon": "📖",
+    },
+    {
+        "key": "course_mindmap",
+        "title": "🗺️ Cartographe Visuel",
+        "category": "Schématisation",
+        "description": "Générer ou explorer la carte mentale schématisée de cette leçon.",
+        "target_value": 1,
+        "unit": "carte mentale explorée",
+        "icon": "🗺️",
+    },
+    {
+        "key": "course_first_quiz",
+        "title": "🎯 Premier Pas Validé",
+        "category": "Évaluation",
+        "description": "Compléter un premier quiz d'entraînement sur ce cours.",
+        "target_value": 1,
+        "unit": "quiz complété",
+        "icon": "🎯",
+    },
+    {
+        "key": "course_perfect_score",
+        "title": "💯 Sans-Faute Magistral",
+        "category": "Excellence",
+        "description": "Obtenir un score parfait de 100% sans aucune faute à un quiz de ce cours.",
+        "target_value": 1,
+        "unit": "score parfait (100%)",
+        "icon": "💯",
+    },
+    {
+        "key": "course_three_quizzes",
+        "title": "⚡ Guerrier de l'Entraînement",
+        "category": "Assiduité",
+        "description": "Passer au moins 3 quiz d'entraînement sur cette leçon pour ancrer la mémoire.",
+        "target_value": 3,
+        "unit": "quiz passés sur ce cours",
+        "icon": "⚡",
+    },
+    {
+        "key": "course_sanad_dialogue",
+        "title": "💬 Disciple de Sanad",
+        "category": "Dialogue Socratique",
+        "description": "Poser au moins 2 questions d'approfondissement au tuteur Sanad sur ce cours.",
+        "target_value": 2,
+        "unit": "questions posées sur ce cours",
+        "icon": "💬",
+    },
+    {
+        "key": "course_concept_master",
+        "title": "🧠 Maître des Notions",
+        "category": "Maîtrise",
+        "description": "Assimiler complètement au moins 2 notions clés de ce cours (statut assimilé).",
+        "target_value": 2,
+        "unit": "notions clés assimilées",
+        "icon": "🧠",
+    },
+    {
+        "key": "course_grand_master",
+        "title": "👑 Grand Chelem de la Leçon",
+        "category": "Couronne Suprême",
+        "description": "Débloquer les 7 autres trophées de ce cours pour conquérir la couronne suprême !",
+        "target_value": 7,
+        "unit": "trophées du cours remportés",
+        "icon": "👑",
+    },
+]
+
+COURSE_BADGE_CATALOG_MAP: Dict[str, Dict[str, Any]] = {b["key"]: b for b in COURSE_BADGE_CATALOG}
+
+# 2. Catalogue Global (compatibilité ascendante)
+GLOBAL_BADGE_CATALOG: List[Dict[str, Any]] = [
     {
         "key": "first_quiz",
         "title": "🌟 Premier Pas",
@@ -2489,32 +2584,52 @@ BADGE_CATALOG: List[Dict[str, Any]] = [
     },
 ]
 
+# Fusion complète pour consultation uniforme
+BADGE_CATALOG: List[Dict[str, Any]] = COURSE_BADGE_CATALOG + GLOBAL_BADGE_CATALOG
 BADGE_CATALOG_MAP: Dict[str, Dict[str, Any]] = {b["key"]: b for b in BADGE_CATALOG}
+ALL_BADGES_MAP = BADGE_CATALOG_MAP
 
 
-def get_badge_catalog() -> List[Dict[str, Any]]:
+def get_badge_catalog(course_mode: Optional[bool] = None) -> List[Dict[str, Any]]:
     """Retourne la liste des trophées et badges disponibles dans le catalogue."""
-    return [dict(b) for b in BADGE_CATALOG]
+    if course_mode is True:
+        cat = COURSE_BADGE_CATALOG
+    elif course_mode is False:
+        cat = GLOBAL_BADGE_CATALOG
+    else:
+        cat = BADGE_CATALOG
+    return [dict(b) for b in cat]
 
 
-def get_user_badges(user_id: int) -> List[Dict[str, Any]]:
-    """Récupère les badges remportés par un utilisateur spécifique."""
+def get_user_badges(user_id: int, course_id: Optional[int] = None) -> List[Dict[str, Any]]:
+    """Récupère les badges remportés par un utilisateur spécifique, avec filtre optionnel par cours."""
     conn = get_connection()
     try:
         cur = conn.cursor()
-        cur.execute(
-            """
-            SELECT badge_key, unlocked_at, metadata_json
-            FROM user_badges
-            WHERE user_id = ?
-            ORDER BY unlocked_at ASC
-            """,
-            (user_id,),
-        )
+        if course_id is not None:
+            cur.execute(
+                """
+                SELECT id, user_id, course_id, badge_key, unlocked_at, metadata_json
+                FROM user_badges
+                WHERE user_id = ? AND course_id = ?
+                ORDER BY unlocked_at ASC
+                """,
+                (user_id, course_id),
+            )
+        else:
+            cur.execute(
+                """
+                SELECT id, user_id, course_id, badge_key, unlocked_at, metadata_json
+                FROM user_badges
+                WHERE user_id = ?
+                ORDER BY unlocked_at ASC
+                """,
+                (user_id,),
+            )
         badges = []
         for r in cur.fetchall():
             d = dict(r)
-            b_info = BADGE_CATALOG_MAP.get(d["badge_key"])
+            b_info = ALL_BADGES_MAP.get(d["badge_key"])
             if b_info:
                 d.update({
                     "title": b_info["title"],
@@ -2530,43 +2645,360 @@ def get_user_badges(user_id: int) -> List[Dict[str, Any]]:
         conn.close()
 
 
-def award_badge(user_id: int, badge_key: str, metadata: Optional[Dict[str, Any]] = None) -> bool:
+def award_badge(
+    user_id: int,
+    badge_key: str,
+    metadata: Optional[Dict[str, Any]] = None,
+    course_id: Optional[int] = None,
+) -> bool:
     """
-    Attribue un badge à un utilisateur s'il ne l'a pas déjà débloqué.
+    Attribue un badge à un utilisateur (éventuellement rattaché à un cours) s'il ne l'a pas déjà débloqué.
     Retourne True si le badge est nouvellement attribué, False s'il était déjà débloqué.
     """
     conn = get_connection()
     try:
         with conn:
             cur = conn.cursor()
+            if course_id is not None:
+                cur.execute(
+                    "SELECT 1 FROM user_badges WHERE user_id = ? AND course_id = ? AND badge_key = ?",
+                    (user_id, course_id, badge_key),
+                )
+            else:
+                cur.execute(
+                    "SELECT 1 FROM user_badges WHERE user_id = ? AND (course_id IS NULL OR course_id = 0) AND badge_key = ?",
+                    (user_id, badge_key),
+                )
+            if cur.fetchone():
+                return False
+
             meta_json = json.dumps(metadata or {}, ensure_ascii=False)
             cur.execute(
                 """
-                INSERT OR IGNORE INTO user_badges (user_id, badge_key, metadata_json)
-                VALUES (?, ?, ?)
+                INSERT INTO user_badges (user_id, course_id, badge_key, metadata_json)
+                VALUES (?, ?, ?, ?)
                 """,
-                (user_id, badge_key, meta_json),
+                (user_id, course_id, badge_key, meta_json),
             )
             return cur.rowcount > 0
     finally:
         conn.close()
 
 
-def evaluate_and_award_badges(user_id: int) -> List[Dict[str, Any]]:
+def evaluate_and_award_course_badges(user_id: int, course_id: int) -> List[Dict[str, Any]]:
     """
-    Évalue l'ensemble des critères d'attribution de trophées pour un élève et attribue
-    automatiquement les badges mérités.
-    Retourne la liste des nouveaux trophées débloqués lors de cet appel.
+    Évalue et attribue en temps réel les trophées spécifiques à un cours pour un élève donné.
+    Retourne la liste des nouveaux trophées débloqués sur ce cours.
     """
+    course = get_course_by_id(course_id)
+    if not course:
+        return []
+
     conn = get_connection()
     try:
         cur = conn.cursor()
+        # 1. Tentatives de quiz sur ce cours
+        cur.execute("SELECT COUNT(id) as cnt FROM quiz_attempts WHERE user_id = ? AND course_id = ?", (user_id, course_id))
+        course_quizzes = int(cur.fetchone()["cnt"])
 
-        # 1. Nombre de quiz terminés
+        # 2. Quiz parfait sur ce cours (100%)
+        cur.execute(
+            """
+            SELECT COUNT(id) as cnt 
+            FROM quiz_attempts 
+            WHERE user_id = ? AND course_id = ? AND score = total_questions AND total_questions > 0
+            """,
+            (user_id, course_id),
+        )
+        course_perfect = int(cur.fetchone()["cnt"])
+
+        # 3. Questions posées à Sanad sur ce cours
+        cur.execute(
+            """
+            SELECT COUNT(id) as cnt
+            FROM chat_messages
+            WHERE user_id = ? AND course_id = ? AND role = 'user'
+            """,
+            (user_id, course_id),
+        )
+        course_sanad_questions = int(cur.fetchone()["cnt"])
+
+        # 4. Notions assimilées sur ce cours
+        cur.execute(
+            """
+            SELECT COUNT(id) as cnt
+            FROM concept_mastery
+            WHERE user_id = ? AND course_id = ? AND status = 'mastered'
+            """,
+            (user_id, course_id),
+        )
+        course_mastered_concepts = int(cur.fetchone()["cnt"])
+    finally:
+        conn.close()
+
+    has_summary = bool(course.get("summary_markdown") or course.get("raw_text"))
+    has_mindmap = bool(course.get("mindmap_code") or get_course_mindmap(course_id))
+
+    checks = [
+        ("course_explored", has_summary, {"summary": True}),
+        ("course_mindmap", has_mindmap, {"mindmap": True}),
+        ("course_first_quiz", course_quizzes >= 1, {"attempts": course_quizzes}),
+        ("course_perfect_score", course_perfect >= 1, {"perfect_quizzes": course_perfect}),
+        ("course_three_quizzes", course_quizzes >= 3, {"attempts": course_quizzes}),
+        ("course_sanad_dialogue", course_sanad_questions >= 2, {"sanad_questions": course_sanad_questions}),
+        ("course_concept_master", course_mastered_concepts >= 2, {"mastered_concepts": course_mastered_concepts}),
+    ]
+
+    newly_awarded = []
+    for badge_key, condition_met, meta in checks:
+        if condition_met:
+            if award_badge(user_id, badge_key, metadata=meta, course_id=course_id):
+                info = COURSE_BADGE_CATALOG_MAP.get(badge_key, {})
+                newly_awarded.append({
+                    "key": badge_key,
+                    "course_id": course_id,
+                    "course_title": course.get("title", ""),
+                    "title": info.get("title", badge_key),
+                    "icon": info.get("icon", "🏆"),
+                    "description": info.get("description", ""),
+                })
+
+    # Vérification du Grand Chelem du cours (les 7 autres trophées débloqués)
+    current_badges = get_user_badges(user_id, course_id=course_id)
+    unlocked_keys = {b["badge_key"] for b in current_badges}
+    first_seven = [
+        "course_explored", "course_mindmap", "course_first_quiz",
+        "course_perfect_score", "course_three_quizzes", "course_sanad_dialogue",
+        "course_concept_master"
+    ]
+    if all(k in unlocked_keys for k in first_seven):
+        if award_badge(user_id, "course_grand_master", metadata={"grand_master": True}, course_id=course_id):
+            info = COURSE_BADGE_CATALOG_MAP.get("course_grand_master", {})
+            newly_awarded.append({
+                "key": "course_grand_master",
+                "course_id": course_id,
+                "course_title": course.get("title", ""),
+                "title": info.get("title", "Grand Chelem de la Leçon"),
+                "icon": info.get("icon", "👑"),
+                "description": info.get("description", ""),
+            })
+
+    return newly_awarded
+
+
+def get_course_trophies_overview(user_id: int, course_id: int) -> Dict[str, Any]:
+    """
+    Construit l'état détaillé des trophées pour un cours spécifique :
+    - Taux de complétion sur ce cours
+    - Liste des 8 trophées avec statut (débloqué / en cours), progression et encouragement.
+    """
+    # 1. Évaluation dynamique préalable pour ce cours
+    evaluate_and_award_course_badges(user_id, course_id)
+
+    course = get_course_by_id(course_id)
+    if not course:
+        return {
+            "course_id": course_id,
+            "course_title": "Cours introuvable",
+            "subject": "",
+            "total_trophies": len(COURSE_BADGE_CATALOG),
+            "total_count": len(COURSE_BADGE_CATALOG),
+            "unlocked_trophies": 0,
+            "unlocked_count": 0,
+            "completion_rate": 0.0,
+            "badges": [],
+        }
+
+    unlocked_list = get_user_badges(user_id, course_id=course_id)
+    unlocked_map = {b["badge_key"]: b for b in unlocked_list}
+
+    # Métriques réelles sur ce cours
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(id) as cnt FROM quiz_attempts WHERE user_id = ? AND course_id = ?", (user_id, course_id))
+        course_quizzes = int(cur.fetchone()["cnt"])
+
+        cur.execute(
+            """
+            SELECT COUNT(id) as cnt 
+            FROM quiz_attempts 
+            WHERE user_id = ? AND course_id = ? AND score = total_questions AND total_questions > 0
+            """,
+            (user_id, course_id),
+        )
+        course_perfect = int(cur.fetchone()["cnt"])
+
+        cur.execute(
+            """
+            SELECT COUNT(id) as cnt
+            FROM chat_messages
+            WHERE user_id = ? AND course_id = ? AND role = 'user'
+            """,
+            (user_id, course_id),
+        )
+        course_sanad_questions = int(cur.fetchone()["cnt"])
+
+        cur.execute(
+            """
+            SELECT COUNT(id) as cnt
+            FROM concept_mastery
+            WHERE user_id = ? AND course_id = ? AND status = 'mastered'
+            """,
+            (user_id, course_id),
+        )
+        course_mastered_concepts = int(cur.fetchone()["cnt"])
+    finally:
+        conn.close()
+
+    has_summary = bool(course.get("summary_markdown") or course.get("raw_text"))
+    has_mindmap = bool(course.get("mindmap_code") or get_course_mindmap(course_id))
+
+    current_metrics = {
+        "course_explored": 1 if has_summary else 0,
+        "course_mindmap": 1 if has_mindmap else 0,
+        "course_first_quiz": course_quizzes,
+        "course_perfect_score": course_perfect,
+        "course_three_quizzes": course_quizzes,
+        "course_sanad_dialogue": course_sanad_questions,
+        "course_concept_master": course_mastered_concepts,
+        "course_grand_master": len(unlocked_list),
+    }
+
+    badges_detail = []
+    for b in COURSE_BADGE_CATALOG:
+        key = b["key"]
+        target = b["target_value"]
+        current_val = current_metrics.get(key, 0)
+        is_unlocked = key in unlocked_map
+        unlocked_at = unlocked_map[key]["unlocked_at"] if is_unlocked else None
+
+        if is_unlocked:
+            progress_ratio = 1.0
+            progress_percent = 100
+            status_text = "✨ Trophée Débloqué !"
+            encouragement = f"Magnifique ! Objectif atteint ({target} {b['unit']})."
+        else:
+            progress_ratio = min(1.0, current_val / target) if target > 0 else 0.0
+            progress_percent = int(progress_ratio * 100)
+            remaining = max(0, target - current_val)
+            status_text = f"🔒 En cours ({current_val} / {target})"
+            encouragement = f"Plus que {remaining} {b['unit']} pour décrocher ce trophée !"
+
+        badges_detail.append({
+            "key": key,
+            "title": b["title"],
+            "category": b["category"],
+            "description": b["description"],
+            "icon": b["icon"],
+            "target_value": target,
+            "unit": b["unit"],
+            "current_value": current_val,
+            "is_unlocked": is_unlocked,
+            "unlocked_at": unlocked_at,
+            "progress_ratio": progress_ratio,
+            "progress_percent": progress_percent,
+            "status_text": status_text,
+            "encouragement": encouragement,
+        })
+
+    unlocked_count = len(unlocked_list)
+    total_count = len(COURSE_BADGE_CATALOG)
+    rate = round((unlocked_count / total_count * 100), 1) if total_count > 0 else 0.0
+
+    return {
+        "course_id": course_id,
+        "course_title": course.get("title", ""),
+        "subject": course.get("subject", ""),
+        "total_trophies": total_count,
+        "total_count": total_count,
+        "unlocked_trophies": unlocked_count,
+        "unlocked_count": unlocked_count,
+        "completion_rate": rate,
+        "badges": badges_detail,
+    }
+
+
+def get_student_trophies_by_course(user_id: int, subject: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Calcule la vitrine globale de trophées de l'élève regroupée par cours :
+    - Taux d'accomplissement général sur l'ensemble de ses cours
+    - Titre honorifique / Rang d'apprentissage
+    - Détail des trophées pour chaque cours individuel.
+    """
+    courses = list_courses(user_id=user_id, subject=subject)
+    courses_trophies = []
+    total_unlocked = 0
+
+    for c in courses:
+        cid = c["id"]
+        c_ov = get_course_trophies_overview(user_id, cid)
+        courses_trophies.append(c_ov)
+        total_unlocked += c_ov["unlocked_trophies"]
+
+    total_courses_cnt = len(courses)
+    total_trophies_possible = total_courses_cnt * len(COURSE_BADGE_CATALOG)
+    overall_rate = round((total_unlocked / total_trophies_possible * 100), 1) if total_trophies_possible > 0 else 0.0
+
+    # Titre de rang honorifique
+    if overall_rate >= 90 or (total_courses_cnt > 0 and total_unlocked >= total_courses_cnt * 7):
+        rank = "👑 Légende Vivante d'Excellence"
+        rank_color = "#eab308"
+        rank_quote = "Sommet absolu ! Tous les cours sont maîtrisés avec brio !"
+    elif overall_rate >= 65:
+        rank = "💎 Grand Champion Académique"
+        rank_color = "#a855f7"
+        rank_quote = "Niveau d'excellence remarquable, continuez ainsi !"
+    elif overall_rate >= 40:
+        rank = "🥇 Maître des Épreuves"
+        rank_color = "#fbbf24"
+        rank_quote = "Une solide maîtrise des matières clés du programme !"
+    elif overall_rate >= 15:
+        rank = "🥈 Érudit des Révisions"
+        rank_color = "#38bdf8"
+        rank_quote = "Belle régularité dans l'effort et les entraînements !"
+    else:
+        rank = "🥉 Apprenti Explorateur"
+        rank_color = "#f97316"
+        rank_quote = "Chaque grande réussite commence par une première leçon !"
+
+    return {
+        "total_courses": total_courses_cnt,
+        "total_trophies": total_trophies_possible,
+        "total_count": total_trophies_possible,
+        "unlocked_trophies": total_unlocked,
+        "unlocked_count": total_unlocked,
+        "completion_rate": overall_rate,
+        "rank": rank,
+        "rank_color": rank_color,
+        "rank_quote": rank_quote,
+        "courses_trophies": courses_trophies,
+    }
+
+
+def evaluate_and_award_badges(user_id: int, course_id: Optional[int] = None) -> List[Dict[str, Any]]:
+    """
+    Évalue et attribue les trophées d'un cours (si course_id fourni) ou de l'ensemble
+    des cours de l'élève, ainsi que les trophées globaux pour rétrocompatibilité.
+    """
+    newly_awarded = []
+
+    # 1. Évaluation spécifique par cours
+    if course_id is not None:
+        newly_awarded.extend(evaluate_and_award_course_badges(user_id, course_id))
+    else:
+        # Parcours de tous les cours de l'élève
+        courses = list_courses(user_id=user_id)
+        for c in courses:
+            newly_awarded.extend(evaluate_and_award_course_badges(user_id, c["id"]))
+
+    # 2. Évaluation des badges globaux (rétrocompatibilité)
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
         cur.execute("SELECT COUNT(id) as cnt FROM quiz_attempts WHERE user_id = ?", (user_id,))
         total_quizzes = int(cur.fetchone()["cnt"])
 
-        # 2. Nombre de quiz avec score parfait (100%)
         cur.execute(
             """
             SELECT COUNT(id) as cnt 
@@ -2577,40 +3009,15 @@ def evaluate_and_award_badges(user_id: int) -> List[Dict[str, Any]]:
         )
         perfect_quizzes = int(cur.fetchone()["cnt"])
 
-        # 3. Nombre de cours accessibles / révisés
-        cur.execute(
-            """
-            SELECT COUNT(DISTINCT id) as cnt
-            FROM courses
-            WHERE user_id = ? OR user_id IS NULL
-            """,
-            (user_id,),
-        )
+        cur.execute("SELECT COUNT(DISTINCT id) as cnt FROM courses WHERE user_id = ? OR user_id IS NULL", (user_id,))
         total_courses = int(cur.fetchone()["cnt"])
 
-        # 4. Nombre de questions posées à Sanad
-        cur.execute(
-            """
-            SELECT COUNT(id) as cnt
-            FROM chat_messages
-            WHERE user_id = ? AND role = 'user'
-            """,
-            (user_id,),
-        )
+        cur.execute("SELECT COUNT(id) as cnt FROM chat_messages WHERE user_id = ? AND role = 'user'", (user_id,))
         sanad_questions = int(cur.fetchone()["cnt"])
 
-        # 5. Nombre de notions assimilées
-        cur.execute(
-            """
-            SELECT COUNT(id) as cnt
-            FROM concept_mastery
-            WHERE user_id = ? AND status = 'mastered'
-            """,
-            (user_id,),
-        )
+        cur.execute("SELECT COUNT(id) as cnt FROM concept_mastery WHERE user_id = ? AND status = 'mastered'", (user_id,))
         mastered_concepts = int(cur.fetchone()["cnt"])
 
-        # 6. Nombre de cartes mentales existantes
         cur.execute(
             """
             SELECT COUNT(id) as cnt
@@ -2625,10 +3032,7 @@ def evaluate_and_award_badges(user_id: int) -> List[Dict[str, Any]]:
     finally:
         conn.close()
 
-    newly_awarded = []
-    catalog_map = {b["key"]: b for b in BADGE_CATALOG}
-
-    checks = [
+    global_checks = [
         ("first_quiz", total_quizzes >= 1, {"total_quizzes": total_quizzes}),
         ("perfect_score", perfect_quizzes >= 1, {"perfect_quizzes": perfect_quizzes}),
         ("quiz_five", total_quizzes >= 5, {"total_quizzes": total_quizzes}),
@@ -2639,29 +3043,33 @@ def evaluate_and_award_badges(user_id: int) -> List[Dict[str, Any]]:
         ("mindmap_pioneer", mindmaps_count >= 1, {"mindmaps_count": mindmaps_count}),
     ]
 
-    for key, condition, meta in checks:
+    for key, condition, meta in global_checks:
         if condition:
-            is_new = award_badge(user_id, key, meta)
-            if is_new and key in catalog_map:
-                newly_awarded.append(catalog_map[key])
+            is_new = award_badge(user_id, key, metadata=meta)
+            if is_new and key in BADGE_CATALOG_MAP:
+                newly_awarded.append(BADGE_CATALOG_MAP[key])
 
     return newly_awarded
 
 
-def get_student_trophies_overview(user_id: int) -> Dict[str, Any]:
+def get_student_trophies_overview(user_id: int, course_id: Optional[int] = None) -> Dict[str, Any]:
     """
     Construit la vue détaillée des trophées pour l'élève :
-    - Taux de complétion global
-    - Détail de chaque trophée (débloqué ou en cours avec progression précise et encouragement).
+    - Si course_id spécifié : retourne l'overview spécifique à ce cours.
+    - Si course_id None : retourne la vue globale multi-cours avec compatibilité ascendante.
     """
-    # 1. Évaluation dynamique préalable
+    if course_id is not None:
+        return get_course_trophies_overview(user_id, course_id)
+
+    # Évaluation générale préalable
     evaluate_and_award_badges(user_id)
+    by_course = get_student_trophies_by_course(user_id)
 
-    # 2. Récupération des badges débloqués
-    unlocked_list = get_user_badges(user_id)
-    unlocked_map = {b["badge_key"]: b for b in unlocked_list}
+    # Récupération de tous les badges de l'élève (cours + globaux)
+    all_unlocked = get_user_badges(user_id)
+    unlocked_map = {b["badge_key"]: b for b in all_unlocked}
 
-    # 3. Mesures réelles de progression
+    # Mesures réelles de progression pour les badges globaux
     conn = get_connection()
     try:
         cur = conn.cursor()
@@ -2733,8 +3141,9 @@ def get_student_trophies_overview(user_id: int) -> Dict[str, Any]:
         "mindmap_pioneer": mindmaps_count,
     }
 
+    # Liste formatée des badges pour compatibilité ascendante
     badges_detail = []
-    for b in BADGE_CATALOG:
+    for b in GLOBAL_BADGE_CATALOG:
         key = b["key"]
         target = b["target_value"]
         current_val = current_metrics.get(key, 0)
@@ -2744,7 +3153,7 @@ def get_student_trophies_overview(user_id: int) -> Dict[str, Any]:
         if is_unlocked:
             progress_ratio = 1.0
             progress_percent = 100
-            status_text = "🎉 Trophée Remporté !"
+            status_text = "✨ Trophée Remporté !"
             encouragement = f"Bravo ! Tu as atteint l'objectif ({target} {b['unit']})."
         else:
             progress_ratio = min(1.0, current_val / target) if target > 0 else 0.0
@@ -2770,15 +3179,8 @@ def get_student_trophies_overview(user_id: int) -> Dict[str, Any]:
             "encouragement": encouragement,
         })
 
-    unlocked_count = len(unlocked_list)
-    total_count = len(BADGE_CATALOG)
-    rate = round((unlocked_count / total_count * 100), 1) if total_count > 0 else 0.0
+    # Rétrocompatibilité : inclut toutes les métriques de cours et de rang
+    res = dict(by_course)
+    res["badges"] = badges_detail
+    return res
 
-    return {
-        "total_trophies": total_count,
-        "total_count": total_count,
-        "unlocked_trophies": unlocked_count,
-        "unlocked_count": unlocked_count,
-        "completion_rate": rate,
-        "badges": badges_detail,
-    }
