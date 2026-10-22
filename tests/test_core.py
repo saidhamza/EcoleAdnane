@@ -1535,6 +1535,15 @@ class TestMindmapAndConceptMastery(unittest.TestCase):
         self.assertTrue(is_generic_concept("## 💡 نصيحة التحرير لضمان النقطة الكاملة"))
         self.assertTrue(is_generic_concept("## 💡 سر التفوق والنجاح"))
         self.assertTrue(is_generic_concept("Exam Pitfalls & Frequent Traps"))
+        # Formules génériques et méta-scaffolding rapportées par l'utilisateur
+        self.assertTrue(is_generic_concept("مفهوم وتعريف (العبادة صفة إیمان ودلیل خضوع)"))
+        self.assertTrue(is_generic_concept("الخاصيات والقواعد الأساسية لـ العبادة صفة إیمان ودلیل خضوع"))
+        self.assertTrue(is_generic_concept("تطبيقات وتمارين نموذجية (العبادة صفة إیمان ودلیل خضوع)"))
+        self.assertTrue(is_generic_concept("حالات خاصة وملاحظات هامة (العبادة صفة إیمان ودلیل خضوع)"))
+        self.assertTrue(is_generic_concept("Définition et principes de Pythagore"))
+        self.assertTrue(is_generic_concept("Propriétés et formules de Thalès"))
+        self.assertTrue(is_generic_concept("Applications et démarches types (Thalès)"))
+        self.assertTrue(is_generic_concept("Cas particuliers et vérifications (Thalès)"))
         self.assertTrue(is_generic_concept("Propriétés"))
         self.assertTrue(is_generic_concept("Formules"))
         self.assertTrue(is_generic_concept(""))
@@ -1724,6 +1733,83 @@ class TestMindmapAndConceptMastery(unittest.TestCase):
             for bad in polluted_headers:
                 self.assertNotIn(bad, db_kc)
             self.assertIn("مَبَرْهَنَةُ طَالِيسَ الْمُبَاشِرَةُ", db_kc)
+        finally:
+            conn.close()
+
+    def test_purges_and_rejects_boilerplate_fallback_concepts(self):
+        # 1. Vérifier la détection generic sur les 4 chaînes exactes signalées par l'utilisateur
+        self.assertTrue(is_generic_concept("مفهوم وتعريف (العبادة صفة إیمان ودلیل خضوع)"))
+        self.assertTrue(is_generic_concept("الخاصيات والقواعد الأساسية لـ العبادة صفة إیمان ودلیل خضوع"))
+        self.assertTrue(is_generic_concept("تطبيقات وتمارين نموذجية (العبادة صفة إیمان ودلیل خضوع)"))
+        self.assertTrue(is_generic_concept("حالات خاصة وملاحظات هامة (العبادة صفة إیمان ودلیل خضوع)"))
+
+        # 2. Insérer un cours pollué avec ces 4 chaînes en base
+        pdf_file = Path(self.temp_dir.name) / "cours_ibada.pdf"
+        pdf_file.write_bytes(b"%PDF-1.4 Fake")
+        raw_text = """
+المملكة المغربية - وزارة التربية الوطنية
+المادة: التربية الإسلامية
+الدرس: العبادة صفة إيمان ودليل خضوع
+
+المحور الأول: مفهوم العبادة وغاياتها
+1- مفهوم العبادة:
+العبادة لغة التذلل واصطلاحا طاعة الله.
+2- غايات العبادة:
+نيل رضا الله وتهذيب السلوك.
+
+المحور الثاني: شمولية مفهوم العبادة
+العبادة تشمل الشعائر والمعاملات.
+"""
+        c_id = save_course(
+            title="العبادة صفة إيمان ودليل خضوع",
+            subject="التربية الإسلامية",
+            language="ar",
+            file_path=str(pdf_file),
+            file_hash="hash_ibada_polluted",
+            file_name="ibada.pdf",
+            raw_text=raw_text,
+            user_id=self.student["id"],
+        )
+
+        from models.database import get_connection
+        polluted = [
+            "مفهوم وتعريف (العبادة صفة إیمان ودلیل خضوع)",
+            "الخاصيات والقواعد الأساسية لـ العبادة صفة إیمان ودلیل خضوع",
+            "تطبيقات وتمارين نموذجية (العبادة صفة إیمان ودلیل خضوع)",
+            "حالات خاصة وملاحظات هامة (العبادة صفة إیمان ودلیل خضوع)",
+        ]
+        conn = get_connection()
+        try:
+            with conn:
+                conn.cursor().execute(
+                    "UPDATE courses SET key_concepts_json = ? WHERE id = ?",
+                    (json.dumps(polluted, ensure_ascii=False), c_id),
+                )
+        finally:
+            conn.close()
+
+        # 3. Récupérer le cours : get_course_by_id doit auto-réparer
+        course = get_course_by_id(c_id, user_id=self.student["id"])
+        self.assertIsNotNone(course)
+        concepts = course["key_concepts"]
+
+        # Aucune des 4 formules ne doit subsister
+        for p in polluted:
+            self.assertNotIn(p, concepts)
+
+        # De vraies notions de la leçon doivent être extraites
+        self.assertTrue(any("مفهوم العبادة" in c for c in concepts) or any("العبادة صفة إيمان" in c for c in concepts))
+        for c in concepts:
+            self.assertFalse(is_generic_concept(c), f"Retained generic concept: {c}")
+
+        # 4. Vérifier la mise à jour directe dans SQLite
+        conn = get_connection()
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT key_concepts_json FROM courses WHERE id = ?", (c_id,))
+            db_concepts = json.loads(cur.fetchone()["key_concepts_json"])
+            for p in polluted:
+                self.assertNotIn(p, db_concepts)
         finally:
             conn.close()
 

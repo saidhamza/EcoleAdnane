@@ -970,6 +970,9 @@ GENERIC_KEYWORDS_NORMALIZED = [
     "طريقه التطبيق", "منهجيه التطبيق", "منهجيه الحل", "خطوات التطبيق",
     "نصيحه التحرير", "توجيهات منهجيه", "رويه نقديه", "سر التفوق", "سر النجاح",
     "العناصر المفتاحيه", "التواريخ والعناصر المفتاحيه", "التواريخ والعناصر",
+    # Arabe - Anciennes formules génériques fabriquées
+    "مفهوم وتعريف", "الخاصيات والقواعد", "الخاصيات والقواعد الاساسيه",
+    "تطبيقات وتمارين", "تطبيقات وتمارين نموذجيه", "حالات خاصه وملاحظات", "حالات خاصه وملاحظات هامه",
     # Français - Pièges, erreurs
     "piege", "erreur frequente", "erreurs frequentes", "erreur classique", "erreurs classiques",
     "ecueil", "ecueils", "attention au petit piege",
@@ -983,10 +986,15 @@ GENERIC_KEYWORDS_NORMALIZED = [
     "astuce redaction", "astuce de champion", "conseil methodologique", "astuces pour les points",
     "gagner des points", "note maximale",
     "examen normalise", "examen blanc", "baccalaureat",
+    # Français - Anciennes formules génériques fabriquées
+    "definition et principes", "proprietes et formules", "applications et demarches types",
+    "cas particuliers et verifications",
     # Anglais - Traps, pitfalls, templates
     "trap", "pitfall", "frequent error", "common mistake",
     "application method", "core concept", "rules and formulas", "golden rules",
     "star tip", "top marks", "writing strategy", "maximum marks",
+    "definition and core principles", "essential formulas and properties",
+    "practical worked examples", "special cases and applications",
 ]
 
 LONE_GENERIC_WORDS_NORMALIZED = {
@@ -1026,6 +1034,7 @@ def extract_real_course_concepts(course: Dict[str, Any]) -> List[str]:
     """
     Extrait les notions pédagogiques réelles et concrètes d'un cours à partir de sa fiche/résumé
     ou de son texte brut, en éliminant strictement les méta-catégories génériques.
+    Ne fabrique JAMAIS de fausses notions passe-partout.
     """
     # 1. Vérifier si des notions non génériques existent déjà dans key_concepts
     raw_concepts = course.get("key_concepts") or []
@@ -1034,53 +1043,76 @@ def extract_real_course_concepts(course: Dict[str, Any]) -> List[str]:
         return valid_concepts
 
     # 2. Extraire depuis le résumé markdown ou le texte brut
-    summary = course.get("summary_markdown") or course.get("raw_text") or ""
+    summary = course.get("summary_markdown") or ""
+    raw_text = course.get("raw_text") or ""
     extracted: List[str] = []
 
+    # 2.A Extraction depuis le résumé markdown (Fiche Express)
     if summary:
-        # a) Puces en gras : "- **Notion réelle** : explication..."
-        bold_bullets = re.findall(r"^[-*•]\s*\*\*([^*:\n]{3,65})\*\*", summary, flags=re.MULTILINE)
+        # a) Puces en gras : "- **Notion réelle :** explication..." ou "- **Notion réelle** : explication..."
+        # Accepte le deux-points à l'intérieur ou à l'extérieur des astérisques
+        bold_bullets = re.findall(r"^[\s\-*•\d\.]*\*\*([^*]{3,70})\*\*", summary, flags=re.MULTILINE)
         for b in bold_bullets:
-            b_clean = re.sub(r"^[0-9\.\)\-\s]+", "", b.strip())
+            b_clean = re.sub(r"[:\s]+$", "", b.strip())
+            b_clean = re.sub(r"^[0-9\.\)\-\s:]+", "", b_clean).strip()
             b_clean = re.sub(r"[()\[\]{}]+", "", b_clean).strip()
             if len(b_clean) >= 3 and not is_generic_concept(b_clean) and b_clean not in extracted:
                 extracted.append(b_clean)
 
-        # b) Si et seulement si les puces en gras sont insuffisantes (< 2), examiner les sous-titres non génériques
+        # b) Sous-titres markdown non génériques (## ou ###)
         if len(extracted) < 2:
             headings = re.findall(r"^#{2,3}\s+(?:[0-9]+[.\-)]\s*)?([^\n#]{3,70})", summary, flags=re.MULTILINE)
             for h in headings:
                 h_clean = re.sub(r"^[^\w\s]+", "", h.strip())  # retire emojis
-                h_clean = re.sub(r"^[0-9\.\)\-\s]+", "", h_clean).strip()
+                h_clean = re.sub(r"^[0-9\.\)\-\s:]+", "", h_clean).strip()
+                h_clean = re.sub(r"[:\s]+$", "", h_clean).strip()
                 if len(h_clean) >= 3 and not is_generic_concept(h_clean) and h_clean not in extracted:
                     extracted.append(h_clean)
 
-    # 3. Si l'extraction n'a rien donné ou trop peu (< 2), générer des notions concrètes rattachées au titre du cours
-    if len(extracted) < 2:
-        title = (course.get("title") or "Leçon").strip()
-        lang = course.get("language", "fr")
-        if lang == "ar":
-            extracted = [
-                f"مفهوم وتعريف ({title})",
-                f"الخاصيات والقواعد الأساسية لـ {title}",
-                f"تطبيقات وتمارين نموذجية ({title})",
-                f"حالات خاصة وملاحظات هامة ({title})",
-            ]
-        elif lang == "en":
-            extracted = [
-                f"Definition and Core Principles of {title}",
-                f"Essential Formulas and Properties ({title})",
-                f"Practical Worked Examples ({title})",
-                f"Special Cases and Applications ({title})",
-            ]
-        else:
-            extracted = [
-                f"Définition et principes de {title}",
-                f"Propriétés et formules de {title}",
-                f"Applications et démarches types ({title})",
-                f"Cas particuliers et vérifications ({title})",
-            ]
+    # 2.B Si le résumé n'a pas suffi (< 2 notions), extraire depuis le texte brut du cours (raw_text)
+    if len(extracted) < 2 and raw_text:
+        for line in raw_text.splitlines():
+            line_str = line.strip()
+            if not line_str:
+                continue
+            # Pattern A: Axes / Sections (ex: المحور الأول: مفهوم العبادة / I - Définition / 1- Notion)
+            m = re.match(
+                r"^(?:المحور|المطلب|الفقرة|النشاط|المفهوم|أولا|ثانيا|ثالثا|رابعا|خامسا|axe|partie|chapitre|[IVX]+|\d+)[\s\.\-:\)]+([^\n:]{3,65})",
+                line_str,
+                flags=re.IGNORECASE,
+            )
+            if m:
+                c_clean = m.group(1).strip()
+                c_clean = re.sub(r"^[0-9\.\)\-\s:]+", "", c_clean).strip()
+                c_clean = re.sub(r"[()\[\]{}]+", "", c_clean).strip()
+                if len(c_clean) >= 3 and not is_generic_concept(c_clean) and c_clean not in extracted:
+                    extracted.append(c_clean)
+            # Pattern B: Lignes courtes se terminant par un deux-points ":" (ex: "مفهوم العبادة:", "غايات العبادة:")
+            elif line_str.endswith(":") and 4 <= len(line_str[:-1].strip()) <= 60:
+                c_clean = line_str[:-1].strip()
+                c_clean = re.sub(r"^[0-9\.\)\-\sIIVVXXa-zA-Z]+", "", c_clean).strip()
+                c_clean = re.sub(r"[()\[\]{}]+", "", c_clean).strip()
+                if len(c_clean) >= 3 and not is_generic_concept(c_clean) and c_clean not in extracted:
+                    extracted.append(c_clean)
 
+            if len(extracted) >= 6:
+                break
+
+    # 2.C Décomposition propre du titre si le cours a un titre composé (ex: "العبادة صفة إيمان ودليل خضوع")
+    if len(extracted) < 2:
+        title = (course.get("title") or "").strip()
+        if title:
+            # Séparateurs de notions dans un titre : ':', ' - ', ' / ', et en arabe ' و ' ou ' و'
+            parts = re.split(r"[:\-/|]|(?:\s+و(?=\w))", title)
+            for p in parts:
+                p_clean = p.strip()
+                p_clean = re.sub(r"^[0-9\.\)\-\s:]+", "", p_clean).strip()
+                p_clean = re.sub(r"[()\[\]{}]+", "", p_clean).strip()
+                if len(p_clean) >= 4 and not is_generic_concept(p_clean) and p_clean not in extracted:
+                    extracted.append(p_clean)
+
+    # Note : Si aucune notion réelle n'est trouvée, on retourne la liste telle quelle (qui peut être vide).
+    # Il est STRICTEMENT INTERDIT d'inventer des fausses notions passe-partout.
     return extracted[:6]
 
 
@@ -1218,18 +1250,18 @@ def get_course_by_id(course_id: int, user_id: Optional[int] = None) -> Optional[
         clean_kc = [c.strip() for c in raw_kc if c and isinstance(c, str) and not is_generic_concept(c)]
 
         # Auto-réparation si les notions sont absentes, polluées ou insuffisantes (< 2)
-        if len(clean_kc) < 2 and (res.get("summary_markdown") or res.get("raw_text")):
+        if len(clean_kc) < 2 and (res.get("summary_markdown") or res.get("raw_text") or res.get("title")):
             real_kc = extract_real_course_concepts(res)
-            if real_kc:
+            if real_kc != raw_kc:
                 try:
                     cur.execute(
                         "UPDATE courses SET key_concepts_json = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
                         (json.dumps(real_kc, ensure_ascii=False), course_id),
                     )
                     conn.commit()
-                    clean_kc = real_kc
                 except Exception:
                     pass
+                clean_kc = real_kc
         elif len(clean_kc) != len(raw_kc):
             try:
                 cur.execute(
@@ -1270,18 +1302,18 @@ def get_course_by_hash(file_hash: str, user_id: Optional[int] = None, include_gl
             raw_kc = []
 
         clean_kc = [c.strip() for c in raw_kc if c and isinstance(c, str) and not is_generic_concept(c)]
-        if len(clean_kc) < 2 and (res.get("summary_markdown") or res.get("raw_text")):
+        if len(clean_kc) < 2 and (res.get("summary_markdown") or res.get("raw_text") or res.get("title")):
             real_kc = extract_real_course_concepts(res)
-            if real_kc:
+            if real_kc != raw_kc:
                 try:
                     cur.execute(
                         "UPDATE courses SET key_concepts_json = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
                         (json.dumps(real_kc, ensure_ascii=False), res["id"]),
                     )
                     conn.commit()
-                    clean_kc = real_kc
                 except Exception:
                     pass
+                clean_kc = real_kc
         elif len(clean_kc) != len(raw_kc):
             try:
                 cur.execute(
@@ -1368,13 +1400,12 @@ def update_course_summary(
 
             if key_concepts is not None:
                 clean_kc = [c.strip() for c in key_concepts if c and isinstance(c, str) and not is_generic_concept(c)]
-                set_clause = "SET summary_markdown = ?, key_concepts_json = ?, updated_at = CURRENT_TIMESTAMP"
-                params.extend([summary_markdown, json.dumps(clean_kc, ensure_ascii=False)])
             else:
-                set_clause = "SET summary_markdown = ?, updated_at = CURRENT_TIMESTAMP"
-                params.append(summary_markdown)
+                clean_kc = extract_real_course_concepts({"summary_markdown": summary_markdown})
 
-            params.append(course_id)
+            set_clause = "SET summary_markdown = ?, key_concepts_json = ?, updated_at = CURRENT_TIMESTAMP"
+            params.extend([summary_markdown, json.dumps(clean_kc, ensure_ascii=False), course_id])
+
             if user_id is not None:
                 where_clause += " AND user_id = ?"
                 params.append(user_id)
