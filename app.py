@@ -1241,8 +1241,8 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
         is_en = current_course["language"] == "en"
         badge_cls = get_subject_badge_class(current_course["subject"])
 
-        # La suppression d'un cours est réservée à un élève sur ses propres cours (à côté des métadonnées)
-        can_delete = (not is_admin) and (current_course.get("user_id") == active_user_id)
+        # La suppression d'un cours est autorisée pour l'admin ou pour l'élève propriétaire de son cours
+        can_delete = is_admin or (current_course.get("user_id") == active_user_id)
 
         del_warn_text = (
             "⚠️ تنبيه : هذا الإجراء نهائي وسيؤدي إلى حذف هذا الدرس وبطاقة مراجعته واختباراته ومحادثات الأستاذ المساعد سند."
@@ -1373,31 +1373,36 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                     final_lang = "fr"
 
             btn_save_txt = "💾 حفظ التعديل" if is_ar else ("💾 Save Changes" if is_en else "💾 Enregistrer les modifications")
-            if can_delete:
-                btn_save_col1, btn_del_col2, _ = st.columns([2, 2, 3])
-                with btn_save_col1:
-                    if st.button(btn_save_txt, type="primary", use_container_width=True, key=f"btn_save_m_{current_course['id']}"):
-                        update_course_metadata(current_course["id"], new_title, cleaned_subj, final_lang, user_id=active_user_id)
-                        st.success("Modifications enregistrées !" if not is_en else "Changes saved successfully!")
-                        st.rerun()
+            btn_del_txt = "🗑️ حذف الدرس" if is_ar else ("🗑️ Delete Course" if is_en else "🗑️ Supprimer ce cours")
+            btn_save_col1, btn_del_col2 = st.columns([1, 1])
+            with btn_save_col1:
+                if st.button(btn_save_txt, type="primary", use_container_width=True, key=f"btn_save_m_{current_course['id']}"):
+                    update_course_metadata(current_course["id"], new_title, cleaned_subj, final_lang, user_id=active_user_id)
+                    st.success("Modifications enregistrées !" if not is_en else "Changes saved successfully!")
+                    st.rerun()
 
-                with btn_del_col2:
-                    btn_del_txt = "🗑️ حذف الدرس" if is_ar else ("🗑️ Delete Course" if is_en else "🗑️ Supprimer ce cours")
-                    with st.popover(btn_del_txt, use_container_width=True):
+            with btn_del_col2:
+                with st.popover(btn_del_txt, use_container_width=True):
+                    st.markdown(f"**{'🗑️ حذف هذا الدرس' if is_ar else ('🗑️ Delete this course' if is_en else '🗑️ Supprimer ce cours')}**")
+                    st.caption(current_course["title"])
+                    if can_delete:
                         st.warning(del_warn_text)
                         confirm_meta_del = st.checkbox(del_chk_text, key=f"meta_del_chk_{current_course['id']}")
                         if st.button(del_btn_text, type="primary", disabled=not confirm_meta_del, key=f"meta_del_btn_{current_course['id']}", use_container_width=True):
-                            delete_course(current_course["id"], user_id=active_user_id)
+                            delete_course(current_course["id"], user_id=None if is_admin else active_user_id)
                             st.session_state.pop("student_selected_course_id", None)
                             st.success("تم حذف الدرس بنجاح !" if is_ar else ("Course deleted successfully!" if is_en else "Le cours a été supprimé avec succès !"))
                             st.rerun()
-            else:
-                btn_save_col1, _ = st.columns([2, 5])
-                with btn_save_col1:
-                    if st.button(btn_save_txt, type="primary", use_container_width=True, key=f"btn_save_m_{current_course['id']}"):
-                        update_course_metadata(current_course["id"], new_title, cleaned_subj, final_lang, user_id=active_user_id)
-                        st.success("Modifications enregistrées !" if not is_en else "Changes saved successfully!")
-                        st.rerun()
+                    else:
+                        st.info(
+                            "ℹ️ هذا الدرس مشترك من المؤسسة ولا يمكن حذفه من حساب تلميذ."
+                            if is_ar
+                            else (
+                                "ℹ️ This is a shared school course and cannot be deleted by a student account."
+                                if is_en
+                                else "ℹ️ Ce cours fait partie du tronc commun de l'établissement et ne peut pas être supprimé par un compte élève."
+                            )
+                        )
 
         st.write("")
 
@@ -1579,20 +1584,21 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
             except Exception:
                 stored_speed = 1.0
 
-            col_hdr_title, col_hdr_toggle = st.columns([0.65, 0.35])
-            with col_hdr_title:
-                if is_ar:
-                    st.markdown("<div class='rtl-section-title'>🤖 الأستاذ المساعد : سَنَد</div>", unsafe_allow_html=True)
-                    st.caption(f"مرافقك الذكي بالمنهج السقراطي لمستوى {active_cycle['cycle_name']} ({active_cycle['age']} سنة) — يرشدك خطوة بخطوة دون إعطاء الحلول الجاهزة!")
-                elif is_en:
-                    st.markdown("### 🤖 Socratic AI Tutor: Sanad")
-                    st.caption(f"Your mentor for {active_cycle['cycle_name']} ({active_cycle['age']} yo) — Socratic guidance step-by-step!")
-                else:
-                    st.markdown("### 🤖 Tuteur Virtuel : Sanad")
-                    st.caption(f"Ton Grand Frère & Mentor pour le niveau {active_cycle['cycle_name']} ({active_cycle['age']} ans) — Méthode socratique : il te guide sans faire les exercices à ta place !")
-            with col_hdr_toggle:
+            if is_ar:
+                st.markdown("<div class='rtl-section-title'>🤖 الأستاذ المساعد : سَنَد</div>", unsafe_allow_html=True)
+                st.caption(f"مرافقك الذكي بالمنهج السقراطي لمستوى {active_cycle['cycle_name']} ({active_cycle['age']} سنة) — يرشدك خطوة بخطوة دون إعطاء الحلول الجاهزة!")
+            elif is_en:
+                st.markdown("### 🤖 Socratic AI Tutor: Sanad")
+                st.caption(f"Your mentor for {active_cycle['cycle_name']} ({active_cycle['age']} yo) — Socratic guidance step-by-step!")
+            else:
+                st.markdown("### 🤖 Tuteur Virtuel : Sanad")
+                st.caption(f"Ton Grand Frère & Mentor pour le niveau {active_cycle['cycle_name']} ({active_cycle['age']} ans) — Méthode socratique : il te guide sans faire les exercices à ta place !")
+
+            # Barre de contrôle audio ergonomique (Desktop & Mobile)
+            col_v_toggle, col_v_speed = st.columns([0.62, 0.38], vertical_alignment="center")
+            with col_v_toggle:
                 auto_speak = st.toggle(
-                    "🔊 Lecture vocale auto" if not is_en else ("🔊 Auto-speak" if is_en else "🔊 قراءة تلقائية"),
+                    "🔊 Lecture vocale automatique des réponses" if not is_en else ("🔊 Auto-speak Sanad answers" if is_en else "🔊 قراءة صوتية تلقائية للردود"),
                     value=stored_auto_speak,
                     key=f"auto_speak_toggle_{current_course['id']}",
                     help="Sanad lit automatiquement ses réponses à voix haute dès qu'il vous répond (100% gratuit, 0 quota Gemini).",
@@ -1600,14 +1606,8 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                 if auto_speak != stored_auto_speak:
                     set_user_setting(active_user_id, "auto_speak_sanad", "true" if auto_speak else "false")
 
-            with st.expander(
-                "⚙️ Options vocales & vitesse (Web Speech API — 0 quota Gemini)"
-                if not is_en
-                else ("⚙️ Voice speed & options (0 Gemini quota)" if is_en else "⚙️ خيارات سرعة الصوت (مجاني)"),
-                expanded=False,
-            ):
-                col_v1, col_v2 = st.columns([1, 1])
-                with col_v1:
+            with col_v_speed:
+                with st.popover("⚙️ Vitesse & Réglages vocaux" if not is_en else ("⚙️ Voice Settings" if is_en else "⚙️ إعدادات الصوت"), use_container_width=True):
                     voice_speed = st.select_slider(
                         "Vitesse de lecture :" if not is_en else ("Voice Speed:" if is_en else "سرعة النطق :"),
                         options=[0.8, 0.9, 1.0, 1.1, 1.2],
@@ -1617,7 +1617,6 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                     )
                     if voice_speed != stored_speed:
                         set_user_setting(active_user_id, "voice_speed_sanad", str(voice_speed))
-                with col_v2:
                     st.caption(
                         "💡 **Zéro impact sur votre forfait Gemini :** La synthèse vocale et le micro fonctionnent directement dans votre navigateur grâce à la Web Speech API HTML5."
                         if not is_en
