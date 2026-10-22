@@ -9,7 +9,13 @@ import logging
 import re
 from typing import Any, Dict, List, Optional, Tuple
 
-from models.database import get_pedagogical_cycle, get_setting, get_user_by_id, set_setting
+from models.database import (
+    get_pedagogical_cycle,
+    get_setting,
+    get_user_by_id,
+    is_generic_concept,
+    set_setting,
+)
 from services.config_manager import (
     get_gemini_api_key,
     get_openai_api_key,
@@ -663,8 +669,7 @@ def _fallback_mindmap(title: str, subject: str = "", summary_text: str = "") -> 
             grouped_bullets: List[str] = []
             for b_name, b_desc in raw_bullets[:6]:
                 clean_name = re.sub(r"^[0-9\.\)\-\s]+", "", b_name.strip())
-                clean_name_lower = clean_name.lower()
-                if "piège" not in clean_name_lower and "méthode d" not in clean_name_lower:
+                if not is_generic_concept(clean_name):
                     grouped_bullets.append(f"- **{clean_name}** : {b_desc.strip()[:140]}")
             if grouped_bullets:
                 sections.append((f"Notions Clés de {safe_title}", grouped_bullets))
@@ -725,9 +730,8 @@ def clean_interactive_mindmap_markdown(
     has_h1 = False
 
     for line in lines:
-        line_lower = line.lower().strip()
-        # Filtrer les méta-catégories génériques solitaires
-        if re.search(r"^(?:#{1,3}|[-*•])\s*(?:pi[èe]ges?\s+d['’]examen|m[ée]thode\s+d['’]application|فخاخ\s+الامتحان)\s*$", line_lower):
+        # Filtrer toute méta-catégorie générique (Français, Arabe, Anglais, Tashkeel inclus)
+        if is_generic_concept(line):
             continue
 
         if line.startswith("# "):

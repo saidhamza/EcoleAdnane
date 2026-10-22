@@ -59,6 +59,7 @@ try:
         get_user_from_session_token,
         get_user_setting,
         init_db,
+        is_generic_concept,
         list_courses,
         list_users,
         save_concept_mastery,
@@ -98,6 +99,7 @@ except ImportError:
         get_user_from_session_token,
         get_user_setting,
         init_db,
+        is_generic_concept,
         list_courses,
         list_users,
         save_concept_mastery,
@@ -1963,6 +1965,9 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
             mastery_data = evaluate_and_sync_concept_mastery(active_user_id, current_course["id"])
             if not mastery_data:
                 mastery_data = get_student_concept_mastery(active_user_id, current_course["id"])
+
+            # Filtrage défensif absolu contre toute méta-catégorie générique
+            mastery_data = [c for c in (mastery_data or []) if not is_generic_concept(c.get("concept_title", ""))]
 
             total_concepts = len(mastery_data)
             mastered_count = sum(1 for c in mastery_data if c["status"] == "mastered")

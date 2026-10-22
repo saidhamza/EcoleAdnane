@@ -11,6 +11,7 @@ import re
 import secrets
 import shutil
 import sqlite3
+import unicodedata
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -1590,7 +1591,7 @@ def save_course_mindmap(course_id: int, mindmap_code: str) -> None:
 
 
 def get_student_concept_mastery(user_id: int, course_id: int) -> List[Dict[str, Any]]:
-    """Récupère les notions et leur statut d'assimilation pour un élève sur un cours (avec auto-réparation)."""
+    """Récupère les notions et leur statut d'assimilation pour un élève sur un cours (avec auto-réparation et purge des labels génériques)."""
     conn = get_connection()
     try:
         cur = conn.cursor()
@@ -1604,7 +1605,7 @@ def get_student_concept_mastery(user_id: int, course_id: int) -> List[Dict[str, 
                 """,
                 (user_id, course_id),
             )
-            return [dict(r) for r in cur.fetchall()]
+            rows = [dict(r) for r in cur.fetchall()]
         except sqlite3.OperationalError:
             _ensure_concept_mastery_table(conn)
             cur.execute(
@@ -1616,7 +1617,28 @@ def get_student_concept_mastery(user_id: int, course_id: int) -> List[Dict[str, 
                 """,
                 (user_id, course_id),
             )
-            return [dict(r) for r in cur.fetchall()]
+            rows = [dict(r) for r in cur.fetchall()]
+
+        # Nettoyage et purge immédiate de toute méta-catégorie générique polluante résiduelle
+        clean_rows: List[Dict[str, Any]] = []
+        to_delete: List[int] = []
+        for r in rows:
+            if is_generic_concept(r["concept_title"]):
+                to_delete.append(r["id"])
+            else:
+                clean_rows.append(r)
+
+        if to_delete:
+            try:
+                with conn:
+                    cur.execute(
+                        f"DELETE FROM concept_mastery WHERE id IN ({','.join(['?'] * len(to_delete))})",
+                        to_delete,
+                    )
+            except Exception:
+                pass
+
+        return clean_rows
     finally:
         conn.close()
 
@@ -1660,43 +1682,69 @@ def save_concept_mastery(
         conn.close()
 
 
-GENERIC_CONCEPT_PATTERNS = [
-    r"pi[èe]ge[s]?",
-    r"erreur[s]?\s+fr[ée]quente[s]?",
-    r"m[ée]thode\s+d['’]application",
-    r"d[ée]marche\s+de\s+r[ée]solution",
-    r"d[ée]finitions?\s*&\s*principes\s+fondamentaux",
-    r"propri[ée]t[ée]s?,\s*th[ée]or[èe]mes?\s+et\s+formules?",
-    r"notions?\s+cl[ée]s?",
-    r"notions?\s+fondamentales?",
-    r"astuces?\s+r[ée]daction",
-    r"astuces?\s+pour\s+les\s+points",
-    r"id[ée]e\s+cl[ée]\s+en\s+1\s+minute",
-    r"فخاخ",
-    r"فخ\s+الامتحان",
-    r"طريقة\s+التطبيق",
-    r"منهجية\s+الحل",
-    r"أخطاء\s+شائعة",
-    r"المفاهيم\s+الأساسية",
-    r"المفاهيم\s+الاساسية",
-    r"القواعد\s+والصيغ",
-    r"نصيحة\s+التحرير",
-    r"الفكرة\s+الرئيسية",
-    r"exam\s+pitfall",
-    r"exam\s+trap",
-    r"frequent\s+error",
-    r"application\s+method",
-    r"core\s+concept",
-    r"rules\s+and\s+formulas",
-    r"writing\s+tip",
+def normalize_text_for_concept_check(text: str) -> str:
+    """
+    Normalise le texte pour la détection fiable de notions génériques :
+    retire les diacritiques arabes (tashkeel/harakat), unifie les lettres arabes (alif, taa marbuta, yaa),
+    retire les accents latins et la ponctuation superflue.
+    """
+    if not text:
+        return ""
+    t = text.strip().lower()
+    t = re.sub(r"^[0-9\W_]+|[0-9\W_]+$", "", t).strip()
+
+    # 1. Normalisation Arabe : retirer le tashkeel (fatha, damma, kasra, sukun, shadda, tanween, dagger alif, tatweel)
+    t = re.sub(r"[\u064b-\u065f\u0670\u0640]", "", t)
+    # Normaliser alef
+    t = re.sub(r"[إأآٱ]", "ا", t)
+    # Normaliser taa marbuta
+    t = re.sub(r"ة", "ه", t)
+    # Normaliser yaa / alef maqsura
+    t = re.sub(r"[ىي]", "ي", t)
+
+    # 2. Normalisation Latin (Français / Anglais) : retirer les accents
+    t = "".join(
+        c for c in unicodedata.normalize("NFD", t)
+        if unicodedata.category(c) != "Mn"
+    )
+    return t
+
+
+GENERIC_KEYWORDS_NORMALIZED = [
+    # Arabe - Pièges, erreurs, examens
+    "فخ", "فخاخ", "مزلق", "مزالق", "خطا", "اخطاء", "يقع فيها", "انتبه يا بطل",
+    "الامتحان الموحد", "الامتحان الجهوي", "الامتحان الوطني", "الامتحانات الاشهاديه",
+    "تتكرر في الامتحان", "يجب ان اعرفها", "لضمان النقطه الكامله", "لضمان الامتياز",
+    # Arabe - Méta-catégories de sections de fiches express
+    "المفاهيم والتعاريف", "المفاهيم والمصطلحات", "المفاهيم المحوريه",
+    "الكلمات والمفاهيم", "المفاهيم الاساسيه", "المفاهيم المركزيه",
+    "القواعد الذهبيه", "القواعد والبرهنات", "النماذج والقواعد", "القواعد والصيغ",
+    "طريقه التطبيق", "منهجيه التطبيق", "منهجيه الحل", "خطوات التطبيق",
+    "نصيحه التحرير", "توجيهات منهجيه", "رويه نقديه", "سر التفوق", "سر النجاح",
+    # Français - Pièges, erreurs
+    "piege", "erreur frequente", "erreurs frequentes", "erreur classique", "erreurs classiques",
+    "ecueil", "ecueils", "attention au petit piege",
+    # Français - Méta-catégories de sections de fiches express
+    "methode d'application", "methode d application", "demarche de resolution", "methodologie",
+    "definitions & principes", "definition & principe", "definitions fondamentales",
+    "proprietes, theoremes et formules", "proprietes & formules",
+    "notions fondamentales", "notion fondamentale", "notions cles", "notion cle",
+    "formules, regles & proprietes", "vocabulaire & les idees", "super words & key ideas",
+    "l'idee cle", "idee cle en 1 minute",
+    "astuce redaction", "astuce de champion", "conseil methodologique", "astuces pour les points",
+    "gagner des points", "note maximale",
+    "examen normalise", "examen blanc", "baccalaureat",
+    # Anglais - Traps, pitfalls, templates
+    "trap", "pitfall", "frequent error", "common mistake",
+    "application method", "core concept", "rules and formulas", "golden rules",
+    "star tip", "top marks", "writing strategy", "maximum marks",
 ]
 
-LONE_GENERIC_WORDS = {
-    "propriété", "propriétés", "propriete", "proprietes",
-    "formule", "formules", "définition", "définitions", "definition", "definitions",
-    "généralités", "generalites", "introduction", "conclusion", "fiche", "résumé", "resume",
-    "cours", "leçon", "lecon", "notion", "notions", "méthode", "methode",
-    "الخاصيات", "التعاريف", "القواعد", "الدرس", "ملخص", "مقدمة",
+LONE_GENERIC_WORDS_NORMALIZED = {
+    "propriete", "proprietes", "formule", "formules", "definition", "definitions",
+    "generalite", "generalites", "introduction", "conclusion", "fiche", "resume",
+    "cours", "lecon", "notion", "notions", "methode", "methodes",
+    "الخاصيات", "التعاريف", "القواعد", "الدرس", "ملخص", "مقدمه", "مفاهيم", "مصطلحات",
     "properties", "rules", "definitions", "summary", "lesson", "notes",
 }
 
@@ -1704,19 +1752,22 @@ LONE_GENERIC_WORDS = {
 def is_generic_concept(text: str) -> bool:
     """
     Vérifie si un intitulé est une méta-catégorie générique (ex: Pièges d'examen,
-    Méthode d'application, Définitions fondamentales, Formules) plutôt qu'une notion réelle du cours.
+    Méthode d'application, Définitions fondamentales, Formules, فخاخ الامتحان)
+    plutôt qu'une notion réelle du cours.
+    Gère la normalisation totale du texte (y compris le Tashkeel arabe et les accents français).
     """
     if not text or not text.strip():
         return True
 
-    clean = text.strip().lower()
-    clean_stripped = re.sub(r"^[0-9\W_]+|[0-9\W_]+$", "", clean).strip()
-
-    if clean_stripped in LONE_GENERIC_WORDS:
+    norm = normalize_text_for_concept_check(text)
+    if not norm:
         return True
 
-    for pattern in GENERIC_CONCEPT_PATTERNS:
-        if re.search(pattern, clean, re.IGNORECASE):
+    if norm in LONE_GENERIC_WORDS_NORMALIZED:
+        return True
+
+    for kw in GENERIC_KEYWORDS_NORMALIZED:
+        if kw in norm:
             return True
 
     return False
@@ -1746,13 +1797,14 @@ def extract_real_course_concepts(course: Dict[str, Any]) -> List[str]:
             if len(b_clean) >= 3 and not is_generic_concept(b_clean) and b_clean not in extracted:
                 extracted.append(b_clean)
 
-        # b) Titres Markdown : "## 1. Titre de section" ou "### Notion"
-        headings = re.findall(r"^#{2,3}\s+(?:[0-9]+[.\-)]\s*)?([^\n#]{3,70})", summary, flags=re.MULTILINE)
-        for h in headings:
-            h_clean = re.sub(r"^[^\w\s]+", "", h.strip())  # retire emojis
-            h_clean = re.sub(r"^[0-9\.\)\-\s]+", "", h_clean).strip()
-            if len(h_clean) >= 3 and not is_generic_concept(h_clean) and h_clean not in extracted:
-                extracted.append(h_clean)
+        # b) Si et seulement si les puces en gras sont insuffisantes (< 2), examiner les sous-titres non génériques
+        if len(extracted) < 2:
+            headings = re.findall(r"^#{2,3}\s+(?:[0-9]+[.\-)]\s*)?([^\n#]{3,70})", summary, flags=re.MULTILINE)
+            for h in headings:
+                h_clean = re.sub(r"^[^\w\s]+", "", h.strip())  # retire emojis
+                h_clean = re.sub(r"^[0-9\.\)\-\s]+", "", h_clean).strip()
+                if len(h_clean) >= 3 and not is_generic_concept(h_clean) and h_clean not in extracted:
+                    extracted.append(h_clean)
 
     # 3. Si l'extraction n'a rien donné ou trop peu (< 2), générer des notions concrètes rattachées au titre du cours
     if len(extracted) < 2:

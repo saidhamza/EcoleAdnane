@@ -1520,25 +1520,86 @@ class TestMindmapAndConceptMastery(unittest.TestCase):
         self.assertNotIn("Pièges d'Examen", fb)
 
     def test_is_generic_concept(self):
-        # Méta-catégories génériques à proscrire
+        # Méta-catégories génériques à proscrire (Français, Arabe avec Tashkeel, Anglais)
         self.assertTrue(is_generic_concept("Pièges d'examen & Erreurs fréquentes"))
         self.assertTrue(is_generic_concept("Méthode d'application & Démarche de résolution"))
         self.assertTrue(is_generic_concept("Définitions & Principes fondamentaux (Théorème)"))
         self.assertTrue(is_generic_concept("Propriétés, Théorèmes et Formules (Maths)"))
         self.assertTrue(is_generic_concept("فخاخ الامتحانات وأخطاء شائعة"))
         self.assertTrue(is_generic_concept("طريقة التطبيق ومنهجية الحل"))
+        # Cas exact signalé par l'utilisateur avec Tashkeel arabe et parenthèses
+        self.assertTrue(is_generic_concept(" فَخَاخُ الِامْتِحَانِ الْمُوَحَّدِ (أَخْطَاءٌ يَقَعُ فِيهَا أَغْلَب"))
+        self.assertTrue(is_generic_concept("## ⚠️ فخاخ ومزالق الامتحانات الإشهادية (البكالوريا)"))
+        self.assertTrue(is_generic_concept("## 🎯 المفاهيم والتعاريف الأساسية (التي تتكرر في الامتحان)"))
+        self.assertTrue(is_generic_concept("## 📌 القواعد الذهبية / التواريخ والعناصر المفتاحية"))
+        self.assertTrue(is_generic_concept("## 💡 نصيحة التحرير لضمان النقطة الكاملة"))
+        self.assertTrue(is_generic_concept("## 💡 سر التفوق والنجاح"))
         self.assertTrue(is_generic_concept("Exam Pitfalls & Frequent Traps"))
         self.assertTrue(is_generic_concept("Propriétés"))
         self.assertTrue(is_generic_concept("Formules"))
         self.assertTrue(is_generic_concept(""))
 
-        # Notions réelles et concrètes de cours qui doivent être acceptées
+        # Notions réelles et concrètes de cours qui doivent être acceptées (même avec Tashkeel)
         self.assertFalse(is_generic_concept("Théorème direct de Pythagore"))
         self.assertFalse(is_generic_concept("Réciproque du théorème de Thalès"))
         self.assertFalse(is_generic_concept("Calcul de l'hypoténuse"))
         self.assertFalse(is_generic_concept("مبرهنة فيتاغورس المباشرة"))
+        self.assertFalse(is_generic_concept("مَبَرْهَنَةُ فِيتَاغُورْسَ الْمُبَاشِرَةُ"))
+        self.assertFalse(is_generic_concept("حِسَابُ طُولِ الْوَتَرِ"))
         self.assertFalse(is_generic_concept("حساب جيب تمام زاوية حادة"))
         self.assertFalse(is_generic_concept("Newton's Second Law of Motion"))
+
+    def test_evaluate_and_sync_purges_tashkeel_arabic_generic_concepts(self):
+        # Cas rapporté par l'utilisateur : cours arabe pollué par les titres de gabarit avec Tashkeel
+        pdf_file = Path(self.temp_dir.name) / "cours_arabe_generic.pdf"
+        pdf_file.write_bytes(b"%PDF-1.4 Fake Arabic PDF")
+        c_id = save_course(
+            title="مبرهنة فيتاغورس",
+            subject="الرياضيات",
+            language="ar",
+            file_path=str(pdf_file),
+            file_hash="hash_ar_generic_01",
+            file_name="pythagore_ar.pdf",
+            raw_text="مبرهنة فيتاغورس في المثلث القائم الزاوية.",
+            summary_markdown="""
+## 🎯 المفاهيم والتعاريف الأساسية (التي تتكرر في الامتحان)
+- **مَبَرْهَنَةُ فِيتَاغُورْسَ الْمُبَاشِرَةُ** : فِي كُلِّ مُثَلَّثٍ قَائِمِ الزَّاوِيَةِ، مُرَبَّعُ طُولِ الْوَتَرِ يُسَاوِي مَجْمُوعَ مُرَبَّعَيْ طُولَيْ الضِّلْعَيْنِ الآخَرَيْنِ.
+- **حِسَابُ طُولِ الْوَتَرِ** : تَطْبِيقُ الْعَلَاقَةِ الرِّيَاضِيَّةِ.
+## ⚠️ فَخَاخُ الِامْتِحَانِ الْمُوَحَّدِ (أَخْطَاءٌ يَقَعُ فِيهَا أَغْلَبُ التَّلَامِيذِ)
+- نسيان شرط المثلث القائم الزاوية قبل الحساب.
+## 💡 نَصِيحَةُ التَّحْرِيرِ لِضَمَانِ النُّقْطَةِ الكَامِلَةِ
+- كتابة اسم المثلث والزاوية القائمة بوضوح.
+""",
+            key_concepts=[
+                " فَخَاخُ الِامْتِحَانِ الْمُوَحَّدِ (أَخْطَاءٌ يَقَعُ فِيهَا أَغْلَب",
+                "## 🎯 المفاهيم والتعاريف الأساسية (التي تتكرر في الامتحان)",
+                "مَبَرْهَنَةُ فِيتَاغُورْسَ الْمُبَاشِرَةُ",
+                "حِسَابُ طُولِ الْوَتَرِ",
+            ],
+            user_id=self.student["id"],
+        )
+
+        # Enregistrer des entrées polluées dans concept_mastery
+        save_concept_mastery(self.student["id"], c_id, " فَخَاخُ الِامْتِحَانِ الْمُوَحَّدِ (أَخْطَاءٌ يَقَعُ فِيهَا أَغْلَب", "to_review")
+        save_concept_mastery(self.student["id"], c_id, "## 🎯 المفاهيم والتعاريف الأساسية (التي تتكرر في الامتحان)", "in_progress")
+
+        # Exécuter evaluate_and_sync_concept_mastery
+        synced = evaluate_and_sync_concept_mastery(self.student["id"], c_id)
+        concept_titles = [item["concept_title"] for item in synced]
+
+        # Vérifier que les labels génériques ont été rigoureusement éliminés
+        self.assertNotIn(" فَخَاخُ الِامْتِحَانِ الْمُوَحَّدِ (أَخْطَاءٌ يَقَعُ فِيهَا أَغْلَب", concept_titles)
+        self.assertNotIn("## 🎯 المفاهيم والتعاريف الأساسية (التي تتكرر في الامتحان)", concept_titles)
+
+        # Vérifier que les notions réelles sont bien préservées
+        self.assertIn("مَبَرْهَنَةُ فِيتَاغُورْسَ الْمُبَاشِرَةُ", concept_titles)
+        self.assertIn("حِسَابُ طُولِ الْوَتَرِ", concept_titles)
+
+        # Vérifier la purge directe en base via get_student_concept_mastery
+        db_mastery = get_student_concept_mastery(self.student["id"], c_id)
+        db_titles = [m["concept_title"] for m in db_mastery]
+        self.assertNotIn(" فَخَاخُ الِامْتِحَانِ الْمُوَحَّدِ (أَخْطَاءٌ يَقَعُ فِيهَا أَغْلَب", db_titles)
+        self.assertNotIn("## 🎯 المفاهيم والتعاريف الأساسية (التي تتكرر في الامتحان)", db_titles)
 
     def test_extract_real_course_concepts(self):
         course = {
