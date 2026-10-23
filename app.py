@@ -36,6 +36,8 @@ try:
         or not hasattr(models.database, "evaluate_and_award_course_badges")
         or not hasattr(models.database, "get_student_trophies_by_course")
         or not hasattr(models.database, "get_student_ranks")
+        or not hasattr(models.database, "has_user_completed_quiz")
+        or not hasattr(models.database, "mark_concept_mastered_by_sanad")
     ):
         models.database = importlib.reload(models.database)
     from models.database import (
@@ -60,6 +62,7 @@ try:
         get_db_path,
         get_global_admin_kpis,
         get_latest_quiz,
+        has_user_completed_quiz,
         get_pedagogical_cycle,
         get_quiz_stats,
         get_student_concept_mastery,
@@ -79,6 +82,7 @@ try:
         list_courses,
         list_users,
         save_concept_mastery,
+        mark_concept_mastered_by_sanad,
         save_course,
         save_course_mindmap,
         save_quiz,
@@ -118,6 +122,7 @@ except ImportError:
         get_db_path,
         get_global_admin_kpis,
         get_latest_quiz,
+        has_user_completed_quiz,
         get_pedagogical_cycle,
         get_quiz_stats,
         get_student_concept_mastery,
@@ -137,6 +142,7 @@ except ImportError:
         list_courses,
         list_users,
         save_concept_mastery,
+        mark_concept_mastered_by_sanad,
         save_course,
         save_course_mindmap,
         save_quiz,
@@ -2485,7 +2491,18 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                 questions = latest_quiz["questions"]
                 quiz_id = latest_quiz["id"]
                 submission_key = f"quiz_submitted_{quiz_id}"
-                is_submitted = st.session_state.get(submission_key, False)
+                # Vérifier si le quiz a déjà été soumis dans la session ou en base de données (anti-triche)
+                already_completed = has_user_completed_quiz(quiz_id, user_id=active_user_id)
+                is_submitted = st.session_state.get(submission_key, False) or already_completed
+
+                if already_completed and not st.session_state.get(submission_key, False):
+                    # Alerte informative bienveillante indiquant que ce quiz a déjà été réalisé
+                    if is_ar:
+                        st.info("✅ لقد أكملت هذا الاختبار مسبقاً! للحصول على نقاط وتحديات جديدة وتثبيت مكتسباتك، اضغط على زر توليد اختبار جديد أعلاه أو بالأسفل.")
+                    elif is_en:
+                        st.info("✅ You have already completed this practice quiz! To practice further and earn new points, generate a new quiz below.")
+                    else:
+                        st.info("✅ Tu as déjà complété ce quiz d'entraînement ! Pour t'entraîner à nouveau et marquer de nouveaux points, génère un nouveau quiz.")
 
                 answers_chosen = {}
                 for idx, q in enumerate(questions):
@@ -2582,10 +2599,39 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                     if score >= len(questions) * 0.8 and not celebration:
                         st.balloons()
 
-                    retry_label = "🔁 Recommencer ce quiz" if not is_en else "🔁 Retake Quiz"
-                    if st.button(retry_label):
-                        st.session_state[submission_key] = False
-                        st.rerun()
+                    # Règle anti-triche : au lieu de recommencer le même quiz avec les réponses déjà connues,
+                    # inviter l'élève à générer un tout nouveau quiz d'entraînement avec 5 nouvelles questions.
+                    st.write("---")
+                    btn_generate_next_quiz = (
+                        "🎯 توليد اختبار تدريبي جديد (5 أسئلة جديدة)"
+                        if is_ar else (
+                            "🎯 Generate a New Practice Quiz (5 new questions)"
+                            if is_en else
+                            "🎯 Générer un nouveau quiz d'examen (5 nouvelles questions)"
+                        )
+                    )
+                    st.caption(
+                        "🔒 *Chaque quiz est à usage unique pour garantir un entraînement authentique. Pour retester tes compétences, génère un nouveau quiz !*"
+                        if not is_ar and not is_en else (
+                            "🔒 *كل اختبار صالح للاستخدام مرة واحدة لضمان تدريب حقيقي. لتجديد التحدي، قم بتوليد اختبار جديد!*"
+                            if is_ar else
+                            "🔒 *Each quiz is single-use for genuine practice. Generate a new quiz to practice again!*"
+                        )
+                    )
+                    if st.button(btn_generate_next_quiz, type="primary", key=f"btn_next_quiz_{quiz_id}"):
+                        if not user_api_key:
+                            st.error("⚠️ Clé API Gemini requise.")
+                        else:
+                            with st.spinner("Génération de nouvelles questions..." if not is_en else "Generating new questions..."):
+                                new_quiz_questions = generate_quiz(
+                                    raw_text=current_course.get("raw_text") or "",
+                                    subject=current_course["subject"],
+                                    language=current_course["language"],
+                                    num_questions=5,
+                                    user_id=active_user_id,
+                                )
+                                save_quiz(current_course["id"], new_quiz_questions, user_id=active_user_id)
+                                st.rerun()
             else:
                 st.info("Aucun quiz généré pour ce cours pour le moment." if not is_en else "No quiz generated for this course yet.")
 
@@ -2743,11 +2789,40 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                                 language=current_course["language"],
                                 user_id=active_user_id,
                             )
-                            add_chat_message(current_course["id"], "assistant", reply, user_id=active_user_id)
+
+                            # Détection de validation d'assimilation par Sanad ([CONCEPT_ACQUIS: ...])
+                            found_concepts = re.findall(r"\[CONCEPT_ACQUIS:\s*([^\]]+)\]", reply, flags=re.IGNORECASE)
+                            cleaned_reply = re.sub(r"\n*\[CONCEPT_ACQUIS:\s*[^\]]+\]", "", reply).strip()
+
+                            if found_concepts:
+                                for fc in found_concepts:
+                                    fc_clean = fc.strip().strip('"').strip("'")
+                                    if fc_clean:
+                                        mark_concept_mastered_by_sanad(
+                                            user_id=active_user_id,
+                                            course_id=current_course["id"],
+                                            concept_title=fc_clean,
+                                        )
+                                evaluate_and_sync_concept_mastery(active_user_id, current_course["id"])
+                                new_tutor_badges = evaluate_and_award_course_badges(active_user_id, current_course["id"])
+                                if new_tutor_badges:
+                                    st.session_state["pending_trophy_celebration"] = {
+                                        "course_title": current_course["title"],
+                                        "badges": new_tutor_badges,
+                                    }
+                                for fc in found_concepts:
+                                    if is_ar:
+                                        st.toast(f"🎉 أحسنت! أثبتت استيعابك لمفهوم: {fc.strip()} خلال حوارك مع سند!", icon="🧠")
+                                    elif is_en:
+                                        st.toast(f"🎉 Great job! You proved your mastery of: {fc.strip()} with Sanad!", icon="🧠")
+                                    else:
+                                        st.toast(f"🎉 Bravo ! Sanad a validé ta maîtrise de la notion : {fc.strip()} !", icon="🧠")
+
+                            add_chat_message(current_course["id"], "assistant", cleaned_reply, user_id=active_user_id)
                             if is_ar:
-                                st.markdown(f"<div class='rtl-box'>{reply}</div>", unsafe_allow_html=True)
+                                st.markdown(f"<div class='rtl-box'>{cleaned_reply}</div>", unsafe_allow_html=True)
                             else:
-                                st.markdown(reply)
+                                st.markdown(cleaned_reply)
                             if auto_speak:
                                 st.session_state[trigger_auto_key] = True
                     st.rerun()

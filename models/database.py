@@ -50,6 +50,7 @@ __all__ = [
     "save_flashcard",
     "save_quiz",
     "get_latest_quiz",
+    "has_user_completed_quiz",
     "save_quiz_attempt",
     "get_quiz_stats",
     "add_chat_message",
@@ -60,6 +61,7 @@ __all__ = [
     "get_mindmap_disk_paths",
     "get_student_concept_mastery",
     "save_concept_mastery",
+    "mark_concept_mastered_by_sanad",
     "evaluate_and_sync_concept_mastery",
     "is_generic_concept",
     "extract_real_course_concepts",
@@ -2026,6 +2028,26 @@ def get_latest_quiz(course_id: int, user_id: Optional[int] = None) -> Optional[D
         conn.close()
 
 
+def has_user_completed_quiz(quiz_id: int, user_id: Optional[int] = None) -> bool:
+    """Vérifie si l'utilisateur a déjà complété ce quiz spécifique."""
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        if user_id is not None:
+            cur.execute(
+                "SELECT 1 FROM quiz_attempts WHERE quiz_id = ? AND user_id = ? LIMIT 1",
+                (quiz_id, user_id),
+            )
+        else:
+            cur.execute(
+                "SELECT 1 FROM quiz_attempts WHERE quiz_id = ? AND user_id IS NULL LIMIT 1",
+                (quiz_id,),
+            )
+        return bool(cur.fetchone())
+    finally:
+        conn.close()
+
+
 def save_quiz_attempt(
     course_id: int,
     quiz_id: int,
@@ -2033,12 +2055,33 @@ def save_quiz_attempt(
     total_questions: int,
     answers: Dict[str, Any],
     user_id: Optional[int] = None,
+    allow_duplicate: bool = False,
 ) -> int:
-    """Enregistre le résultat d'une tentative de quiz."""
+    """
+    Enregistre le résultat d'une tentative de quiz.
+    Règle anti-triche : un quiz ne peut être passé et validé qu'une seule fois par élève.
+    Si le quiz a déjà été complété et allow_duplicate=False, retourne l'id de la tentative existante sans créer de doublon.
+    """
     conn = get_connection()
     try:
         with conn:
             cur = conn.cursor()
+            # Vérification anti-triche : si déjà complété par cet élève, ne pas recréer
+            if not allow_duplicate:
+                if user_id is not None:
+                    cur.execute(
+                        "SELECT id FROM quiz_attempts WHERE quiz_id = ? AND user_id = ? ORDER BY id ASC LIMIT 1",
+                        (quiz_id, user_id),
+                    )
+                else:
+                    cur.execute(
+                        "SELECT id FROM quiz_attempts WHERE quiz_id = ? AND user_id IS NULL ORDER BY id ASC LIMIT 1",
+                        (quiz_id,),
+                    )
+                existing = cur.fetchone()
+                if existing:
+                    return existing["id"]
+
             cur.execute(
                 """
                 INSERT INTO quiz_attempts (user_id, course_id, quiz_id, score, total_questions, answers_json)
@@ -2476,11 +2519,47 @@ def save_concept_mastery(
 
 
 
+def mark_concept_mastered_by_sanad(
+    user_id: int,
+    course_id: int,
+    concept_title: str,
+    tutor_notes: Optional[str] = None,
+) -> bool:
+    """
+    Valide officiellement qu'une notion clé a été assimilée par l'élève suite
+    à un dialogue explicatif et socratique avec le tuteur intelligent Sanad.
+    Attribue le statut 'mastered' (🟢 Assimilé) et 100% de réussite.
+    """
+    course = get_course_by_id(course_id)
+    course_lang = (course.get("language") if course else None) or "fr"
+    if tutor_notes and tutor_notes.strip():
+        context = tutor_notes.strip()
+    elif course_lang == "ar":
+        context = "تم إثبات الاستيعاب بتفوق خلال الحوار مع الأستاذ سند 💬🎓"
+    elif course_lang == "en":
+        context = "Demonstrated and validated in dialogue with tutor Sanad 💬🎓"
+    else:
+        context = "Validé avec brio lors de l'échange avec le tuteur Sanad 💬🎓"
+
+    save_concept_mastery(
+        user_id=user_id,
+        course_id=course_id,
+        concept_title=concept_title,
+        status="mastered",
+        success_rate=100.0,
+        attempts_count=1,
+        last_context=context,
+    )
+    return True
+
+
 def evaluate_and_sync_concept_mastery(user_id: int, course_id: int) -> List[Dict[str, Any]]:
     """
     Évalue localement (0 appel API IA, 100% gratuit) le niveau d'assimilation de chaque notion clé
     RÉELLE d'un cours pour un élève donné en analysant ses quiz et son historique de chat avec Sanad.
     Nettoie et purge automatiquement les anciennes méta-catégories génériques obsolètes.
+    Priorité absolue : si Sanad a déjà validé une notion lors d'un échange, le statut 'mastered'
+    est scrupuleusement conservé en faveur de l'élève.
     """
     course = get_course_by_id(course_id)
     if not course:
@@ -2509,8 +2588,15 @@ def evaluate_and_sync_concept_mastery(user_id: int, course_id: int) -> List[Dict
                     (json.dumps(concepts, ensure_ascii=False), course_id),
                 )
 
-        # 2. Récupérer les quiz et tentatives de l'élève sur ce cours
+        # 2. Récupérer les états existants (notamment pour préserver les validations Sanad)
         cur = conn.cursor()
+        cur.execute(
+            "SELECT concept_title, status, success_rate, attempts_count, last_context FROM concept_mastery WHERE user_id = ? AND course_id = ?",
+            (user_id, course_id),
+        )
+        existing_mastery_map = {r["concept_title"]: dict(r) for r in cur.fetchall()}
+
+        # 3. Récupérer les quiz et tentatives de l'élève sur ce cours
         cur.execute(
             """
             SELECT score, total_questions, answers_json, completed_at
@@ -2522,7 +2608,7 @@ def evaluate_and_sync_concept_mastery(user_id: int, course_id: int) -> List[Dict
         )
         attempts = [dict(r) for r in cur.fetchall()]
 
-        # 3. Récupérer l'historique du chat pour ce cours
+        # 4. Récupérer l'historique du chat pour ce cours
         cur.execute(
             """
             SELECT role, content
@@ -2549,6 +2635,15 @@ def evaluate_and_sync_concept_mastery(user_id: int, course_id: int) -> List[Dict
 
     for concept in concepts:
         concept_words = [w.lower() for w in re.findall(r"\w+", concept) if len(w) > 3]
+
+        # Si cette notion a déjà été validée par Sanad ou marquée comme 'mastered' avec mention Sanad,
+        # on la préserve à 100% comme point acquis en faveur de l'élève !
+        existing_entry = existing_mastery_map.get(concept)
+        if existing_entry and existing_entry.get("status") == "mastered":
+            ctx_str = existing_entry.get("last_context") or ""
+            if "sanad" in ctx_str.lower() or "سند" in ctx_str:
+                results.append(existing_entry)
+                continue
 
         concept_attempts = 0
         concept_scores = []

@@ -1303,6 +1303,9 @@ def socratic_tutor_response(
 3. التَّوْجِيهُ المَنْهَجِيُّ: ذَكِّرِ التِّلْمِيذَ إِذَا لَزِمَ الأَمْرُ بِالصِّيَغِ المَنْهَجِيَّةِ الَّتِي تُطْلَبُ فِي الفُرُوضِ وَالِامْتِحَانَاتِ.
 4. الِالْتِزَامُ اللُّغَوِيُّ المُطْلَقُ: تَحَدَّثْ بِاللُّغَةِ العَرَبِيَّةِ الفُصْحَى فَقَطْ وَبِشَكْلٍ كَامِلٍ.
 5. التَّشْكِيلُ التَّامُّ وَالحَرَكَاتُ (شَرْطٌ جَوْهَرِيٌّ لِتَسْهِيلِ القِرَاءَةِ وَالنُّطْقِ الصَّوْتِيِّ): يَجِبُ دَائِماً وَفِي كُلِّ رَدٍّ أَنْ تَضْبِطَ جَمِيعَ كَلِمَاتِ وَجُمَلِ رَدِّكَ بِالحَرَكَاتِ وَالتَّشْكِيلِ التَّامِّ (الْفَتْحَة، الضَّمَّة، الْكَسْرَة، السُّكُون، الشَّدَّة، التَّنْوِين). هَذَا الشَّرْطُ إِلْزَامِيٌّ لِأَنَّ رَدَّكَ سَيُقْرَأُ صَوْتِيّاً بِوَاسِطَةِ النِّظَامِ الصَّوْتِيِّ (TTS) وَالتَّشْكِيلُ يَضْمَنُ نُطْقاً صَوْتِيّاً سَلِيماً وَطَبِيعِيّاً 100% دُونَ أَيِّ لَبْسٍ.
+6. تَقْيِيمُ اسْتِيعَابِ المَفَاهِيمِ (إِنْصَافُ التِّلْمِيذِ): إِذَا أَجَابَ التِّلْمِيذُ إِجَابَةً سَلِيمَةً، أَوْ شَرَحَ المَفْهُومَ بِمُفْرَدَاتِهِ، أَوْ أَثْبَتَ اسْتِيعَابَهُ لِمَفْهُومٍ أَسَاسِيٍّ مِنْ مَفَاهِيمِ هَذَا الدَّرْسِ، فَاشْكُرْهُ وَشَجِّعْهُ، ثُمَّ اخْتِمْ رَدَّكَ فِي سَطْرٍ مُسْتَقِلٍّ بِهَذِهِ العَلَامَةِ التَّرْبَوِيَّةِ بِدِقَّةٍ:
+[CONCEPT_ACQUIS: اسم المفهوم أو القاعدة]
+(حَيْثُ تَمْلَأُ اسْمَ المَفْهُومِ المُسْتَوْعَبِ لِيَتِمَّ احْتِسَابُهُ فَوْراً كَنُقْطَةِ تَمَيُّزٍ فِي تَتَبُّعِ اسْتِيعَابِ التِّلْمِيذِ).
 """
     elif language == "en":
         if stage == "primary":
@@ -1335,6 +1338,8 @@ Your golden pedagogical rules:
 {tone_rule}
 3. Exam Focus: Mention practical tips for school exams when relevant.
 4. Language Rule: Speak entirely in clear, simple, accessible English suited for a {student_age}-year-old learner.
+5. Concept Mastery Recognition: When the student explains, answers correctly, or clearly demonstrates understanding of a key concept from the lesson, praise them warmly, and append this pedagogical tag on a new line:
+[CONCEPT_ACQUIS: Name of the mastered concept]
 """
     else:  # français
         if stage == "primary":
@@ -1367,6 +1372,9 @@ Tes règles d'or pédagogiques :
 {tone_rule}
 3. Repères Pratiques : Donne des astuces méthodologiques concrètes pour les contrôles et examens.
 4. Langue stricte : Réponds STRICTEMENT en français.
+5. Reconnaissance de l'Assimilation des Notions : Lorsque l'élève répond correctement, formule une bonne explication avec ses propres mots ou démontre par son raisonnement qu'il a compris une notion clé du cours, félicite-le chaleureusement et ajoute impérativement sur une ligne à la fin :
+[CONCEPT_ACQUIS: Titre précis de la notion comprise]
+(Cette mention valide instantanément cette notion au profit de l'élève dans son Suivi d'Assimilation).
 """
 
     # Construire la conversation pour le prompt

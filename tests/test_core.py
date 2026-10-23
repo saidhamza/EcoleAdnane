@@ -1019,11 +1019,13 @@ class TestPedagogicalAdaptationAndUserProfiles(unittest.TestCase):
         # 2. Student 1 ajoute un cours personnel avec un hash différent
         c3 = save_course("SVT Perso", "SVT", "fr", "/f/svt.pdf", "hash_perso_svt", "svt.pdf", user_id=self.student_1["id"])
 
-        # 3. Student 1 réalise 3 tentatives de quiz
-        qid = save_quiz(c1, [{"question": "Q1", "options": ["A", "B"], "answer_index": 0}], user_id=self.student_1["id"])
-        save_quiz_attempt(c1, qid, score=1, total_questions=1, answers={0: 0}, user_id=self.student_1["id"])
-        save_quiz_attempt(c1, qid, score=1, total_questions=1, answers={0: 0}, user_id=self.student_1["id"])
-        save_quiz_attempt(c1, qid, score=1, total_questions=1, answers={0: 0}, user_id=self.student_1["id"])
+        # 3. Student 1 réalise 3 tentatives de quiz sur 3 quiz distincts générés
+        qid1 = save_quiz(c1, [{"question": "Q1", "options": ["A", "B"], "answer_index": 0}], user_id=self.student_1["id"])
+        qid2 = save_quiz(c1, [{"question": "Q2", "options": ["A", "B"], "answer_index": 0}], user_id=self.student_1["id"])
+        qid3 = save_quiz(c1, [{"question": "Q3", "options": ["A", "B"], "answer_index": 0}], user_id=self.student_1["id"])
+        save_quiz_attempt(c1, qid1, score=1, total_questions=1, answers={0: 0}, user_id=self.student_1["id"])
+        save_quiz_attempt(c1, qid2, score=1, total_questions=1, answers={0: 0}, user_id=self.student_1["id"])
+        save_quiz_attempt(c1, qid3, score=1, total_questions=1, answers={0: 0}, user_id=self.student_1["id"])
 
         # Récupération des KPIs d'administration
         kpis = get_global_admin_kpis()
@@ -1054,12 +1056,13 @@ class TestPedagogicalAdaptationAndUserProfiles(unittest.TestCase):
         c_math = save_course("Maths 3AC", "Mathématiques", "fr", "/f/m.pdf", "hash_m", "m.pdf", user_id=self.student_1["id"])
         c_pc = save_course("Physique 3AC", "Physique-Chimie", "fr", "/f/pc.pdf", "hash_pc", "pc.pdf", user_id=self.student_1["id"])
 
-        q_math = save_quiz(c_math, [{"question": "Q1", "options": ["A", "B"], "answer_index": 0}], user_id=self.student_1["id"])
+        q_math1 = save_quiz(c_math, [{"question": "Q1", "options": ["A", "B"], "answer_index": 0}], user_id=self.student_1["id"])
+        q_math2 = save_quiz(c_math, [{"question": "Q1 bis", "options": ["A", "B"], "answer_index": 0}], user_id=self.student_1["id"])
         q_pc = save_quiz(c_pc, [{"question": "Q2", "options": ["C", "D"], "answer_index": 1}], user_id=self.student_1["id"])
 
         # 2. Tentatives : 2 en Maths (100% et 80%), 1 en PC (40%)
-        save_quiz_attempt(c_math, q_math, score=5, total_questions=5, answers={0: 0}, user_id=self.student_1["id"])
-        save_quiz_attempt(c_math, q_math, score=4, total_questions=5, answers={0: 0}, user_id=self.student_1["id"])
+        save_quiz_attempt(c_math, q_math1, score=5, total_questions=5, answers={0: 0}, user_id=self.student_1["id"])
+        save_quiz_attempt(c_math, q_math2, score=4, total_questions=5, answers={0: 0}, user_id=self.student_1["id"])
         save_quiz_attempt(c_pc, q_pc, score=2, total_questions=5, answers={0: 1}, user_id=self.student_1["id"])
 
         # 3. Récupération de la progression de Student 1
@@ -2490,11 +2493,13 @@ class TestSchoolLevelAndTrophies(unittest.TestCase):
         self.assertEqual(overview_mid["unlocked_trophies"], 2)
         self.assertEqual(overview_mid["completion_rate"], 25.0)
 
-        # Add 3 quiz attempts with 1 perfect score
-        qid = save_quiz(cid, [{"question": "Q1", "options": ["A", "B"], "answer_index": 0}], user_id=self.user_id)
-        save_quiz_attempt(cid, qid, 1, 1, {0: 0}, user_id=self.user_id)
-        save_quiz_attempt(cid, qid, 0, 1, {0: 1}, user_id=self.user_id)
-        save_quiz_attempt(cid, qid, 1, 1, {0: 0}, user_id=self.user_id)
+        # Add 3 quiz attempts on distinct quizzes with 1 perfect score
+        qid1 = save_quiz(cid, [{"question": "Q1", "options": ["A", "B"], "answer_index": 0}], user_id=self.user_id)
+        qid2 = save_quiz(cid, [{"question": "Q2", "options": ["A", "B"], "answer_index": 0}], user_id=self.user_id)
+        qid3 = save_quiz(cid, [{"question": "Q3", "options": ["A", "B"], "answer_index": 0}], user_id=self.user_id)
+        save_quiz_attempt(cid, qid1, 1, 1, {0: 0}, user_id=self.user_id)
+        save_quiz_attempt(cid, qid2, 0, 1, {0: 1}, user_id=self.user_id)
+        save_quiz_attempt(cid, qid3, 1, 1, {0: 0}, user_id=self.user_id)
 
         # Add 2 sanad chat questions
         add_chat_message(cid, "user", "Peux-tu expliquer cet événement ?", user_id=self.user_id)
@@ -2877,6 +2882,109 @@ class TestStudentRankMedal(unittest.TestCase):
             with patch("models.database.get_db_path", return_value=Path(td) / "rank.db"):
                 init_db()
                 self.assertEqual(get_student_ranks([987654321])[987654321]["emoji"], "🌱")
+
+
+class TestQuizAntiCheatAndSanadValidation(unittest.TestCase):
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.db_path = Path(self.temp_dir.name) / "test_anti_cheat.db"
+        self.patcher = patch("models.database.get_db_path", return_value=self.db_path)
+        self.patcher.start()
+        init_db()
+
+        from models.database import create_or_get_google_user, save_course, save_quiz
+        self.student = create_or_get_google_user("eleve_anticheat@test.ma", "Adnane Test", role="student")
+        self.user_id = self.student["id"]
+
+        pdf_file = Path(self.temp_dir.name) / "cours_anticheat.pdf"
+        pdf_file.write_bytes(b"%PDF-1.4 Fake PDF Content")
+        self.course_id = save_course(
+            title="Théorème de Pythagore",
+            subject="Mathématiques",
+            language="fr",
+            file_path=str(pdf_file),
+            file_hash="hash_pythagore_anticheat_01",
+            file_name="pythagore.pdf",
+            raw_text="Le théorème de Pythagore relie l'hypoténuse aux côtés d'un triangle rectangle. La réciproque permet de démontrer qu'un triangle est rectangle.",
+            summary_markdown="## Fiche Pythagore\nThéorème direct et réciproque.",
+            key_concepts=["Théorème direct de Pythagore", "Réciproque de Pythagore"],
+            user_id=self.user_id,
+        )
+        self.quiz_id = save_quiz(
+            self.course_id,
+            [{"question": "Q1", "options": ["A", "B"], "answer_index": 0}],
+            user_id=self.user_id,
+        )
+
+    def tearDown(self):
+        self.patcher.stop()
+        self.temp_dir.cleanup()
+
+    def test_single_use_quiz_anti_cheat(self):
+        from models.database import has_user_completed_quiz, save_quiz_attempt, get_connection
+
+        # Au départ, le quiz n'a pas été complété
+        self.assertFalse(has_user_completed_quiz(self.quiz_id, user_id=self.user_id))
+
+        # Première tentative valide
+        att_id_1 = save_quiz_attempt(
+            course_id=self.course_id,
+            quiz_id=self.quiz_id,
+            score=1,
+            total_questions=1,
+            answers={0: 0},
+            user_id=self.user_id,
+        )
+        self.assertTrue(att_id_1 > 0)
+        self.assertTrue(has_user_completed_quiz(self.quiz_id, user_id=self.user_id))
+
+        # Deuxième tentative sur le MÊME quiz : la règle anti-triche bloque le doublon
+        att_id_2 = save_quiz_attempt(
+            course_id=self.course_id,
+            quiz_id=self.quiz_id,
+            score=1,
+            total_questions=1,
+            answers={0: 0},
+            user_id=self.user_id,
+        )
+        self.assertEqual(att_id_1, att_id_2)
+
+        # Vérifier en base qu'il n'existe qu'une seule ligne d'enregistrement
+        conn = get_connection()
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT COUNT(*) as cnt FROM quiz_attempts WHERE user_id = ? AND quiz_id = ?", (self.user_id, self.quiz_id))
+            cnt = cur.fetchone()["cnt"]
+            self.assertEqual(cnt, 1)
+        finally:
+            conn.close()
+
+    def test_mark_concept_mastered_by_sanad_and_sync(self):
+        from models.database import (
+            mark_concept_mastered_by_sanad,
+            evaluate_and_sync_concept_mastery,
+            get_student_concept_mastery,
+        )
+
+        # Au départ, aucune tentative, le statut est 'untested'
+        init_mastery = evaluate_and_sync_concept_mastery(self.user_id, self.course_id)
+        c1 = next(c for c in init_mastery if c["concept_title"] == "Théorème direct de Pythagore")
+        self.assertEqual(c1["status"], "untested")
+
+        # Sanad valide formellement la notion lors de la discussion
+        marked = mark_concept_mastered_by_sanad(
+            user_id=self.user_id,
+            course_id=self.course_id,
+            concept_title="Théorème direct de Pythagore",
+        )
+        self.assertTrue(marked)
+
+        # Vérifier dans le diagnostic d'assimilation : la notion doit être 'mastered'
+        updated_mastery = evaluate_and_sync_concept_mastery(self.user_id, self.course_id)
+        c1_updated = next(c for c in updated_mastery if c["concept_title"] == "Théorème direct de Pythagore")
+        self.assertEqual(c1_updated["status"], "mastered")
+        self.assertIn("Sanad", c1_updated["last_context"])
+        self.assertEqual(c1_updated["success_rate"], 100.0)
 
 
 if __name__ == "__main__":
