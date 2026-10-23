@@ -2106,32 +2106,82 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
         st.write("")
 
         if is_ar:
-            st.markdown(
+            st.html(
                 """
                 <style>
-                /* Support RTL complet pour les onglets du cours */
-                div[data-testid="stTabs"] [data-baseweb="tab-list"],
-                .stTabs [data-baseweb="tab-list"] {
+                /* Support RTL complet pour le conteneur principal des onglets */
+                .stTabs,
+                div[data-testid="stTabs"],
+                div.stTabs {
                     direction: rtl !important;
+                }
+
+                /* Barre des onglets (tablist) alignée à droite */
+                .stTabs [role="tablist"],
+                .stTabs div[role="tablist"],
+                div[data-testid="stTabs"] [role="tablist"],
+                div[data-testid="stTabs"] div[role="tablist"],
+                div[role="tablist"],
+                .stTabs [data-baseweb="tab-list"],
+                div[data-testid="stTabs"] [data-baseweb="tab-list"] {
+                    direction: rtl !important;
+                    width: 100% !important;
+                    display: flex !important;
                     flex-direction: row !important;
                     justify-content: flex-start !important;
                     text-align: right !important;
                 }
-                div[data-testid="stTabs"] [data-baseweb="tab"],
-                .stTabs [data-baseweb="tab"] {
+
+                /* Boutons d'onglets individuels */
+                .stTabs [data-testid="stTab"],
+                .stTabs [role="tab"],
+                .stTabs button[role="tab"],
+                div[data-testid="stTabs"] [data-testid="stTab"],
+                div[data-testid="stTabs"] [role="tab"],
+                div[data-testid="stTabs"] button[role="tab"],
+                button[data-testid="stTab"],
+                button[role="tab"],
+                .stTabs [data-baseweb="tab"],
+                div[data-testid="stTabs"] [data-baseweb="tab"] {
                     direction: rtl !important;
+                    text-align: right !important;
                     font-family: 'AdnaneSans', 'Noto Sans Arabic', 'Amiri', sans-serif !important;
                     font-size: 1.05rem !important;
-                    text-align: right !important;
                 }
-                div[data-testid="stTabs"] [data-baseweb="tab"] p,
-                .stTabs [data-baseweb="tab"] p {
+
+                .stTabs [data-testid="stTab"] p,
+                .stTabs [role="tab"] p,
+                .stTabs button[role="tab"] p,
+                div[data-testid="stTabs"] [data-testid="stTab"] p,
+                div[data-testid="stTabs"] [role="tab"] p,
+                div[data-testid="stTabs"] button[role="tab"] p,
+                button[role="tab"] p,
+                .stTabs [data-baseweb="tab"] p,
+                div[data-testid="stTabs"] [data-baseweb="tab"] p {
                     direction: rtl !important;
                     text-align: right !important;
                     font-family: 'AdnaneSans', 'Noto Sans Arabic', 'Amiri', sans-serif !important;
                 }
-                div[data-testid="stTabs"] [data-baseweb="tab-panel"],
-                .stTabs [data-baseweb="tab-panel"] {
+
+                /* Panneaux de contenu des onglets */
+                .stTabs [role="tabpanel"],
+                div[data-testid="stTabs"] [role="tabpanel"],
+                div[role="tabpanel"],
+                .stTabs [data-baseweb="tab-panel"],
+                div[data-testid="stTabs"] [data-baseweb="tab-panel"] {
+                    direction: rtl !important;
+                    text-align: right !important;
+                }
+
+                /* Boutons d'action dans les panneaux d'onglets (alignés à droite) */
+                .stTabs [role="tabpanel"] div[data-testid="stButton"],
+                div[data-testid="stTabs"] [role="tabpanel"] div[data-testid="stButton"] {
+                    direction: rtl !important;
+                    display: flex !important;
+                    justify-content: flex-start !important;
+                }
+                .stTabs [role="tabpanel"] div[data-testid="stButton"] button,
+                div[data-testid="stTabs"] [role="tabpanel"] div[data-testid="stButton"] button {
                     direction: rtl !important;
                     text-align: right !important;
                 }
@@ -2227,8 +2277,7 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                     font-size: 1.05rem !important;
                 }
                 </style>
-                """,
-                unsafe_allow_html=True,
+                """
             )
 
         if is_ar:
