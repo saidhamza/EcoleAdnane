@@ -658,51 +658,87 @@ def check_and_handle_cloud_redirect() -> bool:
     if os.getenv("IS_DEDICATED_SERVER") == "true":
         return False
 
-    # Injection du script client passif qui ne redirige que si le hostname client contient streamlit.app
+    if not is_running_on_streamlit_cloud():
+        return False
+
+    # 1. Redirection automatique via JavaScript non-iframé (st.html)
+    try:
+        st.html(
+            """
+            <script>
+            (function() {
+                try {
+                    window.location.href = "https://ecole.code-xpert.net";
+                } catch(e) {}
+            })();
+            </script>
+            <meta http-equiv="refresh" content="2; url=https://ecole.code-xpert.net">
+            """,
+            unsafe_allow_javascript=True,
+        )
+    except Exception:
+        pass
+
+    # 2. Redirection de secours via iframe (window.top / window.parent)
     st.components.v1.html(
         """
         <script>
         (function() {
+            var targetUrl = "https://ecole.code-xpert.net" + (window.location.search || "");
             try {
-                var curHost = (window.top && window.top.location && window.top.location.hostname) ? window.top.location.hostname : window.location.hostname;
-                if (curHost && curHost.indexOf("streamlit.app") !== -1) {
-                    var targetUrl = "https://ecole.code-xpert.net" + (window.top.location.search || window.location.search || "");
-                    window.top.location.replace(targetUrl);
+                if (window.top && window.top.location) {
+                    window.top.location.href = targetUrl;
+                    return;
                 }
-            } catch(e) {
-                if (window.location.hostname && window.location.hostname.indexOf("streamlit.app") !== -1) {
-                    window.location.replace("https://ecole.code-xpert.net" + (window.location.search || ""));
+            } catch(e) {}
+            try {
+                if (window.parent && window.parent.location) {
+                    window.parent.location.href = targetUrl;
+                    return;
                 }
-            }
+            } catch(e2) {}
+            try {
+                window.location.href = targetUrl;
+            } catch(e3) {}
         })();
         </script>
         """,
         height=0,
     )
 
-    if not is_running_on_streamlit_cloud():
-        return False
-
+    # 3. Interface visuelle avec bouton Streamlit natif st.link_button
     st.markdown(
         """
-        <div style="max-width: 680px; margin: 40px auto; padding: 35px; background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); border: 2px solid #38bdf8; border-radius: 16px; text-align: center; color: #f8fafc; box-shadow: 0 10px 30px rgba(0,0,0,0.4);">
+        <div style="max-width: 680px; margin: 40px auto 20px auto; padding: 30px; background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); border: 2px solid #38bdf8; border-radius: 16px; text-align: center; color: #f8fafc; box-shadow: 0 10px 30px rgba(0,0,0,0.4);">
             <div style="font-size: 3.5rem; margin-bottom: 10px;">🎓</div>
             <h1 style="color: #38bdf8; font-size: 2rem; margin-bottom: 12px; font-weight: 700;">Ecole Adnane a déménagé !</h1>
-            <p style="font-size: 1.15rem; line-height: 1.6; color: #cbd5e1; margin-bottom: 24px;">
+            <p style="font-size: 1.15rem; line-height: 1.6; color: #cbd5e1; margin-bottom: 20px;">
                 Afin de vous offrir une plateforme plus rapide, plus stable et sans interruption, l'école est désormais accessible sur son serveur officiel permanent :
             </p>
-            <div style="background: rgba(56, 189, 248, 0.1); border: 1px dashed #38bdf8; border-radius: 10px; padding: 15px; margin-bottom: 25px;">
+            <div style="background: rgba(56, 189, 248, 0.1); border: 1px dashed #38bdf8; border-radius: 10px; padding: 15px; margin-bottom: 15px;">
                 <span style="font-size: 1.3rem; font-weight: 700; color: #38bdf8; font-family: monospace;">https://ecole.code-xpert.net</span>
             </div>
-            <p style="font-size: 0.95rem; color: #94a3b8; margin-bottom: 25px;">
-                🔄 Redirection automatique en cours vers le nouveau site...
+            <p style="font-size: 0.95rem; color: #94a3b8; margin: 0;">
+                🔄 Redirection automatique en cours... Si rien ne se passe, cliquez sur le bouton ci-dessous :
             </p>
-            <a href="https://ecole.code-xpert.net" target="_top" style="display: inline-block; background: #0284c7; color: #ffffff; text-decoration: none; font-weight: 600; padding: 14px 28px; border-radius: 10px; font-size: 1.1rem; box-shadow: 0 4px 12px rgba(2, 132, 199, 0.4);">
-                🚀 Accéder directement à ecole.code-xpert.net
-            </a>
         </div>
         """,
         unsafe_allow_html=True,
     )
+
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        st.link_button(
+            "🚀 Accéder à https://ecole.code-xpert.net",
+            "https://ecole.code-xpert.net",
+            type="primary",
+            use_container_width=True,
+        )
+        st.write("")
+        st.markdown(
+            "<p style='text-align: center; font-size: 0.9rem;'><a href='https://ecole.code-xpert.net' target='_blank' rel='noopener noreferrer' style='color: #38bdf8; text-decoration: underline;'>🔗 Ouvrir ecole.code-xpert.net dans un nouvel onglet</a></p>",
+            unsafe_allow_html=True,
+        )
+
     return True
 
