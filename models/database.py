@@ -281,6 +281,10 @@ def init_db(db_path: Optional[Path] = None) -> None:
             for idx in badge_indexes:
                 idx_name = idx["name"] if isinstance(idx, dict) or hasattr(idx, "keys") else idx[1]
                 is_unique = idx["unique"] if isinstance(idx, dict) or hasattr(idx, "keys") else idx[2]
+                is_partial = idx["partial"] if (isinstance(idx, dict) or hasattr(idx, "keys")) and "partial" in idx.keys() else (idx[4] if len(idx) > 4 else 0)
+                if is_partial:
+                    # Les index uniques partiels (par cours / globaux) sont valides : on les ignore.
+                    continue
                 if is_unique == 1:
                     cur.execute(f"PRAGMA index_info({idx_name})")
                     idx_cols = [c["name"] if isinstance(c, dict) or hasattr(c, "keys") else c[2] for c in cur.fetchall()]
