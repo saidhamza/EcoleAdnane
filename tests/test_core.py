@@ -2549,6 +2549,14 @@ class TestSchoolLevelAndTrophies(unittest.TestCase):
                     imported_names.add(alias.name)
         self.assertIn("get_gemini_api_key", imported_names)
 
+        # Verify app.py statically imports get_setting from models.database
+        db_imported_names = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and node.module == "models.database":
+                for alias in node.names:
+                    db_imported_names.add(alias.name)
+        self.assertIn("get_setting", db_imported_names)
+
 
 class GoogleDriveManagerTests(unittest.TestCase):
     def setUp(self):
