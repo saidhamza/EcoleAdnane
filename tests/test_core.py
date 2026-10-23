@@ -1359,32 +1359,57 @@ print("debug")
         self.assertIn("استمع للشرح", html_srv_pill_ar)
 
     def test_generate_fiche_audio_player_html(self):
-        # 1. En français
+        # 1. En français (mode repli client ou standard)
         sample_fr = "### Théorème de Thalès\nVoici la formule clé du cours.\n- Condition 1 : Parallélisme obligatoire."
         html_fr = generate_fiche_audio_player_html(sample_fr, language="fr", player_id="test_fiche_fr")
-        self.assertIn("btn_play_test_fiche_fr", html_fr)
-        self.assertIn("btn_stop_test_fiche_fr", html_fr)
-        self.assertIn("status_test_fiche_fr", html_fr)
-        self.assertIn("speed-btn_test_fiche_fr", html_fr)
+        self.assertIn("btn_test_fiche_fr", html_fr)
+        self.assertIn("border-radius: 16px", html_fr)
+        self.assertIn("wave-bars_test_fiche_fr", html_fr)
         self.assertIn("splitIntoSentences", html_fr)
         self.assertIn("fr-FR", html_fr)
         self.assertIn("Écouter la fiche", html_fr)
 
-        # 2. En arabe avec direction RTL
+        # 2. En arabe avec direction RTL (détection automatique)
         sample_ar = "### مبرهنة طاليس\nهذه هي القواعد الأساسية للدرس.\n- الشرط الأول : التوازي."
         html_ar = generate_fiche_audio_player_html(sample_ar, language="ar", player_id="test_fiche_ar")
         self.assertIn("direction: rtl", html_ar)
         self.assertIn("ar-SA", html_ar)
         self.assertIn("استمع للبطاقة", html_ar)
 
-        # 3. En anglais
+        # 3. Avec flux audio MP3 (mode serveur instantané / Linux)
+        html_mp3 = generate_fiche_audio_player_html(
+            sample_ar,
+            language="ar",
+            player_id="test_fiche_mp3",
+            audio_data_uri="data:audio/mp3;base64,FAKEAUDIO123",
+        )
+        self.assertIn("<audio id=\"audio_test_fiche_mp3\"", html_mp3)
+        self.assertIn("data:audio/mp3;base64,FAKEAUDIO123", html_mp3)
+        self.assertIn("toggleFicheAudio_test_fiche_mp3", html_mp3)
+        self.assertIn("استمع للبطاقة", html_mp3)
+
+        # 4. En anglais
         sample_en = "### Summary\nKey points to memorize."
         html_en = generate_fiche_audio_player_html(sample_en, language="en", player_id="test_fiche_en")
         self.assertIn("en-US", html_en)
         self.assertIn("Listen to Sheet", html_en)
 
-        # 4. Si texte vide
+        # 5. Détection automatique de l'arabe même si language='fr'
+        html_ar_auto = generate_fiche_audio_player_html("### سورة الحشر المباركة\nهذا ملخص الدرس الشامل.", language="fr", player_id="test_fiche_auto_ar")
+        self.assertIn("direction: rtl", html_ar_auto)
+        self.assertIn("ar-SA", html_ar_auto)
+        self.assertIn("استمع للبطاقة", html_ar_auto)
+
+        # 6. Si texte vide
         self.assertEqual(generate_fiche_audio_player_html("", language="fr"), "")
+
+    def test_detect_arabic_content(self):
+        from services.voice_manager import detect_arabic_content
+        self.assertTrue(detect_arabic_content("سورة الحشر : مدخل التزكية"))
+        self.assertTrue(detect_arabic_content("المغرب العربي عناصر الوحدة والتنوع"))
+        self.assertFalse(detect_arabic_content("Chapitre 3 : Les équilibres chimiques"))
+        self.assertFalse(detect_arabic_content("Chapter 1 : Introduction to Physics"))
+        self.assertFalse(detect_arabic_content(""))
 
     def test_generate_or_get_course_fiche_mp3_caching(self):
         with tempfile.TemporaryDirectory() as tmp_dir:

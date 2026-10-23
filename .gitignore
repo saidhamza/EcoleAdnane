@@ -22,6 +22,8 @@ storage/*.db-journal
 storage/*.sqlite*
 storage/*.pdf
 storage/**/*.pdf
+storage/*.mp3
+storage/**/*.mp3
 storage/users/
 
 # Cache Python

@@ -100,6 +100,18 @@ def clean_text_for_speech(text: str) -> str:
     return s
 
 
+def detect_arabic_content(text: str) -> bool:
+    """
+    Détecte avec certitude si le texte contient des caractères en alphabet arabe.
+    Prise en charge des blocs Unicode arabes standard, étendus et présentations.
+    """
+    if not text:
+        return False
+    arabic_chars = len(re.findall(r"[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]", text))
+    latin_chars = len(re.findall(r"[a-zA-Z]", text))
+    return arabic_chars >= 6 or arabic_chars > latin_chars
+
+
 def get_speech_config(language: str) -> Dict[str, str]:
     """Retourne la configuration linguistique (code BCP 47, libellés) selon la matière."""
     lang = (language or "fr").lower().strip()
@@ -198,8 +210,11 @@ def get_server_tts_audio_base64(text: str, language: str = "fr") -> Optional[str
     if not cleaned:
         return None
 
-    lang = (language or "fr").lower().strip()
-    gtts_lang = "ar" if lang.startswith("ar") else ("en" if lang.startswith("en") else "fr")
+    if detect_arabic_content(cleaned):
+        gtts_lang = "ar"
+    else:
+        lang = (language or "fr").lower().strip()
+        gtts_lang = "ar" if lang.startswith("ar") else ("en" if lang.startswith("en") else "fr")
 
     cache_key = hashlib.sha256(f"{gtts_lang}:{cleaned}".encode("utf-8")).hexdigest()
     if cache_key in _TTS_MEMORY_CACHE:
@@ -729,156 +744,76 @@ def generate_fiche_audio_player_html(
     language: str = "fr",
     player_id: str = "fiche_audio_player",
     rate: float = 1.0,
+    audio_data_uri: Optional[str] = None,
 ) -> str:
     """
-    Génère un composant HTML5 / Web Speech API interactif et ergonomique pour la Fiche Express.
-    - Écoute continue et fluide sans coupure grâce au découpage intelligent en phrases (Sentence-Queueing).
-    - Contrôles complets : Lecture / Pause / Arrêt, sélecteur de vitesse dynamique (0.8x, 1.0x, 1.2x, 1.5x).
-    - Animations réactives : barre d'égaliseur animée et compteur de progression en temps réel.
-    - Support trilingue natif (Français, Arabe avec direction RTL, Anglais).
+    Génère un composant HTML5 discret et élégant pour la Fiche Express (style pilule Sanad).
+    - Design compact et sobre identique à Sanad (hauteur 32px, pilule bleue au repos, rouge animé en lecture).
+    - Supporte le flux MP3 serveur (audio_data_uri) pour une lecture 100% fiable sur Linux, Windows, Mac, iOS, Android.
+    - Détection automatique et infaillible du texte en Arabe (orientation RTL, prononciation authentique).
+    - Mode de repli Web Speech API avec file d'attente intelligente si aucun flux MP3 n'est fourni.
     - Zéro consommation de quota d'API Gemini (100% gratuit).
     """
     cleaned = clean_text_for_speech(text)
     if not cleaned:
         return ""
 
-    cfg = get_speech_config(language)
+    # Détection automatique de la langue réelle du texte
+    is_ar = detect_arabic_content(cleaned) or bool(language and language.lower().startswith("ar"))
+    eff_lang = "ar" if is_ar else (language or "fr")
+
+    cfg = get_speech_config(eff_lang)
     lang_code = cfg["lang_code"]
     direction = cfg["dir"]
     clean_id = re.sub(r"[^a-zA-Z0-9_]", "_", player_id)
-    json_text = json.dumps(cleaned, ensure_ascii=False)
+    play_label = cfg.get("fiche_play", cfg.get("play_label", "Écouter la fiche"))
+    stop_label = cfg.get("fiche_stop", cfg.get("stop_label", "Arrêter"))
+    tooltip_play = cfg.get("tooltip_play", play_label)
+    tooltip_stop = cfg.get("tooltip_stop", stop_label)
 
-    html_code = f"""
-    <div id="fiche_audio_wrap_{clean_id}" style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; direction: {direction}; margin: 4px 0 10px 0; padding: 0;">
+    justify_style = "flex-end" if direction == "rtl" else "flex-start"
+
+    # Style pilule identique à Sanad
+    btn_style = (
+        "display: inline-flex; align-items: center; justify-content: center; gap: 6px; "
+        "padding: 5px 14px; height: 32px; font-size: 12.5px; font-weight: 500; "
+        "color: #1e40af; background: #eff6ff; border: 1px solid #bfdbfe; "
+        "border-radius: 16px; cursor: pointer; transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); "
+        "box-shadow: 0 1px 2px rgba(37, 99, 235, 0.08); -webkit-tap-highlight-color: transparent; outline: none;"
+    )
+
+    common_styles = f"""
       <style>
-        .fiche-bar_{clean_id} {{
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          flex-wrap: wrap;
-          gap: 10px;
-          background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
-          border: 1px solid #cbd5e1;
-          border-radius: 12px;
-          padding: 8px 14px;
-          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
-        }}
-        .fiche-left_{clean_id} {{
-          display: flex;
-          align-items: center;
-          flex-wrap: wrap;
-          gap: 8px;
-        }}
-        .fiche-right_{clean_id} {{
-          display: flex;
-          align-items: center;
-          gap: 6px;
-        }}
-        .btn-play_{clean_id} {{
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          gap: 7px;
-          padding: 6px 14px;
-          height: 34px;
-          font-size: 13px;
-          font-weight: 600;
-          color: #ffffff;
-          background: #2563eb;
-          border: 1px solid #1d4ed8;
-          border-radius: 20px;
-          cursor: pointer;
-          transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-          box-shadow: 0 1px 3px rgba(37, 99, 235, 0.25);
-          outline: none;
-        }}
-        .btn-play_{clean_id}:hover {{
-          background: #1d4ed8;
+        #btn_{clean_id}:hover {{
           transform: translateY(-1px);
+          background: #dbeafe !important;
+          border-color: #93c5fd !important;
         }}
-        .btn-play_{clean_id}.playing {{
-          background: #dc2626 !important;
-          border-color: #b91c1c !important;
-          box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.2);
+        @keyframes pulseAudio_{clean_id} {{
+          0% {{ box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.35); }}
+          70% {{ box-shadow: 0 0 0 6px rgba(220, 38, 38, 0); }}
+          100% {{ box-shadow: 0 0 0 0 rgba(220, 38, 38, 0); }}
         }}
-        .btn-play_{clean_id}.paused {{
-          background: #d97706 !important;
-          border-color: #b45309 !important;
-        }}
-        .btn-stop_{clean_id} {{
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          width: 34px;
-          height: 34px;
-          background: #ffffff;
-          color: #64748b;
-          border: 1px solid #cbd5e1;
-          border-radius: 8px;
-          cursor: pointer;
-          transition: all 0.2s ease;
-          padding: 0;
-          outline: none;
-        }}
-        .btn-stop_{clean_id}:hover {{
-          background: #f1f5f9;
-          color: #ef4444;
-          border-color: #fca5a5;
-        }}
-        .status-badge_{clean_id} {{
-          font-size: 12px;
-          font-weight: 500;
-          color: #475569;
-          padding: 3px 8px;
-          background: #ffffff;
-          border: 1px solid #e2e8f0;
-          border-radius: 6px;
-          display: inline-flex;
-          align-items: center;
-          gap: 5px;
-        }}
-        .speed-label_{clean_id} {{
-          font-size: 11.5px;
-          color: #64748b;
-          font-weight: 500;
-          margin-right: 2px;
-          margin-left: 2px;
-        }}
-        .speed-btn_{clean_id} {{
-          font-size: 11px;
-          font-weight: 600;
-          padding: 3px 7px;
-          border-radius: 6px;
-          background: #ffffff;
-          color: #475569;
-          border: 1px solid #cbd5e1;
-          cursor: pointer;
-          transition: all 0.15s ease;
-          outline: none;
-        }}
-        .speed-btn_{clean_id}:hover {{
-          background: #e2e8f0;
-        }}
-        .speed-btn_{clean_id}.active-speed {{
-          background: #2563eb !important;
-          color: #ffffff !important;
-          border-color: #1d4ed8 !important;
+        .speaking-active_{clean_id} {{
+          animation: pulseAudio_{clean_id} 1.6s infinite;
+          background: #fee2e2 !important;
+          border-color: #fca5a5 !important;
+          color: #dc2626 !important;
         }}
         @keyframes soundWave_{clean_id} {{
           0% {{ height: 3px; }}
           100% {{ height: 12px; }}
         }}
         .wave-bars_{clean_id} {{
-          display: none;
+          display: inline-flex;
           align-items: center;
           gap: 2px;
           height: 12px;
-          margin-left: 4px;
-          margin-right: 4px;
+          margin: 0 4px;
         }}
         .wave-bar_{clean_id} {{
           width: 2px;
-          background: #ffffff;
+          background: #dc2626;
           border-radius: 1px;
           height: 3px;
           animation: soundWave_{clean_id} 0.6s ease-in-out infinite alternate;
@@ -888,43 +823,123 @@ def generate_fiche_audio_player_html(
         .wave-bar_{clean_id}:nth-child(3) {{ animation-delay: 0.15s; }}
         .wave-bar_{clean_id}:nth-child(4) {{ animation-delay: 0.35s; }}
       </style>
+    """
 
-      <div class="fiche-bar_{clean_id}">
-        <div class="fiche-left_{clean_id}">
-          <button id="btn_play_{clean_id}" class="btn-play_{clean_id}" onclick="toggleFichePlay_{clean_id}()">
-            <span id="play_icon_{clean_id}" style="display:flex;align-items:center;">{SVG_PLAY}</span>
-            <span id="play_label_{clean_id}">{cfg['fiche_play']}</span>
-            <span id="wave_bars_{clean_id}" class="wave-bars_{clean_id}">
-              <span class="wave-bar_{clean_id}"></span>
-              <span class="wave-bar_{clean_id}"></span>
-              <span class="wave-bar_{clean_id}"></span>
-              <span class="wave-bar_{clean_id}"></span>
+    # 1. Si un flux audio MP3 est disponible (recommandé et garanti 100% fonctionnel sur Linux et en Arabe)
+    if audio_data_uri:
+        html_code = f"""
+        <div id="wrapper_{clean_id}" style="display: flex; align-items: center; justify-content: {justify_style}; margin: 2px 0 6px 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; direction: {direction};">
+          {common_styles}
+
+          <audio id="audio_{clean_id}" preload="auto" src="{audio_data_uri}"></audio>
+
+          <button id="btn_{clean_id}" 
+                  onclick="toggleFicheAudio_{clean_id}()" 
+                  title="{html.escape(tooltip_play)}"
+                  style="{btn_style}">
+            <span id="icon_container_{clean_id}" style="display: flex; align-items: center; justify-content: center; gap: 6px;">
+              {SVG_SPEAKER} <span id="label_{clean_id}">{play_label}</span>
             </span>
           </button>
 
-          <button id="btn_stop_{clean_id}" class="btn-stop_{clean_id}" onclick="stopFicheSpeech_{clean_id}()" title="{cfg['fiche_stop']}">
-            {SVG_STOP}
-          </button>
+          <script>
+            (function() {{
+              const audio = document.getElementById("audio_{clean_id}");
+              const svgSpeaker = `{SVG_SPEAKER}`;
+              const svgStop = `{SVG_STOP}`;
+              const rateVal = {rate};
 
-          <span id="status_{clean_id}" class="status-badge_{clean_id}">
-            {cfg['fiche_status_ready']}
-          </span>
-        </div>
+              if (audio) {{
+                try {{ audio.playbackRate = rateVal; }} catch(e) {{}}
+              }}
 
-        <div class="fiche-right_{clean_id}">
-          <span class="speed-label_{clean_id}">{cfg['fiche_speed']} :</span>
-          <button class="speed-btn_{clean_id}" data-rate="0.8" onclick="setFicheRate_{clean_id}(0.8)">0.8x</button>
-          <button class="speed-btn_{clean_id} active-speed" data-rate="1.0" onclick="setFicheRate_{clean_id}(1.0)">1.0x</button>
-          <button class="speed-btn_{clean_id}" data-rate="1.2" onclick="setFicheRate_{clean_id}(1.2)">1.2x</button>
-          <button class="speed-btn_{clean_id}" data-rate="1.5" onclick="setFicheRate_{clean_id}(1.5)">1.5x</button>
+              function setIdleUI() {{
+                const btn = document.getElementById("btn_{clean_id}");
+                const icn = document.getElementById("icon_container_{clean_id}");
+                if (btn) {{
+                  btn.title = "{html.escape(tooltip_play)}";
+                  btn.classList.remove("speaking-active_{clean_id}");
+                }}
+                if (icn) {{
+                  icn.innerHTML = svgSpeaker + " <span id='label_{clean_id}'>{play_label}</span>";
+                }}
+              }}
+
+              function setSpeakingUI() {{
+                const btn = document.getElementById("btn_{clean_id}");
+                const icn = document.getElementById("icon_container_{clean_id}");
+                if (btn) {{
+                  btn.title = "{html.escape(tooltip_stop)}";
+                  btn.classList.add("speaking-active_{clean_id}");
+                }}
+                if (icn) {{
+                  icn.innerHTML = svgStop + " <span id='label_{clean_id}'>{stop_label}</span> <span class='wave-bars_{clean_id}'><span class='wave-bar_{clean_id}'></span><span class='wave-bar_{clean_id}'></span><span class='wave-bar_{clean_id}'></span><span class='wave-bar_{clean_id}'></span></span>";
+                }}
+              }}
+
+              if (audio) {{
+                audio.onplay = setSpeakingUI;
+                audio.onpause = setIdleUI;
+                audio.onended = setIdleUI;
+                audio.onerror = setIdleUI;
+              }}
+
+              window.toggleFicheAudio_{clean_id} = function() {{
+                if (!audio) return;
+                if (!audio.paused && !audio.ended) {{
+                  audio.pause();
+                  audio.currentTime = 0;
+                  setIdleUI();
+                }} else {{
+                  try {{
+                    document.querySelectorAll('audio').forEach(function(a) {{
+                      if (a !== audio && !a.paused) {{
+                        a.pause();
+                        a.currentTime = 0;
+                      }}
+                    }});
+                  }} catch(e) {{}}
+                  try {{ audio.playbackRate = rateVal; }} catch(e) {{}}
+                  audio.play().catch(function(err) {{
+                    console.warn("Lecture audio bloquée ou échouée:", err);
+                    setIdleUI();
+                  }});
+                }}
+              }};
+
+              window.addEventListener('beforeunload', function() {{
+                if (audio && !audio.paused) audio.pause();
+              }});
+            }})();
+          </script>
         </div>
-      </div>
+        """
+        return html_code
+
+    # 2. Repli Web Speech API (avec style pilule discret Sanad)
+    json_text = json.dumps(cleaned, ensure_ascii=False)
+    no_ar_voice_msg = "لا يتوفر صوت عربي مثبت في متصفحك. يرجى استخدام زر تحميل البودكاست بالأسفل للاستماع بصوت عالي الجودة." if is_ar else "Aucune voix arabe locale trouvée dans le navigateur."
+
+    html_code = f"""
+    <div id="wrapper_{clean_id}" style="display: flex; align-items: center; justify-content: {justify_style}; margin: 2px 0 6px 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; direction: {direction};">
+      {common_styles}
+
+      <button id="btn_{clean_id}" 
+              onclick="toggleFicheSpeech_{clean_id}()" 
+              title="{html.escape(tooltip_play)}"
+              style="{btn_style}">
+        <span id="icon_container_{clean_id}" style="display: flex; align-items: center; justify-content: center; gap: 6px;">
+          {SVG_SPEAKER} <span id="label_{clean_id}">{play_label}</span>
+        </span>
+      </button>
 
       <script>
         (function() {{
           const fullText = {json_text};
           const langCode = '{lang_code}';
           const cleanId = '{clean_id}';
+          const svgSpeaker = `{SVG_SPEAKER}`;
+          const svgStop = `{SVG_STOP}`;
           let currentRate = {rate};
 
           function splitIntoSentences(text) {{
@@ -942,7 +957,6 @@ def generate_fiche_audio_player_html(
           const sentences = splitIntoSentences(fullText);
           let currentIndex = 0;
           let isSpeaking = false;
-          let isPaused = false;
           let naturalVoice = null;
 
           function getSynth() {{
@@ -961,15 +975,17 @@ def generate_fiche_audio_player_html(
               if (!voices || voices.length === 0) return null;
               const prefix = langCode.split('-')[0].toLowerCase();
               const matched = voices.filter(function(v) {{
-                return v.lang && v.lang.toLowerCase().startsWith(prefix);
+                const l = (v.lang || "").toLowerCase().replace('_', '-');
+                const n = (v.name || "").toLowerCase();
+                return l.startsWith(prefix) || (prefix === 'ar' && (l.includes('ar') || n.includes('arabic') || n.includes('arabe')));
               }});
               if (matched.length > 0) {{
                 const natural = matched.find(function(v) {{
-                  const n = v.name || "";
-                  return n.includes("Google") || n.includes("Natural") || n.includes("Online") ||
-                         n.includes("Paul") || n.includes("Julie") || n.includes("Hortense") ||
-                         n.includes("Tarik") || n.includes("Laila") || n.includes("Salma") ||
-                         n.includes("Mehdi") || n.includes("Zeina");
+                  const n = (v.name || "").toLowerCase();
+                  return n.includes("google") || n.includes("natural") || n.includes("online") ||
+                         n.includes("paul") || n.includes("julie") || n.includes("hortense") ||
+                         n.includes("tarik") || n.includes("laila") || n.includes("salma") ||
+                         n.includes("mehdi") || n.includes("zeina") || n.includes("maged");
                 }});
                 return natural || matched[0];
               }}
@@ -977,42 +993,27 @@ def generate_fiche_audio_player_html(
             return null;
           }}
 
-          function updateStatus(statusType, current, total) {{
-            const statusEl = document.getElementById('status_' + cleanId);
-            if (!statusEl) return;
-            if (statusType === 'ready') {{
-              statusEl.innerHTML = "{cfg['fiche_status_ready']}";
-            }} else if (statusType === 'speaking') {{
-              statusEl.innerHTML = "{cfg['fiche_status_reading']} (" + (current + 1) + "/" + total + ")";
-            }} else if (statusType === 'paused') {{
-              statusEl.innerHTML = "{cfg['fiche_status_paused']} (" + (current + 1) + "/" + total + ")";
-            }} else if (statusType === 'done') {{
-              statusEl.innerHTML = "{cfg['fiche_status_done']}";
+          function setIdleUI() {{
+            const btn = document.getElementById("btn_" + cleanId);
+            const icn = document.getElementById("icon_container_" + cleanId);
+            if (btn) {{
+              btn.title = "{html.escape(tooltip_play)}";
+              btn.classList.remove("speaking-active_" + cleanId);
+            }}
+            if (icn) {{
+              icn.innerHTML = svgSpeaker + " <span id='label_" + cleanId + "'>{play_label}</span>";
             }}
           }}
 
-          function setPlayUI(playing, paused) {{
-            const btn = document.getElementById('btn_play_' + cleanId);
-            const icon = document.getElementById('play_icon_' + cleanId);
-            const label = document.getElementById('play_label_' + cleanId);
-            const waves = document.getElementById('wave_bars_' + cleanId);
-            if (!btn) return;
-
-            btn.classList.remove('playing', 'paused');
-            if (playing) {{
-              btn.classList.add('playing');
-              if (icon) icon.innerHTML = `{SVG_PAUSE}`;
-              if (label) label.innerText = "{cfg['fiche_pause']}";
-              if (waves) waves.style.display = "inline-flex";
-            }} else if (paused) {{
-              btn.classList.add('paused');
-              if (icon) icon.innerHTML = `{SVG_PLAY}`;
-              if (label) label.innerText = "{cfg['fiche_play']}";
-              if (waves) waves.style.display = "none";
-            }} else {{
-              if (icon) icon.innerHTML = `{SVG_PLAY}`;
-              if (label) label.innerText = "{cfg['fiche_play']}";
-              if (waves) waves.style.display = "none";
+          function setSpeakingUI() {{
+            const btn = document.getElementById("btn_" + cleanId);
+            const icn = document.getElementById("icon_container_" + cleanId);
+            if (btn) {{
+              btn.title = "{html.escape(tooltip_stop)}";
+              btn.classList.add("speaking-active_" + cleanId);
+            }}
+            if (icn) {{
+              icn.innerHTML = svgStop + " <span id='label_" + cleanId + "'>{stop_label}</span> <span class='wave-bars_" + cleanId + "'><span class='wave-bar_" + cleanId + "'></span><span class='wave-bar_" + cleanId + "'></span><span class='wave-bar_" + cleanId + "'></span><span class='wave-bar_" + cleanId + "'></span></span>";
             }}
           }}
 
@@ -1021,14 +1022,11 @@ def generate_fiche_audio_player_html(
             if (!synth || !isSpeaking) return;
 
             if (index >= sentences.length) {{
-              stopSpeech(true);
-              updateStatus('done');
+              stopSpeech();
               return;
             }}
 
             currentIndex = index;
-            updateStatus('speaking', currentIndex, sentences.length);
-
             const utter = new SpeechSynthesisUtterance(sentences[currentIndex]);
             utter.lang = langCode;
             utter.rate = currentRate;
@@ -1036,13 +1034,13 @@ def generate_fiche_audio_player_html(
             if (naturalVoice) utter.voice = naturalVoice;
 
             utter.onend = function() {{
-              if (isSpeaking && !isPaused) {{
+              if (isSpeaking) {{
                 speakSentence(currentIndex + 1);
               }}
             }};
 
             utter.onerror = function(e) {{
-              if (isSpeaking && !isPaused) {{
+              if (isSpeaking) {{
                 speakSentence(currentIndex + 1);
               }}
             }};
@@ -1050,68 +1048,42 @@ def generate_fiche_audio_player_html(
             synth.speak(utter);
           }}
 
-          function stopSpeech(finished) {{
+          function stopSpeech() {{
             const synth = getSynth();
             if (synth) synth.cancel();
             isSpeaking = false;
-            isPaused = false;
             currentIndex = 0;
-            setPlayUI(false, false);
-            if (!finished) updateStatus('ready');
+            setIdleUI();
           }}
 
-          window['toggleFichePlay_' + cleanId] = function() {{
+          window['toggleFicheSpeech_' + cleanId] = function() {{
             const synth = getSynth();
             if (!synth) {{
               alert("Synthèse vocale non disponible sur ce navigateur.");
               return;
             }}
 
-            if (!isSpeaking) {{
-              synth.cancel();
-              isSpeaking = true;
-              isPaused = false;
-              currentIndex = 0;
-              setPlayUI(true, false);
-              speakSentence(0);
-            }} else if (isPaused) {{
-              isPaused = false;
-              setPlayUI(true, false);
-              updateStatus('speaking', currentIndex, sentences.length);
-              synth.resume();
-              if (!synth.speaking) {{
-                speakSentence(currentIndex);
-              }}
-            }} else {{
-              isPaused = true;
-              synth.pause();
-              setPlayUI(false, true);
-              updateStatus('paused', currentIndex, sentences.length);
+            if (isSpeaking) {{
+              stopSpeech();
+              return;
             }}
-          }};
 
-          window['stopFicheSpeech_' + cleanId] = function() {{
-            stopSpeech(false);
-          }};
-
-          window['setFicheRate_' + cleanId] = function(newRate) {{
-            currentRate = newRate;
-            document.querySelectorAll('.speed-btn_' + cleanId).forEach(function(btn) {{
-              if (parseFloat(btn.getAttribute('data-rate')) === newRate) {{
-                btn.classList.add('active-speed');
-              }} else {{
-                btn.classList.remove('active-speed');
+            if (langCode.startsWith('ar')) {{
+              const v = findBestVoice(synth);
+              if (!v) {{
+                alert("{html.escape(no_ar_voice_msg)}");
+                return;
               }}
-            }});
-            const synth = getSynth();
-            if (synth && isSpeaking && !isPaused) {{
-              synth.cancel();
-              speakSentence(currentIndex);
             }}
+
+            synth.cancel();
+            isSpeaking = true;
+            currentIndex = 0;
+            setSpeakingUI();
+            speakSentence(0);
           }};
 
           window.addEventListener('beforeunload', function() {{
-            const synth = getSynth();
             if (synth) synth.cancel();
           }});
         }})();
@@ -1130,15 +1102,14 @@ def generate_or_get_course_fiche_mp3(
     """
     Retourne le chemin du fichier audio MP3 de la fiche express.
     S'il n'existe pas encore sur le disque, le génère via gTTS et le sauvegarde.
+    Détecte automatiquement l'arabe pour assurer une prononciation authentique.
     Permet l'écoute offline et le téléchargement direct en format podcast.
     """
-    from models.database import get_db_path
-    from services.downloader import STORAGE_DIR
-
     try:
+        from models.database import get_db_path
         storage_root = get_db_path().parent
     except Exception:
-        storage_root = STORAGE_DIR
+        storage_root = Path(__file__).resolve().parent.parent / "storage"
 
     if user_id is not None:
         target_dir = storage_root / "users" / str(user_id) / "cours"
@@ -1151,8 +1122,14 @@ def generate_or_get_course_fiche_mp3(
     if mp3_path.exists() and mp3_path.stat().st_size > 500:
         return mp3_path
 
+    # Détection automatique de la langue réelle du texte
+    if detect_arabic_content(text):
+        eff_lang = "ar"
+    else:
+        eff_lang = (language or "fr").lower().strip()
+
     # Génération du flux audio
-    data_uri = get_server_tts_audio_base64(text, language=language)
+    data_uri = get_server_tts_audio_base64(text, language=eff_lang)
     if not data_uri:
         return None
 

@@ -2151,16 +2151,40 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                                 user_id=active_user_id,
                             )
                             update_course_summary(current_course["id"], generated_summary, user_id=active_user_id)
+                            try:
+                                generate_or_get_course_fiche_mp3(
+                                    course_id=current_course["id"],
+                                    text=generated_summary,
+                                    language=current_course.get("language", "fr"),
+                                    user_id=active_user_id,
+                                )
+                            except Exception as e:
+                                logger.warning(f"Pré-génération audio échouée : {e}")
                             st.rerun()
             else:
-                # 1. Barre de lecture audio vocale interactive pour la Fiche Express
+                # 1. Vérifier si le flux MP3 existe déjà en cache sur disque pour une lecture immédiate
+                storage_root = get_db_path().parent
+                c_uid = current_course.get("user_id")
+                cand_mp3 = (storage_root / "users" / str(c_uid) / "cours" / f"fiche_{current_course['id']}.mp3") if c_uid else (storage_root / "cours" / f"fiche_{current_course['id']}.mp3")
+
+                audio_data_uri = None
+                if cand_mp3.exists() and cand_mp3.stat().st_size > 500:
+                    try:
+                        with open(cand_mp3, "rb") as f_mp3:
+                            b64_audio = base64.b64encode(f_mp3.read()).decode("ascii")
+                            audio_data_uri = f"data:audio/mp3;base64,{b64_audio}"
+                    except Exception as e:
+                        logger.warning(f"Impossible de lire le cache MP3 : {e}")
+
+                # 2. Barre de lecture vocale discrète type Sanad (hauteur 38px, pilule bleue/rouge)
                 fiche_audio_html = generate_fiche_audio_player_html(
                     text=fiche_md,
                     language=current_course.get("language", "fr"),
                     player_id=f"fiche_audio_{current_course['id']}",
+                    audio_data_uri=audio_data_uri,
                 )
                 if fiche_audio_html:
-                    st.components.v1.html(fiche_audio_html, height=72)
+                    st.components.v1.html(fiche_audio_html, height=38)
 
                 if is_ar:
                     st.markdown(f"<div class='rtl-box'>{fiche_md}</div>", unsafe_allow_html=True)
@@ -2183,6 +2207,15 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                                     user_id=active_user_id,
                                 )
                                 update_course_summary(current_course["id"], generated_summary, user_id=active_user_id)
+                                try:
+                                    generate_or_get_course_fiche_mp3(
+                                        course_id=current_course["id"],
+                                        text=generated_summary,
+                                        language=current_course.get("language", "fr"),
+                                        user_id=active_user_id,
+                                    )
+                                except Exception as e:
+                                    logger.warning(f"Pré-génération audio échouée : {e}")
                                 st.rerun()
 
                 with col_mp3:
