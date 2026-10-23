@@ -2774,6 +2774,47 @@ BADGE_CATALOG: List[Dict[str, Any]] = COURSE_BADGE_CATALOG + GLOBAL_BADGE_CATALO
 BADGE_CATALOG_MAP: Dict[str, Dict[str, Any]] = {b["key"]: b for b in BADGE_CATALOG}
 ALL_BADGES_MAP = BADGE_CATALOG_MAP
 
+# Paliers de médailles de progression (nombre de trophées débloqués), du plus haut au plus bas.
+RANK_TIERS: List[Dict[str, Any]] = [
+    {"min_badges": 25, "emoji": "💎", "label": "Diamant"},
+    {"min_badges": 12, "emoji": "🥇", "label": "Or"},
+    {"min_badges": 5, "emoji": "🥈", "label": "Argent"},
+    {"min_badges": 1, "emoji": "🥉", "label": "Bronze"},
+    {"min_badges": 0, "emoji": "🌱", "label": "Débutant"},
+]
+
+
+def rank_from_badge_count(count: int) -> Dict[str, Any]:
+    """Retourne le palier de médaille correspondant à un nombre de trophées."""
+    for tier in RANK_TIERS:
+        if count >= tier["min_badges"]:
+            return {"emoji": tier["emoji"], "label": tier["label"], "badge_count": count}
+    return {"emoji": "🌱", "label": "Débutant", "badge_count": count}
+
+
+def get_student_ranks(user_ids: List[int]) -> Dict[int, Dict[str, Any]]:
+    """Calcule en une seule requête (lecture seule) la médaille de chaque élève."""
+    counts: Dict[int, int] = {int(u): 0 for u in user_ids}
+    if counts:
+        conn = get_connection()
+        try:
+            placeholders = ",".join("?" for _ in counts)
+            cur = conn.cursor()
+            cur.execute(
+                f"SELECT user_id, COUNT(*) AS cnt FROM user_badges WHERE user_id IN ({placeholders}) GROUP BY user_id",
+                list(counts.keys()),
+            )
+            for r in cur.fetchall():
+                counts[int(r["user_id"])] = int(r["cnt"])
+        finally:
+            conn.close()
+    return {uid: rank_from_badge_count(c) for uid, c in counts.items()}
+
+
+def get_student_rank(user_id: int) -> Dict[str, Any]:
+    """Retourne la médaille de progression d'un élève (🌱 🥉 🥈 🥇 💎)."""
+    return get_student_ranks([user_id])[int(user_id)]
+
 
 def get_badge_catalog(course_mode: Optional[bool] = None) -> List[Dict[str, Any]]:
     """Retourne la liste des trophées et badges disponibles dans le catalogue."""

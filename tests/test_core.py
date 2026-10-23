@@ -2861,6 +2861,24 @@ class GoogleDriveManagerTests(unittest.TestCase):
                 os.environ.pop("STREAMLIT_COMMUNITY_CLOUD", None)
 
 
+
+class TestStudentRankMedal(unittest.TestCase):
+    def test_rank_tiers(self):
+        from models.database import rank_from_badge_count
+        self.assertEqual(rank_from_badge_count(0)["emoji"], "🌱")
+        self.assertEqual(rank_from_badge_count(1)["emoji"], "🥉")
+        self.assertEqual(rank_from_badge_count(5)["emoji"], "🥈")
+        self.assertEqual(rank_from_badge_count(12)["emoji"], "🥇")
+        self.assertEqual(rank_from_badge_count(40)["emoji"], "💎")
+
+    def test_get_student_ranks_unknown_user(self):
+        from models.database import get_student_ranks
+        with tempfile.TemporaryDirectory() as td:
+            with patch("models.database.get_db_path", return_value=Path(td) / "rank.db"):
+                init_db()
+                self.assertEqual(get_student_ranks([987654321])[987654321]["emoji"], "🌱")
+
+
 if __name__ == "__main__":
     unittest.main()
 

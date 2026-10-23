@@ -35,6 +35,7 @@ try:
         or not hasattr(models.database, "get_course_trophies_overview")
         or not hasattr(models.database, "evaluate_and_award_course_badges")
         or not hasattr(models.database, "get_student_trophies_by_course")
+        or not hasattr(models.database, "get_student_ranks")
     ):
         models.database = importlib.reload(models.database)
     from models.database import (
@@ -62,6 +63,8 @@ try:
         get_pedagogical_cycle,
         get_quiz_stats,
         get_student_concept_mastery,
+        get_student_rank,
+        get_student_ranks,
         get_student_trophies_by_course,
         get_student_trophies_overview,
         get_user_badges,
@@ -118,6 +121,8 @@ except ImportError:
         get_pedagogical_cycle,
         get_quiz_stats,
         get_student_concept_mastery,
+        get_student_rank,
+        get_student_ranks,
         get_student_trophies_by_course,
         get_student_trophies_overview,
         get_user_badges,
@@ -842,7 +847,9 @@ def render_student_progress_details(
     with st.container(border=True):
         head_col1, head_col2 = st.columns([3, 1.4])
         with head_col1:
-            st.markdown(f"### 📊 Progression de l'Élève : **{student_name}**")
+            _hdr_rank = get_student_rank(student_id)
+            st.markdown(f"### 📊 Progression de l'Élève : {_hdr_rank['emoji']} **{student_name}**")
+            st.caption(f"Rang {_hdr_rank['label']} {_hdr_rank['emoji']} • {_hdr_rank['badge_count']} trophée(s) débloqué(s)")
             status_text = "🔴 Compte Suspendu" if is_blocked else "🟢 Compte Actif"
             level_name = student_cycle.get("level") or student_cycle["stage_label"]
             meta_info = f"📧 `{student_email}` | 🎯 Niveau : **{level_name}** ({student_age} ans - {student_cycle['stage_label']}) | {status_text}"
@@ -1253,7 +1260,11 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
     st.sidebar.markdown("## 🎓 **Ecole Adnane**")
     user_cycle = get_pedagogical_cycle(current_user.get("age"), level=current_user.get("level"))
     role_badge = "👑 Administrateur" if is_admin else user_cycle["badge_text"]
-    st.sidebar.markdown(f"**{current_user['name']}**  \n`{current_user['email']}`  \n`{role_badge}`")
+    _my_rank = None if is_admin else get_student_rank(logged_in_user_id)
+    _my_medal = f"{_my_rank['emoji']} " if _my_rank else ""
+    st.sidebar.markdown(f"**{_my_medal}{current_user['name']}**  \n`{current_user['email']}`  \n`{role_badge}`")
+    if _my_rank:
+        st.sidebar.caption(f"Rang {_my_rank['label']} • {_my_rank['badge_count']} trophée(s)")
 
     st.sidebar.divider()
 
@@ -1265,10 +1276,11 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
     if is_admin:
         all_students = list_users(role="student")
         student_options: Dict[str, str] = {"global": "📊 Vue Globale (Supervision)"}
+        _sel_ranks = get_student_ranks([s["id"] for s in all_students])
         for s in all_students:
             s_cycle = get_pedagogical_cycle(s.get("age"), level=s.get("level"))
             blocked_tag = " [SUSPENDU]" if s.get("is_blocked") else ""
-            student_options[str(s["id"])] = f"{s_cycle['badge_text']} — {s['name']} ({s['email']}){blocked_tag}"
+            student_options[str(s["id"])] = f"{_sel_ranks[s['id']]['emoji']} {s_cycle['badge_text']} — {s['name']} ({s['email']}){blocked_tag}"
 
         if "pending_admin_space" in st.session_state:
             pending_space = str(st.session_state.pop("pending_admin_space"))
@@ -1381,11 +1393,12 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
         if students_summary:
             st.caption("💡 *Cliquez sur la ligne d'un élève dans le tableau ou sur son nom ci-dessous pour afficher sa progression.*")
 
+            _sum_ranks = get_student_ranks([s["user_id"] for s in students_summary])
             # Table interactive avec sélection de ligne unique
             df_rows = [
                 {
                     "ID": s["user_id"],
-                    "Nom": s["name"],
+                    "Nom": f"{_sum_ranks.get(s['user_id'], {}).get('emoji', '🌱')} {s['name']}",
                     "Email": s["email"],
                     "Niveau & Âge": f"{s.get('level') or s.get('cycle', {}).get('level', '3AC')} • {s.get('age', 14)} ans ({s.get('cycle', {}).get('stage_label', 'Collège')})",
                     "Statut": "🔴 Suspendu" if s.get("is_blocked") == 1 else "🟢 Actif",
@@ -1429,7 +1442,7 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                 status_emoji = "🔴" if s.get("is_blocked") == 1 else "🎒"
                 student_lvl = s.get("level") or s.get("cycle", {}).get("level", "3AC")
                 if col.button(
-                    f"{status_emoji} {s['name']} ({student_lvl})",
+                    f"{status_emoji} {_sum_ranks.get(s['user_id'], {}).get('emoji', '🌱')} {s['name']} ({student_lvl})",
                     key=f"btn_st_click_name_{s['user_id']}",
                     type="primary" if is_selected else "secondary",
                     use_container_width=True,
@@ -1515,6 +1528,7 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
             st.info("Aucun utilisateur ne correspond à vos critères.")
             return
 
+        _ranks_map = get_student_ranks([u["id"] for u in filtered_users])
         for u in filtered_users:
             u_id = u["id"]
             is_self = (u_id == logged_in_user_id)
@@ -1526,7 +1540,8 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
             role_badge = "👑 Administrateur" if is_u_admin else u_cycle["badge_text"]
             self_tag = " *(Votre compte)*" if is_self else ""
 
-            expander_title = f"{role_badge} — **{u['name']}** (`{u['email']}`) | {status_badge}{self_tag}"
+            u_medal = "" if is_u_admin else f"{_ranks_map.get(u_id, {}).get('emoji', '🌱')} "
+            expander_title = f"{role_badge} — {u_medal}**{u['name']}** (`{u['email']}`) | {status_badge}{self_tag}"
             with st.expander(expander_title, expanded=False):
                 col_u0, col_u1, col_u2, col_u3 = st.columns([2.5, 2, 2, 2.5])
 
