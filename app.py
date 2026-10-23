@@ -2981,6 +2981,9 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                         else:
                             st.markdown(content)
 
+            # Ancre basse pour l'auto-scroll fluide de la conversation
+            st.html("<div id='sanad_chat_bottom_anchor' style='height: 1px; width: 100%; margin: 8px 0;'></div>")
+
             # Réinitialiser le déclencheur de lecture automatique après affichage
             if has_auto_trigger:
                 st.session_state[trigger_auto_key] = False
@@ -3003,6 +3006,7 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                     add_chat_message(current_course["id"], "user", prompt_to_send, user_id=active_user_id)
                     with st.chat_message("user", avatar="🧑‍🎓"):
                         st.markdown(prompt_to_send)
+                    st.html("<div id='sanad_chat_bottom_anchor' style='height: 1px; width: 100%; margin: 8px 0;'></div>")
 
                     with st.chat_message("assistant", avatar="🤖"):
                         spinner_txt = "Sanad prépare ses conseils..." if not is_en else "Sanad is thinking..."

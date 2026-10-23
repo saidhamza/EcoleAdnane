@@ -1187,7 +1187,77 @@ def generate_chat_mic_injector_html(language: str = "fr", widget_id: str = "chat
 
           let recognition = null;
           let isListening = false;
+          let hasDictated = false;
           let micBtn = null;
+
+          function scrollToChatBottom() {{
+            try {{
+              const pDoc = getParentDoc();
+              if (!pDoc) return;
+              const pWin = window.parent || window;
+
+              // 1. Défilement ciblé vers l'ancre basse de la conversation
+              const anchor = pDoc.getElementById("sanad_chat_bottom_anchor");
+              if (anchor) {{
+                try {{
+                  anchor.scrollIntoView({{ behavior: 'smooth', block: 'end' }});
+                }} catch(e) {{
+                  anchor.scrollIntoView(false);
+                }}
+              }}
+
+              // 2. Défilement des conteneurs scrollables Streamlit
+              const scrollers = pDoc.querySelectorAll('[data-testid="stAppViewContainer"], section.main');
+              scrollers.forEach(function(el) {{
+                if (el && el.scrollHeight > el.clientHeight) {{
+                  el.scrollTo({{ top: el.scrollHeight, behavior: 'smooth' }});
+                }}
+              }});
+
+              if (pWin && pWin.scrollTo) {{
+                pWin.scrollTo({{ top: pDoc.body.scrollHeight, behavior: 'smooth' }});
+              }}
+            }} catch(e) {{}}
+          }}
+
+          function submitChatInput() {{
+            const pDoc = getParentDoc();
+            if (!pDoc) return;
+            const pWin = window.parent || window;
+            const textarea = pDoc.querySelector('textarea[data-testid="stChatInputTextArea"]');
+            const submitBtn = pDoc.querySelector('button[data-testid="stChatInputSubmitButton"]');
+            if (!textarea || !textarea.value || textarea.value.trim().length === 0) return;
+
+            if (submitBtn) {{
+              submitBtn.disabled = false;
+              submitBtn.removeAttribute('disabled');
+              submitBtn.style.pointerEvents = 'auto';
+            }}
+
+            // 1. Déclencher l'événement Enter sur le textarea
+            try {{
+              const KeyboardEventClass = pWin.KeyboardEvent || KeyboardEvent;
+              const enterDown = new KeyboardEventClass('keydown', {{
+                key: 'Enter',
+                code: 'Enter',
+                keyCode: 13,
+                which: 13,
+                bubbles: true,
+                cancelable: true
+              }});
+              textarea.dispatchEvent(enterDown);
+            }} catch(e) {{}}
+
+            // 2. Déclencher le clic sur le bouton submit
+            if (submitBtn) {{
+              try {{
+                submitBtn.click();
+              }} catch(e) {{}}
+            }}
+
+            // Scroller vers le bas après soumission
+            setTimeout(scrollToChatBottom, 120);
+          }}
 
           function setupMic() {{
             const pDoc = getParentDoc();
@@ -1269,6 +1339,7 @@ def generate_chat_mic_injector_html(language: str = "fr", widget_id: str = "chat
                 recognition.interimResults = true;
 
                 recognition.onstart = function() {{
+                  hasDictated = false;
                   setMicListeningState(true);
                 }};
 
@@ -1283,13 +1354,15 @@ def generate_chat_mic_injector_html(language: str = "fr", widget_id: str = "chat
                     }}
                   }}
                   const txt = finalTranscript || interim;
-                  if (txt) {{
+                  if (txt && txt.trim().length > 0) {{
+                    hasDictated = true;
                     insertTextIntoChatInput(txt);
                   }}
                 }};
 
                 recognition.onerror = function() {{
                   setMicListeningState(false);
+                  hasDictated = false;
                 }};
 
                 recognition.onend = function() {{
@@ -1303,11 +1376,20 @@ def generate_chat_mic_injector_html(language: str = "fr", widget_id: str = "chat
                       submitBtn.removeAttribute('disabled');
                     }}
                   }}
+
+                  // Envoi automatique après dictée vocale
+                  if (hasDictated) {{
+                    hasDictated = false;
+                    setTimeout(function() {{
+                      submitChatInput();
+                    }}, 250);
+                  }}
                 }};
 
                 recognition.start();
               }} catch(err) {{
                 setMicListeningState(false);
+                hasDictated = false;
               }}
             }};
           }}
@@ -1319,7 +1401,7 @@ def generate_chat_mic_injector_html(language: str = "fr", widget_id: str = "chat
               micBtn.style.color = "#dc2626";
               micBtn.style.background = "#fee2e2";
               micBtn.style.transform = "scale(1.15)";
-              micBtn.title = "🔴 Écoute en cours... Cliquez pour terminer";
+              micBtn.title = "🔴 Écoute en cours... Parlez puis le message s'enverra automatiquement";
             }} else {{
               micBtn.style.color = "#6b7280";
               micBtn.style.background = "transparent";
@@ -1370,10 +1452,34 @@ def generate_chat_mic_injector_html(language: str = "fr", widget_id: str = "chat
             textarea.focus();
           }}
 
+          // Observer les mutations du chat pour déclencher l'auto-scroll fluide
+          function setupChatObserver() {{
+            const pDoc = getParentDoc();
+            if (!pDoc) return;
+            const chatBox = pDoc.querySelector('[data-testid="stChatInput"]')?.closest('[data-testid="stVerticalBlock"]');
+            if (chatBox && !chatBox.dataset.sanadScrollObserved) {{
+              chatBox.dataset.sanadScrollObserved = "true";
+              const obs = new MutationObserver(function() {{
+                scrollToChatBottom();
+              }});
+              obs.observe(chatBox, {{ childList: true, subtree: true }});
+            }}
+          }}
+
           // Tenter d'injecter immédiatement et avec un observateur
           setupMic();
-          const timer = setInterval(setupMic, 400);
+          setupChatObserver();
+          const timer = setInterval(function() {{
+            setupMic();
+            setupChatObserver();
+          }}, 400);
           setTimeout(() => clearInterval(timer), 6000);
+
+          // Défilement automatique fluide vers le bas de la conversation
+          setTimeout(scrollToChatBottom, 80);
+          setTimeout(scrollToChatBottom, 300);
+          setTimeout(scrollToChatBottom, 750);
+          setTimeout(scrollToChatBottom, 1500);
         }})();
       </script>
     </div>

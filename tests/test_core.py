@@ -1318,6 +1318,9 @@ print("debug")
         self.assertIn("stChatInputTextArea", mic_injector)
         self.assertIn("HTMLTextAreaElement", mic_injector)
         self.assertIn("submitBtn.disabled = false", mic_injector)
+        self.assertIn("submitChatInput", mic_injector)
+        self.assertIn("scrollToChatBottom", mic_injector)
+        self.assertIn("hasDictated", mic_injector)
 
     def test_generate_mic_speech_html_structure(self):
         mic_html = generate_mic_speech_html(language="fr", widget_id="test_mic_1")
