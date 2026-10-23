@@ -56,6 +56,7 @@ try:
         get_course_by_id,
         get_course_mindmap,
         get_course_trophies_overview,
+        get_db_path,
         get_global_admin_kpis,
         get_latest_quiz,
         get_pedagogical_cycle,
@@ -111,6 +112,7 @@ except ImportError:
         get_course_by_id,
         get_course_mindmap,
         get_course_trophies_overview,
+        get_db_path,
         get_global_admin_kpis,
         get_latest_quiz,
         get_pedagogical_cycle,
@@ -272,12 +274,14 @@ except Exception:
 
 try:
     import services.voice_manager
-    if not hasattr(services.voice_manager, "generate_trophy_celebration_html"):
+    if not hasattr(services.voice_manager, "generate_fiche_audio_player_html"):
         services.voice_manager = importlib.reload(services.voice_manager)
     from services.voice_manager import (
         clean_text_for_speech,
         generate_chat_mic_injector_html,
+        generate_fiche_audio_player_html,
         generate_mic_speech_html,
+        generate_or_get_course_fiche_mp3,
         generate_trophy_celebration_html,
         generate_trophy_sound_wav_base64,
         generate_tts_player_html,
@@ -288,7 +292,9 @@ except Exception:
     from services.voice_manager import (
         clean_text_for_speech,
         generate_chat_mic_injector_html,
+        generate_fiche_audio_player_html,
         generate_mic_speech_html,
+        generate_or_get_course_fiche_mp3,
         generate_trophy_celebration_html,
         generate_trophy_sound_wav_base64,
         generate_tts_player_html,
@@ -2147,26 +2153,66 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                             update_course_summary(current_course["id"], generated_summary, user_id=active_user_id)
                             st.rerun()
             else:
+                # 1. Barre de lecture audio vocale interactive pour la Fiche Express
+                fiche_audio_html = generate_fiche_audio_player_html(
+                    text=fiche_md,
+                    language=current_course.get("language", "fr"),
+                    player_id=f"fiche_audio_{current_course['id']}",
+                )
+                if fiche_audio_html:
+                    st.components.v1.html(fiche_audio_html, height=72)
+
                 if is_ar:
                     st.markdown(f"<div class='rtl-box'>{fiche_md}</div>", unsafe_allow_html=True)
                 else:
                     st.markdown(fiche_md)
 
                 st.write("---")
-                regen_label = "🔄 إعادة توليد بطاقة المراجعة" if is_ar else ("🔄 Regenerate Revision Sheet" if is_en else "🔄 Régénérer la Fiche Express")
-                if st.button(regen_label):
-                    if not user_api_key:
-                        st.error("⚠️ Clé API Gemini requise. Obtenez votre clé 100% gratuite sur [Google AI Studio](https://aistudio.google.com/) et activez-la dans **⚙️ Paramètres** ou la barre latérale." if not is_en else "⚠️ Gemini API key required. Get your free key on [Google AI Studio](https://aistudio.google.com/) and configure it in **⚙️ Settings** or the sidebar.")
-                    else:
-                        with st.spinner("Régénération..." if not is_en else "Regenerating..."):
-                            generated_summary = generate_revision_sheet(
-                                raw_text=current_course.get("raw_text") or "",
-                                subject=current_course["subject"],
-                                language=current_course["language"],
-                                user_id=active_user_id,
+                col_regen, col_mp3 = st.columns([0.45, 0.55], vertical_alignment="center")
+                with col_regen:
+                    regen_label = "🔄 إعادة توليد بطاقة المراجعة" if is_ar else ("🔄 Regenerate Revision Sheet" if is_en else "🔄 Régénérer la Fiche Express")
+                    if st.button(regen_label, key=f"btn_regen_fiche_{current_course['id']}"):
+                        if not user_api_key:
+                            st.error("⚠️ Clé API Gemini requise. Obtenez votre clé 100% gratuite sur [Google AI Studio](https://aistudio.google.com/) et activez-la dans **⚙️ Paramètres** ou la barre latérale." if not is_en else "⚠️ Gemini API key required. Get your free key on [Google AI Studio](https://aistudio.google.com/) and configure it in **⚙️ Settings** or the sidebar.")
+                        else:
+                            with st.spinner("Régénération..." if not is_en else "Regenerating..."):
+                                generated_summary = generate_revision_sheet(
+                                    raw_text=current_course.get("raw_text") or "",
+                                    subject=current_course["subject"],
+                                    language=current_course["language"],
+                                    user_id=active_user_id,
+                                )
+                                update_course_summary(current_course["id"], generated_summary, user_id=active_user_id)
+                                st.rerun()
+
+                with col_mp3:
+                    # Vérifier si le fichier MP3 hors-ligne existe déjà sur le disque
+                    storage_root = get_db_path().parent
+                    c_uid = current_course.get("user_id")
+                    cand_mp3 = (storage_root / "users" / str(c_uid) / "cours" / f"fiche_{current_course['id']}.mp3") if c_uid else (storage_root / "cours" / f"fiche_{current_course['id']}.mp3")
+
+                    if cand_mp3.exists() and cand_mp3.stat().st_size > 500:
+                        dl_label = "📥 تحميل البودكاست الصوتي (MP3)" if is_ar else ("📥 Download Audio Podcast (MP3)" if is_en else "📥 Télécharger le podcast audio (MP3)")
+                        with open(cand_mp3, "rb") as f_mp3:
+                            st.download_button(
+                                label=dl_label,
+                                data=f_mp3.read(),
+                                file_name=f"fiche_{current_course.get('file_name', 'cours').replace('.pdf', '')}.mp3",
+                                mime="audio/mp3",
+                                key=f"dl_mp3_fiche_{current_course['id']}",
+                                use_container_width=True,
                             )
-                            update_course_summary(current_course["id"], generated_summary, user_id=active_user_id)
-                            st.rerun()
+                    else:
+                        gen_podcast_label = "🎙️ إنشاء بودكاست MP3 للتحميل" if is_ar else ("🎙️ Generate Offline MP3 Podcast" if is_en else "🎙️ Créer le podcast MP3 hors-ligne")
+                        if st.button(gen_podcast_label, key=f"btn_gen_podcast_{current_course['id']}", use_container_width=True):
+                            with st.spinner("Génération du podcast MP3..." if not is_en else ("Generating MP3 podcast..." if is_en else "جاري إنشاء البودكاست الصوتي...")):
+                                generate_or_get_course_fiche_mp3(
+                                    course_id=current_course["id"],
+                                    text=fiche_md,
+                                    language=current_course.get("language", "fr"),
+                                    user_id=current_course.get("user_id"),
+                                )
+                                st.rerun()
 
         with tab_schema:
             if is_ar:

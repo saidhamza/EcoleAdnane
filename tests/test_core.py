@@ -130,7 +130,9 @@ from services.pdf_parser import (
 from services.voice_manager import (
     clean_text_for_speech,
     generate_chat_mic_injector_html,
+    generate_fiche_audio_player_html,
     generate_mic_speech_html,
+    generate_or_get_course_fiche_mp3,
     generate_trophy_celebration_html,
     generate_trophy_sound_wav_base64,
     generate_tts_player_html,
@@ -1355,6 +1357,62 @@ print("debug")
         self.assertIn("justify-content: flex-end", html_srv_pill_ar)
         self.assertIn("direction: rtl", html_srv_pill_ar)
         self.assertIn("استمع للشرح", html_srv_pill_ar)
+
+    def test_generate_fiche_audio_player_html(self):
+        # 1. En français
+        sample_fr = "### Théorème de Thalès\nVoici la formule clé du cours.\n- Condition 1 : Parallélisme obligatoire."
+        html_fr = generate_fiche_audio_player_html(sample_fr, language="fr", player_id="test_fiche_fr")
+        self.assertIn("btn_play_test_fiche_fr", html_fr)
+        self.assertIn("btn_stop_test_fiche_fr", html_fr)
+        self.assertIn("status_test_fiche_fr", html_fr)
+        self.assertIn("speed-btn_test_fiche_fr", html_fr)
+        self.assertIn("splitIntoSentences", html_fr)
+        self.assertIn("fr-FR", html_fr)
+        self.assertIn("Écouter la fiche", html_fr)
+
+        # 2. En arabe avec direction RTL
+        sample_ar = "### مبرهنة طاليس\nهذه هي القواعد الأساسية للدرس.\n- الشرط الأول : التوازي."
+        html_ar = generate_fiche_audio_player_html(sample_ar, language="ar", player_id="test_fiche_ar")
+        self.assertIn("direction: rtl", html_ar)
+        self.assertIn("ar-SA", html_ar)
+        self.assertIn("استمع للبطاقة", html_ar)
+
+        # 3. En anglais
+        sample_en = "### Summary\nKey points to memorize."
+        html_en = generate_fiche_audio_player_html(sample_en, language="en", player_id="test_fiche_en")
+        self.assertIn("en-US", html_en)
+        self.assertIn("Listen to Sheet", html_en)
+
+        # 4. Si texte vide
+        self.assertEqual(generate_fiche_audio_player_html("", language="fr"), "")
+
+    def test_generate_or_get_course_fiche_mp3_caching(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            test_db = Path(tmp_dir) / "test_mp3.db"
+            with patch("models.database.get_db_path", return_value=test_db):
+                # Mock get_server_tts_audio_base64
+                with patch("services.voice_manager.get_server_tts_audio_base64") as mock_tts:
+                    mock_tts.return_value = "data:audio/mp3;base64," + base64.b64encode(b"FAKE_MP3_DATA_1234567890" * 30).decode("ascii")
+                    mp3_path = generate_or_get_course_fiche_mp3(
+                        course_id=999,
+                        text="Fiche de révision express",
+                        language="fr",
+                        user_id=None,
+                    )
+                    self.assertIsNotNone(mp3_path)
+                    self.assertTrue(mp3_path.exists())
+                    self.assertIn("fiche_999.mp3", str(mp3_path))
+
+                    # Deuxième appel : doit réutiliser le cache disque sans rappeler mock_tts
+                    mock_tts.reset_mock()
+                    cached_path = generate_or_get_course_fiche_mp3(
+                        course_id=999,
+                        text="Fiche de révision express",
+                        language="fr",
+                        user_id=None,
+                    )
+                    self.assertEqual(str(mp3_path), str(cached_path))
+                    mock_tts.assert_not_called()
 
     def test_arabic_tutor_system_instruction_requires_tashkeel(self):
         with patch("services.ai_engine.call_llm") as mock_llm:

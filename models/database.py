@@ -1869,6 +1869,18 @@ def update_course_summary(
                 params.append(user_id)
 
             cur.execute(f"UPDATE courses {set_clause} {where_clause}", params)
+
+            # Nettoyage éventuel de l'ancien podcast MP3 associé
+            try:
+                storage_root = get_db_path().parent
+                for mp3_p in [
+                    storage_root / "cours" / f"fiche_{course_id}.mp3",
+                    storage_root / "users" / str(user_id) / "cours" / f"fiche_{course_id}.mp3" if user_id else None,
+                ]:
+                    if mp3_p and mp3_p.exists():
+                        mp3_p.unlink(missing_ok=True)
+            except Exception:
+                pass
     finally:
         conn.close()
 
@@ -1926,6 +1938,18 @@ def delete_course(course_id: int, user_id: Optional[int] = None) -> bool:
                         dp.unlink()
                     except Exception as e:
                         logger.warning(f"Impossible de supprimer la carte mentale {dp} : {e}")
+
+            # Nettoyage éventuel du fichier podcast MP3 de la fiche
+            try:
+                storage_root = get_db_path().parent
+                for mp3_p in [
+                    storage_root / "cours" / f"fiche_{course_id}.mp3",
+                    storage_root / "users" / str(row["user_id"]) / "cours" / f"fiche_{course_id}.mp3" if row.get("user_id") else None,
+                ]:
+                    if mp3_p and mp3_p.exists():
+                        mp3_p.unlink(missing_ok=True)
+            except Exception:
+                pass
 
             query_del = "DELETE FROM courses WHERE id = ?"
             params_del: List[Any] = [course_id]

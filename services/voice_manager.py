@@ -23,6 +23,7 @@ import struct
 import sys
 import time
 import wave
+from pathlib import Path
 from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
@@ -63,12 +64,22 @@ def clean_text_for_speech(text: str) -> str:
     s = re.sub(r"_([^_\n]+)_", r"\1", s)
     s = re.sub(r"~~([^~]+)~~", r"\1", s)
 
-    # 7. Supprimer les titres Markdown (#, ##, ###)
-    s = re.sub(r"^\s*#{1,6}\s*", "", s, flags=re.MULTILINE)
+    # 7. Nettoyer les titres Markdown (#, ##, ###) en assurant une ponctuation de fin naturelle
+    def _clean_heading(m: re.Match) -> str:
+        h = m.group(1).strip()
+        if h and not h.endswith((".", "!", "?", ":", ";", "،", "؟", "؛")):
+            return h + ". "
+        return h + " "
+    s = re.sub(r"^\s*#{1,6}\s*(.+)$", _clean_heading, s, flags=re.MULTILINE)
 
     # 8. Supprimer les listes à puces (- , * , 1. ) en début de ligne
-    s = re.sub(r"^\s*[-*•]\s+", "", s, flags=re.MULTILINE)
-    s = re.sub(r"^\s*\d+\.\s+", "", s, flags=re.MULTILINE)
+    def _clean_bullet(m: re.Match) -> str:
+        b = m.group(1).strip()
+        if b and not b.endswith((".", "!", "?", ":", ";", "،", "؟", "؛")):
+            return b + ". "
+        return b + " "
+    s = re.sub(r"^\s*[-*•]\s*(.+)$", _clean_bullet, s, flags=re.MULTILINE)
+    s = re.sub(r"^\s*\d+\.\s*(.+)$", _clean_bullet, s, flags=re.MULTILINE)
 
     # 9. Supprimer les séparateurs horizontaux (--- ou ***)
     s = re.sub(r"^\s*[-*_]{3,}\s*$", "", s, flags=re.MULTILINE)
@@ -104,6 +115,14 @@ def get_speech_config(language: str) -> Dict[str, str]:
             "mic_label": "تحدث بالصوت",
             "mic_tooltip": "تحدث إلى سند (تسجيل صوتي بالمايكروفون)",
             "mic_listening": "جاري الاستماع...",
+            "fiche_play": "استمع للبطاقة",
+            "fiche_pause": "إيقاف مؤقت",
+            "fiche_stop": "إيقاف",
+            "fiche_speed": "السرعة",
+            "fiche_status_ready": "🎧 جاهز للاستماع الصوتي",
+            "fiche_status_reading": "🔊 جاري القراءة",
+            "fiche_status_paused": "⏸️ متوقف مؤقتاً",
+            "fiche_status_done": "✅ اكتملت قراءة البطاقة",
         }
     elif lang == "en":
         return {
@@ -117,6 +136,14 @@ def get_speech_config(language: str) -> Dict[str, str]:
             "mic_label": "Speak to Sanad",
             "mic_tooltip": "Speak to Sanad (Microphone dictation)",
             "mic_listening": "Listening...",
+            "fiche_play": "Listen to Sheet",
+            "fiche_pause": "Pause",
+            "fiche_stop": "Stop",
+            "fiche_speed": "Speed",
+            "fiche_status_ready": "🎧 Ready for audio playback",
+            "fiche_status_reading": "🔊 Reading aloud",
+            "fiche_status_paused": "⏸️ Paused",
+            "fiche_status_done": "✅ Reading completed",
         }
     else:
         return {
@@ -130,12 +157,22 @@ def get_speech_config(language: str) -> Dict[str, str]:
             "mic_label": "Parler à Sanad",
             "mic_tooltip": "Parler à Sanad (Dictée vocale au micro)",
             "mic_listening": "Écoute en cours...",
+            "fiche_play": "Écouter la fiche",
+            "fiche_pause": "Pause",
+            "fiche_stop": "Arrêter",
+            "fiche_speed": "Vitesse",
+            "fiche_status_ready": "🎧 Prêt pour la lecture vocale",
+            "fiche_status_reading": "🔊 Lecture en cours",
+            "fiche_status_paused": "⏸️ En pause",
+            "fiche_status_done": "✅ Lecture terminée",
         }
 
 
 # SVG Icons
 SVG_SPEAKER = """<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path></svg>"""
 SVG_STOP = """<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="2" ry="2"></rect></svg>"""
+SVG_PLAY = """<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 3 20 12 6 21 6 3"></polygon></svg>"""
+SVG_PAUSE = """<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1"></rect><rect x="14" y="4" width="4" height="16" rx="1"></rect></svg>"""
 SVG_MIC = """<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg>"""
 
 
@@ -685,6 +722,449 @@ def generate_tts_player_html(
         compact=compact,
         auto_play=auto_play,
     )
+
+
+def generate_fiche_audio_player_html(
+    text: str,
+    language: str = "fr",
+    player_id: str = "fiche_audio_player",
+    rate: float = 1.0,
+) -> str:
+    """
+    Génère un composant HTML5 / Web Speech API interactif et ergonomique pour la Fiche Express.
+    - Écoute continue et fluide sans coupure grâce au découpage intelligent en phrases (Sentence-Queueing).
+    - Contrôles complets : Lecture / Pause / Arrêt, sélecteur de vitesse dynamique (0.8x, 1.0x, 1.2x, 1.5x).
+    - Animations réactives : barre d'égaliseur animée et compteur de progression en temps réel.
+    - Support trilingue natif (Français, Arabe avec direction RTL, Anglais).
+    - Zéro consommation de quota d'API Gemini (100% gratuit).
+    """
+    cleaned = clean_text_for_speech(text)
+    if not cleaned:
+        return ""
+
+    cfg = get_speech_config(language)
+    lang_code = cfg["lang_code"]
+    direction = cfg["dir"]
+    clean_id = re.sub(r"[^a-zA-Z0-9_]", "_", player_id)
+    json_text = json.dumps(cleaned, ensure_ascii=False)
+
+    html_code = f"""
+    <div id="fiche_audio_wrap_{clean_id}" style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; direction: {direction}; margin: 4px 0 10px 0; padding: 0;">
+      <style>
+        .fiche-bar_{clean_id} {{
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          flex-wrap: wrap;
+          gap: 10px;
+          background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+          border: 1px solid #cbd5e1;
+          border-radius: 12px;
+          padding: 8px 14px;
+          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+        }}
+        .fiche-left_{clean_id} {{
+          display: flex;
+          align-items: center;
+          flex-wrap: wrap;
+          gap: 8px;
+        }}
+        .fiche-right_{clean_id} {{
+          display: flex;
+          align-items: center;
+          gap: 6px;
+        }}
+        .btn-play_{clean_id} {{
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 7px;
+          padding: 6px 14px;
+          height: 34px;
+          font-size: 13px;
+          font-weight: 600;
+          color: #ffffff;
+          background: #2563eb;
+          border: 1px solid #1d4ed8;
+          border-radius: 20px;
+          cursor: pointer;
+          transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+          box-shadow: 0 1px 3px rgba(37, 99, 235, 0.25);
+          outline: none;
+        }}
+        .btn-play_{clean_id}:hover {{
+          background: #1d4ed8;
+          transform: translateY(-1px);
+        }}
+        .btn-play_{clean_id}.playing {{
+          background: #dc2626 !important;
+          border-color: #b91c1c !important;
+          box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.2);
+        }}
+        .btn-play_{clean_id}.paused {{
+          background: #d97706 !important;
+          border-color: #b45309 !important;
+        }}
+        .btn-stop_{clean_id} {{
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          width: 34px;
+          height: 34px;
+          background: #ffffff;
+          color: #64748b;
+          border: 1px solid #cbd5e1;
+          border-radius: 8px;
+          cursor: pointer;
+          transition: all 0.2s ease;
+          padding: 0;
+          outline: none;
+        }}
+        .btn-stop_{clean_id}:hover {{
+          background: #f1f5f9;
+          color: #ef4444;
+          border-color: #fca5a5;
+        }}
+        .status-badge_{clean_id} {{
+          font-size: 12px;
+          font-weight: 500;
+          color: #475569;
+          padding: 3px 8px;
+          background: #ffffff;
+          border: 1px solid #e2e8f0;
+          border-radius: 6px;
+          display: inline-flex;
+          align-items: center;
+          gap: 5px;
+        }}
+        .speed-label_{clean_id} {{
+          font-size: 11.5px;
+          color: #64748b;
+          font-weight: 500;
+          margin-right: 2px;
+          margin-left: 2px;
+        }}
+        .speed-btn_{clean_id} {{
+          font-size: 11px;
+          font-weight: 600;
+          padding: 3px 7px;
+          border-radius: 6px;
+          background: #ffffff;
+          color: #475569;
+          border: 1px solid #cbd5e1;
+          cursor: pointer;
+          transition: all 0.15s ease;
+          outline: none;
+        }}
+        .speed-btn_{clean_id}:hover {{
+          background: #e2e8f0;
+        }}
+        .speed-btn_{clean_id}.active-speed {{
+          background: #2563eb !important;
+          color: #ffffff !important;
+          border-color: #1d4ed8 !important;
+        }}
+        @keyframes soundWave_{clean_id} {{
+          0% {{ height: 3px; }}
+          100% {{ height: 12px; }}
+        }}
+        .wave-bars_{clean_id} {{
+          display: none;
+          align-items: center;
+          gap: 2px;
+          height: 12px;
+          margin-left: 4px;
+          margin-right: 4px;
+        }}
+        .wave-bar_{clean_id} {{
+          width: 2px;
+          background: #ffffff;
+          border-radius: 1px;
+          height: 3px;
+          animation: soundWave_{clean_id} 0.6s ease-in-out infinite alternate;
+        }}
+        .wave-bar_{clean_id}:nth-child(1) {{ animation-delay: 0.1s; }}
+        .wave-bar_{clean_id}:nth-child(2) {{ animation-delay: 0.3s; }}
+        .wave-bar_{clean_id}:nth-child(3) {{ animation-delay: 0.15s; }}
+        .wave-bar_{clean_id}:nth-child(4) {{ animation-delay: 0.35s; }}
+      </style>
+
+      <div class="fiche-bar_{clean_id}">
+        <div class="fiche-left_{clean_id}">
+          <button id="btn_play_{clean_id}" class="btn-play_{clean_id}" onclick="toggleFichePlay_{clean_id}()">
+            <span id="play_icon_{clean_id}" style="display:flex;align-items:center;">{SVG_PLAY}</span>
+            <span id="play_label_{clean_id}">{cfg['fiche_play']}</span>
+            <span id="wave_bars_{clean_id}" class="wave-bars_{clean_id}">
+              <span class="wave-bar_{clean_id}"></span>
+              <span class="wave-bar_{clean_id}"></span>
+              <span class="wave-bar_{clean_id}"></span>
+              <span class="wave-bar_{clean_id}"></span>
+            </span>
+          </button>
+
+          <button id="btn_stop_{clean_id}" class="btn-stop_{clean_id}" onclick="stopFicheSpeech_{clean_id}()" title="{cfg['fiche_stop']}">
+            {SVG_STOP}
+          </button>
+
+          <span id="status_{clean_id}" class="status-badge_{clean_id}">
+            {cfg['fiche_status_ready']}
+          </span>
+        </div>
+
+        <div class="fiche-right_{clean_id}">
+          <span class="speed-label_{clean_id}">{cfg['fiche_speed']} :</span>
+          <button class="speed-btn_{clean_id}" data-rate="0.8" onclick="setFicheRate_{clean_id}(0.8)">0.8x</button>
+          <button class="speed-btn_{clean_id} active-speed" data-rate="1.0" onclick="setFicheRate_{clean_id}(1.0)">1.0x</button>
+          <button class="speed-btn_{clean_id}" data-rate="1.2" onclick="setFicheRate_{clean_id}(1.2)">1.2x</button>
+          <button class="speed-btn_{clean_id}" data-rate="1.5" onclick="setFicheRate_{clean_id}(1.5)">1.5x</button>
+        </div>
+      </div>
+
+      <script>
+        (function() {{
+          const fullText = {json_text};
+          const langCode = '{lang_code}';
+          const cleanId = '{clean_id}';
+          let currentRate = {rate};
+
+          function splitIntoSentences(text) {{
+            if (!text) return [];
+            const rawMatches = text.match(/[^.!?؛؟\\n]+[.!?؛؟\\n]*/g);
+            if (!rawMatches) return [text];
+            const result = [];
+            for (let i = 0; i < rawMatches.length; i++) {{
+              const s = rawMatches[i].trim();
+              if (s.length > 0) result.push(s);
+            }}
+            return result.length > 0 ? result : [text];
+          }}
+
+          const sentences = splitIntoSentences(fullText);
+          let currentIndex = 0;
+          let isSpeaking = false;
+          let isPaused = false;
+          let naturalVoice = null;
+
+          function getSynth() {{
+            try {{
+              if (window.speechSynthesis) return window.speechSynthesis;
+              if (window.parent && window.parent.speechSynthesis) return window.parent.speechSynthesis;
+              if (window.top && window.top.speechSynthesis) return window.top.speechSynthesis;
+            }} catch(e) {{}}
+            return null;
+          }}
+
+          function findBestVoice(synth) {{
+            if (!synth) return null;
+            try {{
+              const voices = synth.getVoices();
+              if (!voices || voices.length === 0) return null;
+              const prefix = langCode.split('-')[0].toLowerCase();
+              const matched = voices.filter(function(v) {{
+                return v.lang && v.lang.toLowerCase().startsWith(prefix);
+              }});
+              if (matched.length > 0) {{
+                const natural = matched.find(function(v) {{
+                  const n = v.name || "";
+                  return n.includes("Google") || n.includes("Natural") || n.includes("Online") ||
+                         n.includes("Paul") || n.includes("Julie") || n.includes("Hortense") ||
+                         n.includes("Tarik") || n.includes("Laila") || n.includes("Salma") ||
+                         n.includes("Mehdi") || n.includes("Zeina");
+                }});
+                return natural || matched[0];
+              }}
+            }} catch(e) {{}}
+            return null;
+          }}
+
+          function updateStatus(statusType, current, total) {{
+            const statusEl = document.getElementById('status_' + cleanId);
+            if (!statusEl) return;
+            if (statusType === 'ready') {{
+              statusEl.innerHTML = "{cfg['fiche_status_ready']}";
+            }} else if (statusType === 'speaking') {{
+              statusEl.innerHTML = "{cfg['fiche_status_reading']} (" + (current + 1) + "/" + total + ")";
+            }} else if (statusType === 'paused') {{
+              statusEl.innerHTML = "{cfg['fiche_status_paused']} (" + (current + 1) + "/" + total + ")";
+            }} else if (statusType === 'done') {{
+              statusEl.innerHTML = "{cfg['fiche_status_done']}";
+            }}
+          }}
+
+          function setPlayUI(playing, paused) {{
+            const btn = document.getElementById('btn_play_' + cleanId);
+            const icon = document.getElementById('play_icon_' + cleanId);
+            const label = document.getElementById('play_label_' + cleanId);
+            const waves = document.getElementById('wave_bars_' + cleanId);
+            if (!btn) return;
+
+            btn.classList.remove('playing', 'paused');
+            if (playing) {{
+              btn.classList.add('playing');
+              if (icon) icon.innerHTML = `{SVG_PAUSE}`;
+              if (label) label.innerText = "{cfg['fiche_pause']}";
+              if (waves) waves.style.display = "inline-flex";
+            }} else if (paused) {{
+              btn.classList.add('paused');
+              if (icon) icon.innerHTML = `{SVG_PLAY}`;
+              if (label) label.innerText = "{cfg['fiche_play']}";
+              if (waves) waves.style.display = "none";
+            }} else {{
+              if (icon) icon.innerHTML = `{SVG_PLAY}`;
+              if (label) label.innerText = "{cfg['fiche_play']}";
+              if (waves) waves.style.display = "none";
+            }}
+          }}
+
+          function speakSentence(index) {{
+            const synth = getSynth();
+            if (!synth || !isSpeaking) return;
+
+            if (index >= sentences.length) {{
+              stopSpeech(true);
+              updateStatus('done');
+              return;
+            }}
+
+            currentIndex = index;
+            updateStatus('speaking', currentIndex, sentences.length);
+
+            const utter = new SpeechSynthesisUtterance(sentences[currentIndex]);
+            utter.lang = langCode;
+            utter.rate = currentRate;
+            if (!naturalVoice) naturalVoice = findBestVoice(synth);
+            if (naturalVoice) utter.voice = naturalVoice;
+
+            utter.onend = function() {{
+              if (isSpeaking && !isPaused) {{
+                speakSentence(currentIndex + 1);
+              }}
+            }};
+
+            utter.onerror = function(e) {{
+              if (isSpeaking && !isPaused) {{
+                speakSentence(currentIndex + 1);
+              }}
+            }};
+
+            synth.speak(utter);
+          }}
+
+          function stopSpeech(finished) {{
+            const synth = getSynth();
+            if (synth) synth.cancel();
+            isSpeaking = false;
+            isPaused = false;
+            currentIndex = 0;
+            setPlayUI(false, false);
+            if (!finished) updateStatus('ready');
+          }}
+
+          window['toggleFichePlay_' + cleanId] = function() {{
+            const synth = getSynth();
+            if (!synth) {{
+              alert("Synthèse vocale non disponible sur ce navigateur.");
+              return;
+            }}
+
+            if (!isSpeaking) {{
+              synth.cancel();
+              isSpeaking = true;
+              isPaused = false;
+              currentIndex = 0;
+              setPlayUI(true, false);
+              speakSentence(0);
+            }} else if (isPaused) {{
+              isPaused = false;
+              setPlayUI(true, false);
+              updateStatus('speaking', currentIndex, sentences.length);
+              synth.resume();
+              if (!synth.speaking) {{
+                speakSentence(currentIndex);
+              }}
+            }} else {{
+              isPaused = true;
+              synth.pause();
+              setPlayUI(false, true);
+              updateStatus('paused', currentIndex, sentences.length);
+            }}
+          }};
+
+          window['stopFicheSpeech_' + cleanId] = function() {{
+            stopSpeech(false);
+          }};
+
+          window['setFicheRate_' + cleanId] = function(newRate) {{
+            currentRate = newRate;
+            document.querySelectorAll('.speed-btn_' + cleanId).forEach(function(btn) {{
+              if (parseFloat(btn.getAttribute('data-rate')) === newRate) {{
+                btn.classList.add('active-speed');
+              }} else {{
+                btn.classList.remove('active-speed');
+              }}
+            }});
+            const synth = getSynth();
+            if (synth && isSpeaking && !isPaused) {{
+              synth.cancel();
+              speakSentence(currentIndex);
+            }}
+          }};
+
+          window.addEventListener('beforeunload', function() {{
+            const synth = getSynth();
+            if (synth) synth.cancel();
+          }});
+        }})();
+      </script>
+    </div>
+    """
+    return html_code
+
+
+def generate_or_get_course_fiche_mp3(
+    course_id: int,
+    text: str,
+    language: str = "fr",
+    user_id: Optional[int] = None,
+) -> Optional[Path]:
+    """
+    Retourne le chemin du fichier audio MP3 de la fiche express.
+    S'il n'existe pas encore sur le disque, le génère via gTTS et le sauvegarde.
+    Permet l'écoute offline et le téléchargement direct en format podcast.
+    """
+    from models.database import get_db_path
+    from services.downloader import STORAGE_DIR
+
+    try:
+        storage_root = get_db_path().parent
+    except Exception:
+        storage_root = STORAGE_DIR
+
+    if user_id is not None:
+        target_dir = storage_root / "users" / str(user_id) / "cours"
+    else:
+        target_dir = storage_root / "cours"
+
+    target_dir.mkdir(parents=True, exist_ok=True)
+    mp3_path = target_dir / f"fiche_{course_id}.mp3"
+
+    if mp3_path.exists() and mp3_path.stat().st_size > 500:
+        return mp3_path
+
+    # Génération du flux audio
+    data_uri = get_server_tts_audio_base64(text, language=language)
+    if not data_uri:
+        return None
+
+    try:
+        b64_part = data_uri.split(",", 1)[1]
+        raw_bytes = base64.b64decode(b64_part)
+        with open(mp3_path, "wb") as f:
+            f.write(raw_bytes)
+        return mp3_path
+    except Exception as e:
+        logger.error(f"Erreur lors de la sauvegarde du fichier MP3 de la fiche {course_id}: {e}")
+        return None
 
 
 def generate_chat_mic_injector_html(language: str = "fr", widget_id: str = "chat_mic") -> str:
