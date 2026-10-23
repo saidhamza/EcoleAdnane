@@ -2668,6 +2668,36 @@ class GoogleDriveManagerTests(unittest.TestCase):
         self.assertIsInstance(url, str)
         self.assertTrue(url.startswith("https://accounts.google.com/o/oauth2/v2/auth"))
 
+    def test_dedicated_server_never_redirects(self):
+        from services.auth_manager import is_running_on_streamlit_cloud, check_and_handle_cloud_redirect
+        old_val = os.environ.get("IS_DEDICATED_SERVER")
+        try:
+            os.environ["IS_DEDICATED_SERVER"] = "true"
+            self.assertFalse(is_running_on_streamlit_cloud())
+            self.assertFalse(check_and_handle_cloud_redirect())
+        finally:
+            if old_val is not None:
+                os.environ["IS_DEDICATED_SERVER"] = old_val
+            else:
+                os.environ.pop("IS_DEDICATED_SERVER", None)
+
+    def test_cloud_detection_activates_redirection(self):
+        from services.auth_manager import is_running_on_streamlit_cloud, check_and_handle_cloud_redirect
+        old_dedicated = os.environ.get("IS_DEDICATED_SERVER")
+        old_cloud = os.environ.get("STREAMLIT_COMMUNITY_CLOUD")
+        try:
+            os.environ.pop("IS_DEDICATED_SERVER", None)
+            os.environ["STREAMLIT_COMMUNITY_CLOUD"] = "true"
+            self.assertTrue(is_running_on_streamlit_cloud())
+            self.assertTrue(check_and_handle_cloud_redirect())
+        finally:
+            if old_dedicated is not None:
+                os.environ["IS_DEDICATED_SERVER"] = old_dedicated
+            if old_cloud is not None:
+                os.environ["STREAMLIT_COMMUNITY_CLOUD"] = old_cloud
+            else:
+                os.environ.pop("STREAMLIT_COMMUNITY_CLOUD", None)
+
 
 if __name__ == "__main__":
     unittest.main()

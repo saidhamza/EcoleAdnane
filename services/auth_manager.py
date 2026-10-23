@@ -621,3 +621,85 @@ def check_active_user_session(user_id: Optional[int]) -> Tuple[bool, Optional[st
         return False, "blocked", user
 
     return True, None, user
+
+
+def is_running_on_streamlit_cloud() -> bool:
+    """Détecte si l'application s'exécute sur l'infrastructure éphémère de Streamlit Cloud."""
+    if os.getenv("IS_DEDICATED_SERVER") == "true":
+        return False
+
+    try:
+        if hasattr(st, "context") and hasattr(st.context, "headers"):
+            headers = st.context.headers or {}
+            host = headers.get("x-forwarded-host") or headers.get("host") or ""
+            if "streamlit.app" in host:
+                return True
+    except Exception:
+        pass
+
+    if any(k.startswith("STREAMLIT_SHARING") or k == "STREAMLIT_COMMUNITY_CLOUD" for k in os.environ):
+        return True
+    if os.path.exists("/mount/src/ecoleadnane"):
+        return True
+
+    return False
+
+
+def check_and_handle_cloud_redirect() -> bool:
+    """
+    Si l'application est exécutée sur Streamlit Cloud (*.streamlit.app),
+    affiche un écran de transition officiel et redirige automatiquement
+    vers la nouvelle adresse permanente officielle : https://ecole.code-xpert.net
+    Retourne True si la redirection a été traitée (pour appeler st.stop()).
+    """
+    if os.getenv("IS_DEDICATED_SERVER") == "true":
+        return False
+
+    # Injection du script client passif qui ne redirige que si le hostname client contient streamlit.app
+    st.components.v1.html(
+        """
+        <script>
+        (function() {
+            try {
+                var curHost = (window.top && window.top.location && window.top.location.hostname) ? window.top.location.hostname : window.location.hostname;
+                if (curHost && curHost.indexOf("streamlit.app") !== -1) {
+                    var targetUrl = "https://ecole.code-xpert.net" + (window.top.location.search || window.location.search || "");
+                    window.top.location.replace(targetUrl);
+                }
+            } catch(e) {
+                if (window.location.hostname && window.location.hostname.indexOf("streamlit.app") !== -1) {
+                    window.location.replace("https://ecole.code-xpert.net" + (window.location.search || ""));
+                }
+            }
+        })();
+        </script>
+        """,
+        height=0,
+    )
+
+    if not is_running_on_streamlit_cloud():
+        return False
+
+    st.markdown(
+        """
+        <div style="max-width: 680px; margin: 40px auto; padding: 35px; background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); border: 2px solid #38bdf8; border-radius: 16px; text-align: center; color: #f8fafc; box-shadow: 0 10px 30px rgba(0,0,0,0.4);">
+            <div style="font-size: 3.5rem; margin-bottom: 10px;">🎓</div>
+            <h1 style="color: #38bdf8; font-size: 2rem; margin-bottom: 12px; font-weight: 700;">Ecole Adnane a déménagé !</h1>
+            <p style="font-size: 1.15rem; line-height: 1.6; color: #cbd5e1; margin-bottom: 24px;">
+                Afin de vous offrir une plateforme plus rapide, plus stable et sans interruption, l'école est désormais accessible sur son serveur officiel permanent :
+            </p>
+            <div style="background: rgba(56, 189, 248, 0.1); border: 1px dashed #38bdf8; border-radius: 10px; padding: 15px; margin-bottom: 25px;">
+                <span style="font-size: 1.3rem; font-weight: 700; color: #38bdf8; font-family: monospace;">https://ecole.code-xpert.net</span>
+            </div>
+            <p style="font-size: 0.95rem; color: #94a3b8; margin-bottom: 25px;">
+                🔄 Redirection automatique en cours vers le nouveau site...
+            </p>
+            <a href="https://ecole.code-xpert.net" target="_top" style="display: inline-block; background: #0284c7; color: #ffffff; text-decoration: none; font-weight: 600; padding: 14px 28px; border-radius: 10px; font-size: 1.1rem; box-shadow: 0 4px 12px rgba(2, 132, 199, 0.4);">
+                🚀 Accéder directement à ecole.code-xpert.net
+            </a>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    return True
+

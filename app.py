@@ -203,6 +203,7 @@ except ImportError:
     )
 from services.auth_manager import (
     check_active_user_session,
+    check_and_handle_cloud_redirect,
     dev_mode_login,
     exchange_code_for_user,
     extract_auth_code,
@@ -303,6 +304,10 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
+
+# Redirection automatique si l'application s'exécute sur Streamlit Cloud vers le serveur dédié officiel
+if check_and_handle_cloud_redirect():
+    st.stop()
 
 # ---------------------------------------------------------------------------
 # Polices Arabes Intégrées (Noto Naskh Arabic & Noto Sans Arabic) & Styles CSS
