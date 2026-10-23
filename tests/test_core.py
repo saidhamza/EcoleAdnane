@@ -2842,7 +2842,8 @@ class GoogleDriveManagerTests(unittest.TestCase):
             else:
                 os.environ.pop("IS_DEDICATED_SERVER", None)
 
-    def test_cloud_detection_activates_redirection(self):
+    @patch("services.auth_manager.os.path.exists", return_value=False)
+    def test_cloud_detection_activates_redirection(self, mock_exists):
         from services.auth_manager import is_running_on_streamlit_cloud, check_and_handle_cloud_redirect
         old_dedicated = os.environ.get("IS_DEDICATED_SERVER")
         old_cloud = os.environ.get("STREAMLIT_COMMUNITY_CLOUD")

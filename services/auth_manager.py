@@ -625,14 +625,18 @@ def check_active_user_session(user_id: Optional[int]) -> Tuple[bool, Optional[st
 
 def is_running_on_streamlit_cloud() -> bool:
     """Détecte si l'application s'exécute sur l'infrastructure éphémère de Streamlit Cloud."""
+    # 0. Activation explicite pour test unitaire
+    if os.getenv("TEST_CLOUD_REDIRECT") == "true":
+        return True
+
     # 1. Exclusion absolue si nous sommes sur le serveur dédié officiel
     if os.getenv("IS_DEDICATED_SERVER") == "true":
         return False
     if os.path.exists("/var/www/ecoleadnane"):
         return False
 
-    # 2. Activation explicite pour test ou variable d'environnement Streamlit Cloud
-    if os.getenv("TEST_CLOUD_REDIRECT") == "true" or os.getenv("STREAMLIT_COMMUNITY_CLOUD") == "true":
+    # 2. Variable d'environnement Streamlit Cloud
+    if os.getenv("STREAMLIT_COMMUNITY_CLOUD") == "true":
         return True
 
     # 3. Exclusion si nous sommes sur la machine de développement local
