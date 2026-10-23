@@ -2531,6 +2531,23 @@ class TestSchoolLevelAndTrophies(unittest.TestCase):
             else:
                 os.environ.pop("DATABASE_PATH", None)
 
+    def test_get_gemini_api_key_import_and_app_bindings(self):
+        import ast
+        from services.config_manager import get_gemini_api_key
+        # Verify function is callable
+        val = get_gemini_api_key()
+        self.assertTrue(val is None or isinstance(val, str))
+
+        # Verify app.py statically imports get_gemini_api_key from services.config_manager
+        app_path = Path(__file__).parent.parent / "app.py"
+        tree = ast.parse(app_path.read_text(encoding="utf-8"), filename="app.py")
+        imported_names = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and node.module == "services.config_manager":
+                for alias in node.names:
+                    imported_names.add(alias.name)
+        self.assertIn("get_gemini_api_key", imported_names)
+
 
 if __name__ == "__main__":
     unittest.main()

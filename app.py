@@ -230,6 +230,7 @@ from services.backup_manager import (
     restore_student_backup,
 )
 from services.config_manager import (
+    get_gemini_api_key,
     get_user_gemini_api_key,
     get_user_openai_api_key,
     save_user_gemini_api_key,
