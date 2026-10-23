@@ -625,24 +625,23 @@ def check_active_user_session(user_id: Optional[int]) -> Tuple[bool, Optional[st
 
 def is_running_on_streamlit_cloud() -> bool:
     """Détecte si l'application s'exécute sur l'infrastructure éphémère de Streamlit Cloud."""
+    # 1. Exclusion absolue si nous sommes sur le serveur dédié officiel
     if os.getenv("IS_DEDICATED_SERVER") == "true":
         return False
+    if os.path.exists("/var/www/ecoleadnane"):
+        return False
 
-    try:
-        if hasattr(st, "context") and hasattr(st.context, "headers"):
-            headers = st.context.headers or {}
-            host = headers.get("x-forwarded-host") or headers.get("host") or ""
-            if "streamlit.app" in host:
-                return True
-    except Exception:
-        pass
-
-    if any(k.startswith("STREAMLIT_SHARING") or k == "STREAMLIT_COMMUNITY_CLOUD" for k in os.environ):
-        return True
-    if os.path.exists("/mount/src/ecoleadnane"):
+    # 2. Activation explicite pour test ou variable d'environnement Streamlit Cloud
+    if os.getenv("TEST_CLOUD_REDIRECT") == "true" or os.getenv("STREAMLIT_COMMUNITY_CLOUD") == "true":
         return True
 
-    return False
+    # 3. Exclusion si nous sommes sur la machine de développement local
+    if os.path.exists("/home/syfodias"):
+        return False
+
+    # 4. Tous les autres environnements (hors serveur dédié et machine locale)
+    # correspondent à l'environnement hébergé Streamlit Cloud
+    return True
 
 
 def check_and_handle_cloud_redirect() -> bool:
@@ -652,9 +651,6 @@ def check_and_handle_cloud_redirect() -> bool:
     vers la nouvelle adresse permanente officielle : https://ecole.code-xpert.net
     Retourne True si la redirection a été traitée (pour appeler st.stop()).
     """
-    if os.getenv("IS_DEDICATED_SERVER") == "true":
-        return False
-
     if not is_running_on_streamlit_cloud():
         return False
 
@@ -664,8 +660,9 @@ def check_and_handle_cloud_redirect() -> bool:
             """
             <script>
             (function() {
+                var dest = "https://ecole.code-xpert.net";
                 try {
-                    window.location.href = "https://ecole.code-xpert.net";
+                    window.location.href = dest;
                 } catch(e) {}
             })();
             </script>
@@ -703,19 +700,19 @@ def check_and_handle_cloud_redirect() -> bool:
         height=0,
     )
 
-    # 3. Interface visuelle avec bouton Streamlit natif st.link_button
+    # 3. Interface visuelle avec bouton Streamlit natif st.link_button et lien direct
     st.markdown(
         """
         <div style="max-width: 680px; margin: 40px auto 20px auto; padding: 30px; background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); border: 2px solid #38bdf8; border-radius: 16px; text-align: center; color: #f8fafc; box-shadow: 0 10px 30px rgba(0,0,0,0.4);">
             <div style="font-size: 3.5rem; margin-bottom: 10px;">🎓</div>
-            <h1 style="color: #38bdf8; font-size: 2rem; margin-bottom: 12px; font-weight: 700;">Ecole Adnane a déménagé !</h1>
-            <p style="font-size: 1.15rem; line-height: 1.6; color: #cbd5e1; margin-bottom: 20px;">
+            <h1 style="color: #38bdf8; font-size: 2.2rem; margin-bottom: 12px; font-weight: 700;">Ecole Adnane a déménagé !</h1>
+            <p style="font-size: 1.2rem; line-height: 1.6; color: #cbd5e1; margin-bottom: 20px;">
                 Afin de vous offrir une plateforme plus rapide, plus stable et sans interruption, l'école est désormais accessible sur son serveur officiel permanent :
             </p>
-            <div style="background: rgba(56, 189, 248, 0.1); border: 1px dashed #38bdf8; border-radius: 10px; padding: 15px; margin-bottom: 15px;">
-                <span style="font-size: 1.3rem; font-weight: 700; color: #38bdf8; font-family: monospace;">https://ecole.code-xpert.net</span>
+            <div style="background: rgba(56, 189, 248, 0.15); border: 1.5px dashed #38bdf8; border-radius: 10px; padding: 18px; margin-bottom: 20px;">
+                <span style="font-size: 1.4rem; font-weight: 700; color: #38bdf8; font-family: monospace;">https://ecole.code-xpert.net</span>
             </div>
-            <p style="font-size: 0.95rem; color: #94a3b8; margin: 0;">
+            <p style="font-size: 1rem; color: #94a3b8; margin: 0;">
                 🔄 Redirection automatique en cours... Si rien ne se passe, cliquez sur le bouton ci-dessous :
             </p>
         </div>
@@ -726,14 +723,14 @@ def check_and_handle_cloud_redirect() -> bool:
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         st.link_button(
-            "🚀 Accéder à https://ecole.code-xpert.net",
+            "🚀 Accéder à la nouvelle Ecole Adnane",
             "https://ecole.code-xpert.net",
             type="primary",
             use_container_width=True,
         )
         st.write("")
         st.markdown(
-            "<p style='text-align: center; font-size: 0.9rem;'><a href='https://ecole.code-xpert.net' target='_blank' rel='noopener noreferrer' style='color: #38bdf8; text-decoration: underline;'>🔗 Ouvrir ecole.code-xpert.net dans un nouvel onglet</a></p>",
+            "<p style='text-align: center; font-size: 1rem;'><a href='https://ecole.code-xpert.net' target='_blank' rel='noopener noreferrer' style='color: #38bdf8; text-decoration: underline; font-weight: 600;'>🔗 Ouvrir ecole.code-xpert.net dans un nouvel onglet</a></p>",
             unsafe_allow_html=True,
         )
 
