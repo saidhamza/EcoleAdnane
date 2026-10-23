@@ -8,7 +8,12 @@ env/
 .env
 .env.local
 credentials.json
+storage/credentials.json
 token.json
+storage/token.json
+*OAuth*.json
+*credentials*.json
+ecole.code-xpert.net_Google-OAuth.json
 .streamlit/secrets.toml
 
 # Base de données locale & Documents stockés
