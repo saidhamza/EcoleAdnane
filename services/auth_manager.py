@@ -31,7 +31,6 @@ logger = logging.getLogger(__name__)
 
 CREDENTIALS_FILE = Path(__file__).parent.parent / "credentials.json"
 STORAGE_CREDENTIALS = Path(__file__).parent.parent / "storage" / "credentials.json"
-CUSTOM_OAUTH_FILE = Path(__file__).parent.parent / "ecole.code-xpert.net_Google-OAuth.json"
 
 AUTH_SCOPES = [
     "openid",
@@ -175,9 +174,7 @@ def get_oauth_credentials() -> Dict[str, Any]:
     # 2. Vérification dans storage/credentials.json (PRIORITAIRE car téléversé via l'UI)
     # puis credentials.json à la racine
     cred_path = None
-    if CUSTOM_OAUTH_FILE.exists():
-        cred_path = CUSTOM_OAUTH_FILE
-    elif STORAGE_CREDENTIALS.exists():
+    if STORAGE_CREDENTIALS.exists():
         cred_path = STORAGE_CREDENTIALS
     elif CREDENTIALS_FILE.exists():
         cred_path = CREDENTIALS_FILE
