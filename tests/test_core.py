@@ -17,8 +17,9 @@ import tempfile
 import unittest
 import wave
 import zipfile
+from datetime import datetime
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from models.database import (
     MOROCCAN_SCHOOL_LEVELS,
@@ -2547,6 +2548,125 @@ class TestSchoolLevelAndTrophies(unittest.TestCase):
                 for alias in node.names:
                     imported_names.add(alias.name)
         self.assertIn("get_gemini_api_key", imported_names)
+
+
+class GoogleDriveManagerTests(unittest.TestCase):
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.db_path = os.path.join(self.temp_dir.name, "test_gdrive.db")
+        self.old_db = os.environ.get("DATABASE_PATH")
+        os.environ["DATABASE_PATH"] = self.db_path
+        from models.database import init_db
+        init_db()
+
+    def tearDown(self):
+        if self.old_db is not None:
+            os.environ["DATABASE_PATH"] = self.old_db
+        else:
+            os.environ.pop("DATABASE_PATH", None)
+        self.temp_dir.cleanup()
+
+    def test_format_bytes_human(self):
+        from services.google_drive_manager import format_bytes_human
+        self.assertEqual(format_bytes_human(500), "500 o")
+        self.assertEqual(format_bytes_human(2048), "2.0 Ko")
+        self.assertEqual(format_bytes_human(1024 * 1024 * 3), "3.0 Mo")
+
+    def test_ensure_backup_folder_existing(self):
+        from services.google_drive_manager import ensure_backup_folder
+        mock_service = MagicMock()
+        mock_service.files().list().execute.return_value = {
+            "files": [{"id": "folder_123", "name": "EcoleAdnane_Backups"}]
+        }
+        folder_id = ensure_backup_folder(mock_service)
+        self.assertEqual(folder_id, "folder_123")
+
+    def test_ensure_backup_folder_create_new(self):
+        from services.google_drive_manager import ensure_backup_folder
+        mock_service = MagicMock()
+        mock_service.files().list().execute.return_value = {"files": []}
+        mock_service.files().create().execute.return_value = {"id": "new_folder_456"}
+        folder_id = ensure_backup_folder(mock_service)
+        self.assertEqual(folder_id, "new_folder_456")
+
+    def test_cleanup_old_drive_backups(self):
+        from services.google_drive_manager import cleanup_old_drive_backups
+        mock_service = MagicMock()
+        files = [{"id": f"file_{i}", "name": f"backup_{i}.zip"} for i in range(15)]
+        mock_service.files().list().execute.return_value = {"files": files}
+        deleted = cleanup_old_drive_backups(mock_service, "folder_123", keep_count=10)
+        self.assertEqual(deleted, 5)
+        self.assertEqual(mock_service.files().delete.call_count, 5)
+
+    @patch("services.google_drive_manager.get_drive_service")
+    @patch("services.google_drive_manager.ensure_backup_folder")
+    def test_upload_backup_to_drive(self, mock_ensure_folder, mock_get_service):
+        from services.google_drive_manager import upload_backup_to_drive
+        mock_service = MagicMock()
+        mock_get_service.return_value = mock_service
+        mock_ensure_folder.return_value = "folder_123"
+        mock_service.files().create().execute.return_value = {
+            "id": "file_999",
+            "name": "backup.zip",
+            "webViewLink": "https://drive.google.com/test",
+        }
+        mock_service.files().list().execute.return_value = {"files": []}
+
+        res = upload_backup_to_drive(file_bytes=b"dummy zip data", note="test note")
+        self.assertTrue(res["success"])
+        self.assertEqual(res["file_id"], "file_999")
+        self.assertEqual(res["web_link"], "https://drive.google.com/test")
+
+    @patch("services.google_drive_manager.get_drive_service")
+    @patch("services.google_drive_manager.ensure_backup_folder")
+    def test_list_drive_backups(self, mock_ensure_folder, mock_get_service):
+        from services.google_drive_manager import list_drive_backups
+        mock_service = MagicMock()
+        mock_get_service.return_value = mock_service
+        mock_ensure_folder.return_value = "folder_123"
+        mock_service.files().list().execute.return_value = {
+            "files": [
+                {
+                    "id": "f1",
+                    "name": "backup_2026.zip",
+                    "size": "2048",
+                    "createdTime": "2026-10-23T10:00:00Z",
+                    "webViewLink": "http://link1",
+                    "description": "test",
+                }
+            ]
+        }
+        backups = list_drive_backups()
+        self.assertEqual(len(backups), 1)
+        self.assertEqual(backups[0]["id"], "f1")
+        self.assertEqual(backups[0]["size_formatted"], "2.0 Ko")
+
+    @patch("services.google_drive_manager.is_drive_connected")
+    @patch("services.google_drive_manager.upload_backup_to_drive")
+    def test_auto_backup_on_change_throttling(self, mock_upload, mock_connected):
+        from services.google_drive_manager import auto_backup_on_change
+        from models.database import set_setting
+        mock_connected.return_value = True
+
+        # First call: no last backup time -> should upload
+        mock_upload.return_value = {"success": True}
+        res1 = auto_backup_on_change(min_interval_minutes=15)
+        self.assertTrue(res1.get("success"))
+
+        # Simulate recent backup just now
+        recent_iso = datetime.now().isoformat()
+        set_setting("last_gdrive_backup_at", recent_iso)
+
+        res2 = auto_backup_on_change(min_interval_minutes=15)
+        self.assertTrue(res2.get("skipped"))
+        self.assertFalse(res2.get("success"))
+
+    def test_auth_manager_drive_scopes_and_token_helpers(self):
+        from services.auth_manager import AUTH_SCOPES, get_google_drive_connect_url
+        self.assertIn("https://www.googleapis.com/auth/drive.file", AUTH_SCOPES)
+        url = get_google_drive_connect_url("http://localhost:8501")
+        self.assertIsInstance(url, str)
+        self.assertTrue(url.startswith("https://accounts.google.com/o/oauth2/v2/auth"))
 
 
 if __name__ == "__main__":

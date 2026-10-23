@@ -17,10 +17,14 @@ from models.database import (
     create_or_get_google_user,
     create_user_session,
     delete_user_session,
+    get_setting,
     get_user_by_email,
     get_user_by_id,
     get_user_count,
     get_user_from_session_token,
+    get_user_setting,
+    set_setting,
+    set_user_setting,
 )
 
 logger = logging.getLogger(__name__)
@@ -32,6 +36,7 @@ AUTH_SCOPES = [
     "openid",
     "https://www.googleapis.com/auth/userinfo.email",
     "https://www.googleapis.com/auth/userinfo.profile",
+    "https://www.googleapis.com/auth/drive.file",
 ]
 
 
@@ -364,7 +369,108 @@ def exchange_code_for_user(code: str, redirect_uri: Optional[str] = None) -> Dic
         user = create_or_get_google_user(email=email, name=name, avatar_url=avatar_url)
     except PermissionError as pe:
         raise ValueError(str(pe))
+
+    # Enregistrement des tokens Google OAuth pour la sauvegarde Google Drive
+    if user:
+        try:
+            if hasattr(st, "session_state"):
+                st.session_state["google_oauth_tokens"] = token_data
+            if user.get("role") == "admin":
+                set_setting("google_drive_oauth_tokens", json.dumps(token_data))
+                set_user_setting(user["id"], "google_oauth_tokens", json.dumps(token_data))
+                if token_data.get("refresh_token"):
+                    set_setting("google_drive_refresh_token", token_data["refresh_token"])
+                    set_user_setting(user["id"], "google_drive_refresh_token", token_data["refresh_token"])
+        except Exception as e:
+            logger.warning(f"Impossible d'enregistrer les jetons Google Drive de l'administrateur : {e}")
+
     return user
+
+
+def get_admin_google_tokens(user_id: Optional[int] = None) -> Optional[Dict[str, Any]]:
+    """
+    Récupère les jetons Google OAuth de l'administrateur pour l'accès API Google Drive.
+    Cherche successivement :
+    1. Session active (st.session_state)
+    2. Paramètres individuels admin (user_settings)
+    3. Paramètres globaux (settings)
+    4. Fichier de token local (storage/token.json ou token.json)
+    5. Streamlit Secrets (st.secrets)
+    """
+    try:
+        if hasattr(st, "session_state") and "google_oauth_tokens" in st.session_state:
+            tok = st.session_state["google_oauth_tokens"]
+            if isinstance(tok, dict) and (tok.get("access_token") or tok.get("refresh_token")):
+                return tok
+    except Exception:
+        pass
+
+    if user_id:
+        try:
+            val = get_user_setting(user_id, "google_oauth_tokens")
+            if val:
+                return json.loads(val)
+        except Exception:
+            pass
+        try:
+            rt = get_user_setting(user_id, "google_drive_refresh_token")
+            if rt:
+                return {"refresh_token": rt}
+        except Exception:
+            pass
+
+    try:
+        val = get_setting("google_drive_oauth_tokens")
+        if val:
+            return json.loads(val)
+    except Exception:
+        pass
+
+    try:
+        rt = get_setting("google_drive_refresh_token")
+        if rt:
+            return {"refresh_token": rt}
+    except Exception:
+        pass
+
+    # Vérification fichier token.json local
+    for p in [Path("storage/token.json"), Path("token.json")]:
+        if p.exists():
+            try:
+                return json.loads(p.read_text(encoding="utf-8"))
+            except Exception:
+                pass
+
+    # Vérification Streamlit Secrets
+    try:
+        if hasattr(st, "secrets") and "google_drive" in st.secrets:
+            sec = dict(st.secrets["google_drive"])
+            if sec.get("refresh_token"):
+                return sec
+    except Exception:
+        pass
+
+    return None
+
+
+def get_google_drive_connect_url(redirect_uri: Optional[str] = None) -> str:
+    """Génère l'URL d'autorisation Google OAuth spécifique avec force consent pour Google Drive."""
+    creds = get_oauth_credentials()
+    client_id = creds["client_id"]
+    final_redirect = normalize_redirect_uri(redirect_uri or creds["redirect_uri"])
+
+    if not client_id:
+        return ""
+
+    params = {
+        "client_id": client_id,
+        "redirect_uri": final_redirect,
+        "response_type": "code",
+        "scope": " ".join(AUTH_SCOPES),
+        "access_type": "offline",
+        "prompt": "consent",
+    }
+    return f"https://accounts.google.com/o/oauth2/v2/auth?{urllib.parse.urlencode(params)}"
 
 
 

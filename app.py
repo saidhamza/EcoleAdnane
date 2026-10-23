@@ -20,12 +20,6 @@ PROJECT_ROOT = Path(__file__).resolve().parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-# Invalidate import caches and purge stale project modules in persistent runners (Streamlit Cloud hot-reloading)
-importlib.invalidate_caches()
-for mod in list(sys.modules.keys()):
-    if mod in ("models", "services") or mod.startswith(("models.", "services.")):
-        del sys.modules[mod]
-
 import streamlit as st
 
 # Safe, hot-reload resilient import of models.database
@@ -213,6 +207,7 @@ from services.auth_manager import (
     exchange_code_for_user,
     extract_auth_code,
     get_google_auth_url,
+    get_google_drive_connect_url,
     get_oauth_credentials,
     init_session_state,
     is_oauth_configured,
@@ -228,6 +223,16 @@ from services.backup_manager import (
     get_student_backup_summary,
     restore_global_backup,
     restore_student_backup,
+)
+from services.google_drive_manager import (
+    auto_backup_on_change,
+    check_and_auto_heal_on_startup,
+    download_backup_from_drive,
+    is_drive_connected,
+    list_drive_backups,
+    restore_backup_from_drive,
+    restore_latest_drive_backup,
+    upload_backup_to_drive,
 )
 from services.config_manager import (
     get_gemini_api_key,
@@ -286,6 +291,10 @@ except Exception:
 
 # Initialisation de la base SQLite et migrations
 init_db()
+try:
+    check_and_auto_heal_on_startup()
+except Exception as _e_init_heal:
+    logger.debug(f"Auto-heal initial check: {_e_init_heal}")
 
 # Configuration de la page Streamlit
 st.set_page_config(
@@ -914,6 +923,15 @@ if "code" in st.query_params:
         # Supprime le code OAuth consommé tout en conservant le token de session
         if "code" in st.query_params:
             del st.query_params["code"]
+
+        if authenticated_user.get("role") == "admin":
+            try:
+                heal_res = check_and_auto_heal_on_startup(authenticated_user.get("id"))
+                if heal_res and heal_res.get("success"):
+                    st.toast("☁️ Données restaurées avec succès depuis Google Drive !", icon="✅")
+            except Exception as e_heal:
+                logger.warning(f"Erreur auto-guérison post-connexion : {e_heal}")
+
         st.success(f"🎉 Bienvenue, {authenticated_user['name']} !")
         st.rerun()
     except Exception as e:
@@ -1675,6 +1693,80 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
 
         st.divider()
 
+        st.markdown("### ☁️ Sauvegarde Automatique & Restauration Google Drive")
+        st.markdown(
+            "Immunise l'application contre les pertes de données causées par les redémarrages de Streamlit Cloud. "
+            "Les sauvegardes sont envoyées dans votre dossier Google Drive dédié **`EcoleAdnane_Backups`**."
+        )
+
+        drive_ok = is_drive_connected(logged_in_user_id)
+        if drive_ok:
+            st.success("🟢 **Google Drive connecté :** Le dossier `EcoleAdnane_Backups` est actif et sécurisé.", icon="☁️")
+            col_gd1, col_gd2 = st.columns([1.5, 2])
+            with col_gd1:
+                if st.button("☁️ Sauvegarder sur Google Drive maintenant", type="primary", use_container_width=True, key="admin_backup_gdrive_now_btn"):
+                    with st.spinner("Téléversement de la sauvegarde vers Google Drive..."):
+                        up_res = upload_backup_to_drive(user_id=logged_in_user_id)
+                        if up_res["success"]:
+                            st.success(f"✅ Sauvegarde réussie : **{up_res['file_name']}** ({up_res['size_formatted']})")
+                            st.balloons()
+                            st.rerun()
+                        else:
+                            st.error(f"❌ Erreur lors de la sauvegarde : {up_res.get('error')}")
+
+            with col_gd2:
+                last_bk = get_setting("last_gdrive_backup_at")
+                if last_bk:
+                    try:
+                        dt_bk = datetime.fromisoformat(last_bk)
+                        st.caption(f"🕒 **Dernière sauvegarde Drive :** {dt_bk.strftime('%d/%m/%Y à %H:%M')}")
+                    except Exception:
+                        pass
+                else:
+                    st.caption("ℹ️ Aucune sauvegarde Drive effectuée pour l'instant.")
+
+            # Liste des sauvegardes disponibles sur Google Drive
+            with st.expander("📂 Consulter les sauvegardes sur Google Drive & Restaurer", expanded=False):
+                with st.spinner("Récupération des sauvegardes depuis Google Drive..."):
+                    drive_backups = list_drive_backups(user_id=logged_in_user_id)
+                if not drive_backups:
+                    st.info("Aucune archive ZIP trouvée dans le dossier `EcoleAdnane_Backups`.")
+                else:
+                    st.markdown(f"**{len(drive_backups)} sauvegarde(s) disponible(s) :**")
+                    for bk in drive_backups:
+                        c_bk1, c_bk2, c_bk3 = st.columns([3, 1.2, 1.5])
+                        with c_bk1:
+                            st.markdown(f"📦 **{bk['name']}**<br><span style='color:#94a3b8;font-size:0.8rem;'>{bk['date_formatted']} • {bk['size_formatted']}</span>", unsafe_allow_html=True)
+                        with c_bk2:
+                            if bk.get("web_link"):
+                                st.markdown(f"[Ouvrir Drive ↗]({bk['web_link']})")
+                        with c_bk3:
+                            if st.button("📥 Restaurer", key=f"btn_restore_drive_{bk['id']}", use_container_width=True):
+                                with st.spinner(f"Restauration de {bk['name']} depuis Google Drive..."):
+                                    res_drive = restore_backup_from_drive(bk['id'], user_id=logged_in_user_id)
+                                    if res_drive["success"]:
+                                        st.success(f"✅ Restauration réussie : {res_drive['message']}")
+                                        st.balloons()
+                                        st.rerun()
+                                    else:
+                                        st.error(f"❌ Erreur : {res_drive.get('error')}")
+        else:
+            st.warning("⚠️ **Google Drive non connecté :** Connectez votre compte Google pour activer les sauvegardes automatiques dans votre Drive.", icon="🔑")
+            drive_auth_url = get_google_drive_connect_url()
+            col_con1, col_con2 = st.columns([1.5, 2.5])
+            with col_con1:
+                if drive_auth_url:
+                    st.link_button("🔗 Connecter mon Google Drive", drive_auth_url, type="primary", use_container_width=True)
+                else:
+                    st.info("Configurez vos identifiants Google OAuth pour connecter Drive.")
+            with col_con2:
+                st.caption(
+                    "👉 Utilise le scope sécurisé `drive.file` : l'application n'accède qu'au dossier `EcoleAdnane_Backups` "
+                    "qu'elle crée elle-même pour vos sauvegardes."
+                )
+
+        st.divider()
+
         st.markdown("### 🎯 Sauvegarde & Restauration Ciblée d'un Élève")
         target_student_id = st.selectbox(
             "Sélectionnez l'élève cible :",
@@ -2307,6 +2399,10 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                         )
                         evaluate_and_sync_concept_mastery(active_user_id, current_course["id"])
                         new_badges = evaluate_and_award_course_badges(active_user_id, current_course["id"])
+                        try:
+                            auto_backup_on_change(logged_in_user_id)
+                        except Exception as _e_bk_q:
+                            logger.debug(f"Auto-backup post quiz error: {_e_bk_q}")
                         if new_badges:
                             st.session_state["pending_trophy_celebration"] = {
                                 "course_title": current_course["title"],
@@ -2670,6 +2766,11 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                             progress_bar.progress(done / total_ops)
 
                     st.success(f"Bilan : {success_count} cours ajouté(s), {dup_count} doublon(s).")
+                    if success_count > 0:
+                        try:
+                            auto_backup_on_change(logged_in_user_id)
+                        except Exception as _e_bk_up:
+                            logger.warning(f"Auto-backup post PDF ingest failed: {_e_bk_up}")
                     st.rerun()
 
         else:
@@ -2696,6 +2797,10 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                             sync_res = sync_google_classroom(user_id=tid)
                         if sync_res["success"]:
                             st.success(sync_res["message"])
+                            try:
+                                auto_backup_on_change(logged_in_user_id)
+                            except Exception as _e_bk_sync:
+                                logger.warning(f"Auto-backup post Classroom sync failed: {_e_bk_sync}")
                         else:
                             st.error(sync_res["error"])
                 render_classroom_credentials_instructions(expanded=False)
