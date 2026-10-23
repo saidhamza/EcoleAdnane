@@ -32,6 +32,7 @@ from models.database import (
     save_quiz_attempt,
     add_chat_message,
     save_flashcard,
+    resolve_course_file_path,
 )
 from services.downloader import get_user_storage_dir, USERS_DIR, STORAGE_DIR
 

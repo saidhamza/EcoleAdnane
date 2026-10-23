@@ -78,6 +78,7 @@ from models.database import (
     update_user_level,
     update_user_name,
     update_user_role,
+    resolve_course_file_path,
 )
 from services.ai_engine import (
     _fallback_mindmap,
@@ -752,6 +753,53 @@ class TestStudentAndGlobalBackup(unittest.TestCase):
         restored = list_courses(user_id=u_target["id"])
         titles = [c["title"] for c in restored]
         self.assertIn("Cours Cible Restauré", titles)
+
+    def test_resolve_course_file_path_and_migration(self):
+        # 1. Préparer des fichiers physiques dans l'environnement de stockage actuel
+        storage_root = Path(self.temp_dir.name)
+        legacy_cours_dir = storage_root / "cours"
+        legacy_cours_dir.mkdir(parents=True, exist_ok=True)
+        user_cours_dir = storage_root / "users" / str(self.user_id) / "cours"
+        user_cours_dir.mkdir(parents=True, exist_ok=True)
+
+        pdf_shared = legacy_cours_dir / "0bfc867117_thales_cours.pdf"
+        pdf_shared.write_bytes(b"%PDF-1.4 shared mock content")
+
+        pdf_student = user_cours_dir / "3e0781c739_english_guide.pdf"
+        pdf_student.write_bytes(b"%PDF-1.4 student mock content")
+
+        # 2. Tester resolve_course_file_path avec d'anciens chemins Streamlit Cloud
+        old_shared_path = "/mount/src/ecoleadnane/storage/cours/0bfc867117_thales_cours.pdf"
+        resolved_shared = resolve_course_file_path(old_shared_path, db_path=self.test_db_path)
+        self.assertEqual(resolved_shared, str(pdf_shared))
+        self.assertTrue(os.path.exists(resolved_shared))
+
+        old_student_path = f"/mount/src/ecoleadnane/storage/users/{self.user_id}/cours/3e0781c739_english_guide.pdf"
+        resolved_student = resolve_course_file_path(old_student_path, user_id=self.user_id, db_path=self.test_db_path)
+        self.assertEqual(resolved_student, str(pdf_student))
+        self.assertTrue(os.path.exists(resolved_student))
+
+        # 3. Tester la migration automatique dans init_db
+        cid_mig = save_course(
+            title="Cours Ancien Chemin",
+            subject="Mathématiques",
+            language="fr",
+            file_path=old_shared_path,
+            file_hash="hash_mig_123",
+            file_name="thales_cours.pdf",
+            user_id=None,
+        )
+        # Vérifier que le cours a été enregistré initialement avec l'ancien chemin
+        c_before = get_course_by_id(cid_mig)
+        self.assertEqual(c_before["file_path"], old_shared_path)
+
+        # Exécuter init_db pour déclencher la migration d'ancrage (étape 5)
+        init_db(self.test_db_path)
+
+        # Vérifier que le chemin a été automatiquement réparé en base
+        c_after = get_course_by_id(cid_mig)
+        self.assertEqual(c_after["file_path"], str(pdf_shared))
+        self.assertTrue(os.path.exists(c_after["file_path"]))
 
     def test_google_classroom_scopes(self):
         # Vérification stricte des 4 scopes officiels requis

@@ -78,6 +78,7 @@ __all__ = [
     "get_student_trophies_overview",
     "get_course_trophies_overview",
     "get_student_trophies_by_course",
+    "resolve_course_file_path",
 ]
 
 DEFAULT_DB_DIR = Path(__file__).parent.parent / "storage"
@@ -432,6 +433,23 @@ def init_db(db_path: Optional[Path] = None) -> None:
                 SET user_id = NULL 
                 WHERE user_id IN (SELECT id FROM users WHERE role = 'admin')
             """)
+
+            # 5. Normalisation des chemins de fichiers de cours obsolètes ou migrés
+            cur.execute("SELECT id, user_id, file_path, file_name, file_hash FROM courses WHERE file_path IS NOT NULL")
+            course_rows = cur.fetchall()
+            for c_row in course_rows:
+                old_fp = c_row["file_path"]
+                if old_fp and not os.path.exists(old_fp):
+                    new_fp = resolve_course_file_path(
+                        old_fp,
+                        file_name=c_row["file_name"],
+                        file_hash=c_row["file_hash"],
+                        user_id=c_row["user_id"],
+                        db_path=db_path,
+                    )
+                    if new_fp and new_fp != old_fp and os.path.exists(new_fp):
+                        cur.execute("UPDATE courses SET file_path = ? WHERE id = ?", (new_fp, c_row["id"]))
+                        logger.info(f"Normalisation chemin cours ID {c_row['id']}: {old_fp} -> {new_fp}")
     finally:
         conn.close()
 
@@ -1384,6 +1402,92 @@ def extract_real_course_concepts(course: Dict[str, Any]) -> List[str]:
 # OPÉRATIONS CRUD SUR LES COURS (CLOISONNÉES PAR USER_ID)
 # ===========================================================================
 
+def resolve_course_file_path(
+    file_path: Optional[str],
+    file_name: Optional[str] = None,
+    file_hash: Optional[str] = None,
+    user_id: Optional[int] = None,
+    db_path: Optional[Path] = None,
+) -> Optional[str]:
+    """
+    Résout et ré-ancre dynamiquement le chemin d'un fichier de cours vers le système de fichiers actuel.
+    Garantit la portabilité complète des cours lors des restaurations ou déménagements de plateforme
+    (ex: migration de Streamlit Cloud vers un serveur dédié).
+    """
+    if not file_path:
+        return None
+
+    # 1. Si le chemin direct existe déjà sur le disque, le retourner immédiatement
+    if os.path.exists(file_path):
+        return file_path
+
+    try:
+        storage_root = (db_path or get_db_path()).parent.resolve()
+    except Exception:
+        storage_root = Path(DEFAULT_DB_DIR).resolve()
+
+    norm_path = file_path.replace("\\", "/")
+
+    # 2. Si le chemin contient 'storage/'
+    if "storage/" in norm_path:
+        rel_subpath = norm_path.split("storage/", 1)[1].lstrip("/")
+        candidate = storage_root / rel_subpath
+        if candidate.exists():
+            return str(candidate)
+
+    base_name = Path(norm_path).name
+
+    # 3. Vérification dans le dossier de l'élève
+    if user_id is not None:
+        user_cand = storage_root / "users" / str(user_id) / "cours" / base_name
+        if user_cand.exists():
+            return str(user_cand)
+
+    # 4. Vérification dans le dossier cours partagé
+    legacy_cand = storage_root / "cours" / base_name
+    if legacy_cand.exists():
+        return str(legacy_cand)
+
+    # 5. Recherche dans n'importe quel dossier utilisateur
+    user_matches = list(storage_root.glob(f"users/*/cours/{base_name}"))
+    if user_matches:
+        return str(user_matches[0])
+
+    # 6. Recherche par hash de fichier
+    if file_hash and len(file_hash) >= 8:
+        hash_prefix = file_hash[:8]
+        if user_id is not None:
+            user_hash_matches = list((storage_root / "users" / str(user_id) / "cours").glob(f"*{hash_prefix}*"))
+            if user_hash_matches:
+                return str(user_hash_matches[0])
+
+        legacy_hash_matches = list((storage_root / "cours").glob(f"*{hash_prefix}*"))
+        if legacy_hash_matches:
+            return str(legacy_hash_matches[0])
+
+        all_hash_matches = list(storage_root.glob(f"users/*/cours/*{hash_prefix}*"))
+        if all_hash_matches:
+            return str(all_hash_matches[0])
+
+    # 7. Recherche par nom d'origine (file_name)
+    if file_name and file_name != base_name:
+        if user_id is not None:
+            user_fn_cand = storage_root / "users" / str(user_id) / "cours" / file_name
+            if user_fn_cand.exists():
+                return str(user_fn_cand)
+
+        legacy_fn_cand = storage_root / "cours" / file_name
+        if legacy_fn_cand.exists():
+            return str(legacy_fn_cand)
+
+        fn_matches = list(storage_root.glob(f"users/*/cours/{file_name}"))
+        if fn_matches:
+            return str(fn_matches[0])
+
+    # Repli : chemin original
+    return file_path
+
+
 def get_mindmap_disk_paths(
     course_id: Optional[int] = None,
     file_path: Optional[str] = None,
@@ -1391,8 +1495,10 @@ def get_mindmap_disk_paths(
 ) -> List[Path]:
     """Retourne la liste ordonnée des chemins potentiels de fichier disque pour la carte mentale d'un cours."""
     paths: List[Path] = []
-    if file_path:
-        fp = Path(file_path)
+    effective_fp = resolve_course_file_path(file_path, user_id=user_id) if file_path else None
+    target_fp = effective_fp or file_path
+    if target_fp:
+        fp = Path(target_fp)
         if fp.parent.exists():
             # 1. <file_path>.mindmap.md (ex: .../cours/doc.pdf.mindmap.md)
             paths.append(fp.with_name(f"{fp.name}.mindmap.md"))
@@ -1806,11 +1912,12 @@ def delete_course(course_id: int, user_id: Optional[int] = None) -> bool:
             if not row:
                 return False
 
-            if row["file_path"] and os.path.exists(row["file_path"]):
+            target_fp = resolve_course_file_path(row["file_path"], user_id=row["user_id"]) or row["file_path"]
+            if target_fp and os.path.exists(target_fp):
                 try:
-                    os.remove(row["file_path"])
+                    os.remove(target_fp)
                 except Exception as e:
-                    logger.warning(f"Impossible de supprimer le fichier {row['file_path']} : {e}")
+                    logger.warning(f"Impossible de supprimer le fichier {target_fp} : {e}")
 
             # Nettoyage des fichiers disque de la carte mentale
             for dp in get_mindmap_disk_paths(course_id, row["file_path"], row["user_id"]):

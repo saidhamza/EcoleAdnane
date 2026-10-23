@@ -87,6 +87,7 @@ try:
         update_user_level,
         update_user_name,
         update_user_role,
+        resolve_course_file_path,
     )
 except ImportError:
     import models.database
@@ -141,6 +142,7 @@ except ImportError:
         update_user_level,
         update_user_name,
         update_user_role,
+        resolve_course_file_path,
     )
     if hasattr(models.database, "get_pedagogical_cycle"):
         get_pedagogical_cycle = models.database.get_pedagogical_cycle
@@ -2097,7 +2099,13 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
             ])
 
         with tab_doc:
-            file_path = current_course.get("file_path")
+            raw_fp = current_course.get("file_path")
+            file_path = resolve_course_file_path(
+                raw_fp,
+                file_name=current_course.get("file_name"),
+                file_hash=current_course.get("file_hash"),
+                user_id=current_course.get("user_id"),
+            )
             if file_path and os.path.exists(file_path):
                 with open(file_path, "rb") as f:
                     pdf_data = f.read()
