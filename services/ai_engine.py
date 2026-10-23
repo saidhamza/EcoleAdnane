@@ -176,6 +176,73 @@ def clean_json_output(raw_text: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Utilitaires de Vocalisation & Harakat (Tashkeel)
+# ---------------------------------------------------------------------------
+
+TASHKEEL_CHARS = set("\u064B\u064C\u064D\u064E\u064F\u0650\u0651\u0652\u0670")
+ARABIC_LETTERS_REGEX = re.compile(r"[\u0621-\u064A]")
+
+
+def get_arabic_tashkeel_ratio(text: str) -> float:
+    """
+    Calcule le ratio de diacritiques (Harakat) par rapport aux lettres arabes.
+    Un texte arabe pleinement vocalisé présente généralement un ratio >= 0.50.
+    """
+    if not text:
+        return 0.0
+    letters = len(ARABIC_LETTERS_REGEX.findall(text))
+    if letters == 0:
+        return 0.0
+    harakat = sum(1 for c in text if c in TASHKEEL_CHARS)
+    return harakat / letters
+
+
+def diacritize_arabic_text(text: str, user_id: Optional[int] = None) -> str:
+    """
+    Vocalise intégralement un texte arabe en y ajoutant les Harakat complètes
+    (Fatha, Damma, Kasra, Sukun, Shadda, Tanwin) tout en préservant scrupuleusement
+    le balisage Markdown, les formules LaTeX, les URLs, les puces et les retours à la ligne.
+    """
+    if not text or not text.strip():
+        return text
+
+    from services.voice_manager import detect_arabic_content
+    if not detect_arabic_content(text):
+        return text
+
+    # Si déjà bien vocalisé (ratio >= 0.45), pas besoin de ré-interroger l'IA
+    if get_arabic_tashkeel_ratio(text) >= 0.45:
+        return text
+
+    sys_prompt = (
+        "أنت مدقق لغوي خبير متخصص في ضبط وتشكيل النصوص المدرسية والتعليمية باللغة العربية.\n"
+        "مهمتك: ضبط وتشكيل النص المعطى تشكيلاً تاماً وكاملاً بالحركات (الْفَتْحَة، الضَّمَّة، الْكَسْرَة، السُّكُون، الشَّدَّة، التَّنْوِين) على كافة الكلمات دون أي استثناء.\n"
+        "قواعد صارمة وإلزامية:\n"
+        "1. حافظ بدقة تامة وبلا أي تعديل على بنية وتنسيق Markdown (العناوين #، القوائم النقطية -، التنسيق الغامق **...**، الأيقونات التعبيرية، والأرقام والصيغ).\n"
+        "2. لا تغير أو تحذف أي كلمة من النص الأصلي.\n"
+        "3. لا تضف أي مقدمة أو خاتمة أو نص جانبي، أخرج فقط النص المطلوب بعد تشكيله كاملاً."
+    )
+    user_prompt = f"""قم بضبط وتشكيل النص التالي تشكيلاً تاماً وكاملاً بالحركات:
+---
+{text}
+---
+النص المشكول كاملاً بالحركات التامة:"""
+
+    try:
+        res = call_llm(user_prompt, system_instruction=sys_prompt, temperature=0.1, user_id=user_id)
+        if res and len(res.strip()) >= len(text.strip()) * 0.7:
+            cleaned = re.sub(r"^```(?:markdown)?\s*\n", "", res.strip(), flags=re.IGNORECASE)
+            cleaned = re.sub(r"\n```$", "", cleaned.strip())
+            # Vérifier que le résultat est effectivement plus vocalisé
+            if get_arabic_tashkeel_ratio(cleaned) > get_arabic_tashkeel_ratio(text):
+                return cleaned
+    except Exception as e:
+        logger.warning(f"Échec de la vocalisation automatique du texte arabe : {e}")
+
+    return text
+
+
+# ---------------------------------------------------------------------------
 # 1. Classification & Extraction de Métadonnées (Bilingue)
 # ---------------------------------------------------------------------------
 
@@ -199,18 +266,18 @@ def classify_and_extract_metadata(
             "أنت خبير تربوي مغربي متخصص في المناهج الدراسية المغربية.\n"
             "مهمتك تحليل النص المستخرج من وثيقة دراسية وتحديد المادة الدقيقة، عنوان الدرس، والمفاهيم الأساسية، والمستوى الدراسي المقدر.\n"
             "المواد الممكنة في الشعبة العامة/العربية: 'التربية الإسلامية'، 'الاجتماعيات'، 'اللغة العربية'.\n"
-            "اكتب مخرجاتك بدقة متناهية وباللغة العربية الفصحى فقط وبصيغة JSON."
+            "اكتب مخرجاتك بدقة متناهية وباللغة العربية الفصحى فقط وبصيغة JSON مع ضبط عنوان الدرس والمفاهيم بالحركات والتشكيل التام لتسهيل النطق والقراءة."
         )
         user_prompt = f"""
 حلل النص التالي المستخرج من وثيقة دراسية:
 ---
 {excerpt}
 ---
-أرجع كائن JSON فقط بالبنية التالية:
+أرجع كائن JSON فقط بالبنية التالية مع ضبط العنوان والمفاهيم بالحركات والتشكيل التام:
 {{
-  "title": "عنوان الدرس الدقيق والواضح",
+  "title": "عُنْوَانُ الدَّرْسِ الدَّقِيقُ المَشْكُولُ بِالحَرَكَاتِ التَّامَّةِ",
   "subject": "التربية الإسلامية أو الاجتماعيات أو اللغة العربية",
-  "key_concepts": ["مفهوم 1", "مفهوم 2", "مفهوم 3", "مفهوم 4"],
+  "key_concepts": ["مَفْهُومٌ 1 مَشْكُولٌ", "مَفْهُومٌ 2 مَشْكُولٌ", "مَفْهُومٌ 3 مَشْكُولٌ", "مَفْهُومٌ 4 مَشْكُولٌ"],
   "estimated_level": "{default_level}"
 }}
 """
@@ -296,114 +363,120 @@ def generate_revision_sheet(
     stage = cycle["stage"]
 
     if language == "ar":
+        tashkeel_mandate = (
+            "قَاعِدَةٌ بَيْدَاغُوجِيَّةٌ صَارِمَةٌ وَإِلْزَامِيَّةٌ قَطْعِيّاً لِلقِرَاءَةِ وَالنُّطْقِ الصَّوْتِيِّ: "
+            "يَجِبُ أَنْ يَكُونَ كَامِلُ النَّصِّ المُوَلَّدِ بِاللُّغَةِ العَرَبِيَّةِ مَشْكُولاً وَمَضْبُوطاً ضَبْطاً تَامّاً وَشَامِلاً بِالحَرَكَاتِ "
+            "(الْفَتْحَة، الضَّمَّة، الْكَسْرَة، السُّكُون، الشَّدَّة، التَّنْوِين) عَلَى جَمِيعِ الكَلِمَاتِ وَالجُمَلِ بِلَا اسْتِثْنَاءٍ. "
+            "يُمْنَعُ مَنْعاً بَاتّاً تَرْكُ أَيِّ كَلِمَةٍ دُونَ تَشْكِيلٍ تَامٍّ."
+        )
         if stage == "primary":
             sys_prompt = (
                 f"أنت معلم متميز ومحبوب جداً من تلاميذ المرحلة الابتدائية (عمر التلميذ: {student_age} سنوات).\n"
                 "أسلوبك لطيف للغاية، واضح، مشجع، مبسط وخالٍ تماماً من التعقيدات الأكاديمية.\n"
-                "قاعدة صارمة وإلزامية للقراءة الصوتية والفهم: اكتب حصرياً وبالكامل باللغة العربية الفصحى السلسة مع التشكيل والحركات التامة على كافة الكلمات لتسهيل القراءة والنطق الصوتي السليم."
+                f"{tashkeel_mandate}"
             )
             user_prompt = f"""
-قم بإعداد "بطاقة مراجعة مبسطة وممتعة" (Fiche Express) مشكولة بالحركات التامة تناسب تلميذاً عمره {student_age} سنوات لدرس من مادة: {subject}.
+قم بإعداد "بطاقة مراجعة مبسطة وممتعة" (Fiche Express) مشكولة بالحركات التامة والشاملة لكافة الكلمات تناسب تلميذاً عمره {student_age} سنوات لدرس من مادة: {subject}.
 محتوى الدرس:
 ---
 {excerpt}
 ---
 
-قم بتنسيق البطاقة بتنسيق Markdown الجميل مستخدماً العناوين والأيقونات التالية حصراً مع ضبط النص بالحركات والتشكيل:
+قم بتنسيق البطاقة بتنسيق Markdown الجميل مستخدماً العناوين والأيقونات التالية حصراً مع ضبط وتشكيل كل كلمة بالحركات التامة:
 
 ## 🎯 الكلمات والمفاهيم المهمة (التي يجب أن أعرفها)
-(قدم 3 إلى 4 مفاهيم بأسلوب مبسط جداً وأمثلة ممتعة تناسب طفلاً عمره {student_age} سنوات مضبوطة بالشكل التام)
+(قدم 3 إلى 4 مفاهيم بأسلوب مبسط جداً وأمثلة ممتعة تناسب طفلاً عمره {student_age} سنوات مضبوطة بالشكل التام بالحركات)
 
 ## 📌 القواعد الذهبية البسيطة
-(أهم نقطتين أو 3 نقاط بأسلوب ممتع ومباشر لتسهيل التذكر مع التشكيل)
+(أهم نقطتين أو 3 نقاط بأسلوب ممتع ومباشر لتسهيل التذكر مع التشكيل التام بالحركات)
 
 ## ⚠️ انتبه يا بطل ولا تقع في هذا الخطأ
-(خطأ شائع يقع فيه الأطفال يتم توضيحه بلطف وتشجيع)
+(خطأ شائع يقع فيه الأطفال يتم توضيحه بلطف وتشجيع مع التشكيل التام)
 
 ## 💡 سر التفوق والنجاح
-(نصيحة جميلة وتشجيع حار للطفل للتألق في القسم)
+(نصيحة جميلة وتشجيع حار للطفل للتألق في القسم مع التشكيل التام بالحركات)
 """
         elif stage == "high":
             sys_prompt = (
                 f"أنت أستاذ خبير ومتميز في المرحلة الثانوية التأهيلية لمواكبة تلميذ في سلك البكالوريا (عمره {student_age} سنة).\n"
                 "أسلوبك دقيق، أكاديمي، منهجي، يركز على الرقي المعرفي والاستعداد للامتحانات الإشهادية (الجهوي والوطني).\n"
-                "قاعدة صارمة: اكتب حصرياً وبالكامل باللغة العربية الفصحى الأكاديمية والمنهجية مع التشكيل والحركات لتسهيل القراءة والنطق الصوتي السليم."
+                f"{tashkeel_mandate}"
             )
             user_prompt = f"""
-قم بإعداد "بطاقة مراجعة مركزة" (Fiche Express) مضبوطة بالحركات لسلك البكالوريا (تلميذ عمره {student_age} سنة) لدرس من مادة: {subject}.
+قم بإعداد "بطاقة مراجعة مركزة" (Fiche Express) مضبوطة بالحركات التامة لكافة الكلمات لسلك البكالوريا (تلميذ عمره {student_age} سنة) لدرس من مادة: {subject}.
 محتوى الدرس:
 ---
 {excerpt}
 ---
 
-قم بتنسيق البطاقة بتنسيق Markdown الجميل مستخدماً العناوين والأيقونات التالية حصراً مع التشكيل:
+قم بتنسيق البطاقة بتنسيق Markdown الجميل مستخدماً العناوين والأيقونات التالية حصراً مع التشكيل التام والشامل لكافة الكلمات:
 
 ## 🎯 المفاهيم والمصطلحات المركزية والمحددات النظرية
-(3 إلى 5 تعريفات ومفاهيم دقيقة بمصطلحات المادة والمقرر التأهيلي)
+(3 إلى 5 تعريفات ومفاهيم دقيقة بمصطلحات المادة والمقرر التأهيلي مشكولة بالحركات التامة)
 
 ## 📌 القواعد والبرهنات والمنهجيات الأساسية
-(الصيغ الرياضية والعلمية أو الخطوات المنهجية المعتمدة في إطار الامتحان الوطني/الجهوي)
+(الصيغ الرياضية والعلمية أو الخطوات المنهجية المعتمدة في إطار الامتحان الوطني/الجهوي مشكولة بالحركات)
 
 ## ⚠️ فخاخ ومزالق الامتحانات الإشهادية (البكالوريا)
-(2 إلى 3 فخاخ نموذجية في أسئلة الامتحان وطرق تفاديها بالبرهان والدقة)
+(2 إلى 3 فخاخ نموذجية في أسئلة الامتحان وطرق تفاديها بالبرهان والدقة مع التشكيل التام)
 
 ## 💡 توجيهات منهجية لضمان الامتياز في التحرير
-(نصيحة لتحرير إجابة نموذجية تستوفي عناصر سلم التنقيط والتميز)
+(نصيحة لتحرير إجابة نموذجية تستوفي عناصر سلم التنقيط والتميز مع التشكيل التام بالحركات)
 """
         elif stage == "higher":
             sys_prompt = (
                 f"أنت موجه أكاديمي وأستاذ جامعي يواكب متعلماً راشداً أو طالباً في التعليم العالي (عمره {student_age} سنة).\n"
                 "أسلوبك رفيع، تحليلي، نقدي، يركز على الأسس النظرية والتطبيقات العملية والمهنية.\n"
-                "قاعدة صارمة: اكتب حصرياً باللغة العربية الفصحى الرصينة والمتقنة مع ضبط الكلمات بالحركات لتيسير القراءة السليمة."
+                f"{tashkeel_mandate}"
             )
             user_prompt = f"""
-قم بإعداد "بطاقة مراجعة وتلخيص تحليلي" (Fiche Express) لمتعلم في التعليم العالي/المستوى المتقدم (عمره {student_age} سنة) لموضوع: {subject}.
+قم بإعداد "بطاقة مراجعة وتلخيص تحليلي" (Fiche Express) مشكولة بالحركات التامة لكافة الكلمات لمتعلم في التعليم العالي/المستوى المتقدم (عمره {student_age} سنة) لموضوع: {subject}.
 محتوى المادة:
 ---
 {excerpt}
 ---
 
-قم بتنسيق البطاقة بتنسيق Markdown مستخدماً العناوين التالية حصراً:
+قم بتنسيق البطاقة بتنسيق Markdown مستخدماً العناوين التالية حصراً مع التشكيل التام بالحركات:
 
 ## 🎯 المفاهيم المحورية والأسس النظرية
-(3 إلى 5 مفاهيم مركزية محددة بدقة فلسفية وعلمية)
+(3 إلى 5 مفاهيم مركزية محددة بدقة فلسفية وعلمية مشكولة بالحركات التامة)
 
 ## 📌 النماذج والقواعد التحليلية والتطبيقية
-(المناهج، الصيغ أو الأطر التحليلية ذات الصلة)
+(المناهج، الصيغ أو الأطر التحليلية ذات الصلة مشكولة بالحركات التامة)
 
 ## ⚠️ الأخطاء التحليلية والمنهجية الشائعة
-(الانزلاقات المنهجية التي يجب الحذر منها في هذا التخصص)
+(الانزلاقات المنهجية التي يجب الحذر منها في هذا التخصص مشكولة بالحركات)
 
 ## 💡 رؤية نقدية وتوجيهات للتعمق والامتياز
-(توجيهات لتعميق الفهم وربطه بالسياقات المهنية أو الأكاديمية)
+(توجيهات لتعميق الفهم وربطه بالسياقات المهنية أو الأكاديمية مشكولة بالحركات التامة)
 """
         else:  # middle (défaut 11-14 ans)
             sys_prompt = (
                 f"أنت أستاذ مغربي متميز ومحبوب من تلاميذ المرحلة الإعدادية (عمر التلميذ: {student_age} سنة).\n"
                 "أسلوبك واضح، محفز، دقيق وخالٍ من التعقيد الأكاديمي.\n"
                 "أنت تكتب بطاقة مراجعة مركزة للامتحان الموحد (المحلي أو الجهوي).\n"
-                "قاعدة صارمة وإلزامية للقراءة الصوتية: اكتب حصرياً وبالكامل باللغة العربية الفصحى السلسة والمتقنة مع التشكيل والحركات التامة على كافة الكلمات لتسهيل القراءة والنطق الصوتي السليم."
+                f"{tashkeel_mandate}"
             )
             user_prompt = f"""
-قم بإعداد "بطاقة مراجعة سريعة" (Fiche Express) لدرس من مادة: {subject}.
+قم بإعداد "بطاقة مراجعة سريعة" (Fiche Express) مشكولة ومضبوطة بالشكل التام بالحركات (الفتحة، الضمة، الكسرة، السكون، الشدة، التنوين) على كافة الكلمات لدرس من مادة: {subject}.
 محتوى الدرس:
 ---
 {excerpt}
 ---
 
-قم بتنسيق البطاقة بتنسيق Markdown الجميل مستخدماً العناوين والأيقونات التالية حصراً:
+قم بتنسيق البطاقة بتنسيق Markdown الجميل مستخدماً العناوين والأيقونات التالية حصراً، مع تشكيل وضبط كل كلمة بالحركات التامة الشاملة:
 
 ## 🎯 المفاهيم والتعاريف الأساسية (التي تتكرر في الامتحان)
-(قدم 3 إلى 5 تعاريف أو مفاهيم لا بد منها بأسلوب مبسط ومباشر يفهمه تلميذ عمره {student_age} سنة)
+(قدم 3 إلى 5 تعاريف أو مفاهيم لا بد منها بأسلوب مبسط ومباشر يفهمه تلميذ عمره {student_age} سنة مشكولة ومضبوطة بالحركات التامة على كافة الحروف)
 
 ## 📌 القواعد الذهبية / التواريخ والعناصر المفتاحية
-(قدم الصيغ أو الخطوات المنهجية أو التواريخ الأساسية حسب المادة بنقاط واضحة)
+(قدم الصيغ أو الخطوات المنهجية أو التواريخ الأساسية حسب المادة بنقاط واضحة مشكولة بالحركات التامة)
 
 ## ⚠️ فخاخ الامتحان الموحد (أخطاء يقع فيها أغلب التلاميذ)
-(وضح 2 إلى 3 فخاخ نموذجية يضعها الأساتذة في الامتحانات المحلية والجهوية وكيفية تجنبها بذكاء)
+(وضح 2 إلى 3 فخاخ نموذجية يضعها الأساتذة في الامتحانات المحلية والجهوية وكيفية تجنبها بذكاء مع التشكيل التام)
 
 ## 💡 نصيحة التحرير لضمان النقطة الكاملة
-(نصيحة عملية لكتابة الإجابة بشكل يرضي المصحح)
+(نصيحة عملية لكتابة الإجابة بشكل يرضي المصحح مضبوطة بالحركات التامة)
 """
 
     elif language == "en":
@@ -626,7 +699,13 @@ Structure la fiche en Markdown clair et aéré en utilisant ces sections précis
 (Le conseil méthodologique ultime pour soigner sa copie et obtenir la note maximale)
 """
 
-    return call_llm(user_prompt, system_instruction=sys_prompt, temperature=0.3, user_id=user_id)
+    raw_sheet = call_llm(user_prompt, system_instruction=sys_prompt, temperature=0.3, user_id=user_id)
+    from services.voice_manager import detect_arabic_content
+    if language == "ar" or detect_arabic_content(raw_sheet):
+        if get_arabic_tashkeel_ratio(raw_sheet) < 0.45:
+            logger.info("Fiche express arabe insuffisamment vocalisée, application de la vocalisation automatique...")
+            raw_sheet = diacritize_arabic_text(raw_sheet, user_id=user_id)
+    return raw_sheet
 
 
 # ---------------------------------------------------------------------------
@@ -857,15 +936,16 @@ def generate_course_mindmap(
             "   - عناصر مشروحة بالتفصيل (- **العنصر الأساسي**: شرح مفصل وكافٍ لتعلم الخاصية وتطبيقها)\n"
             "2. منع التصنيفات العامة الجوفاء: يمنع منعاً باتاً وضع عناوين عامة فارغة مثل 'فخاخ الامتحانات' أو 'طريقة التطبيق' أو 'المفاهيم الأساسية' مجردة. يجب أن تكون جميع الفروع مبنية على مضامين ومفاهيم الدرس الحقيقية.\n"
             "3. محتوى غني وتوضيحي: كتابة القواعد والصيغ بدقة، مع خطوات التطبيق وأمثلة عددية واضحة.\n"
-            "4. أخرج فقط نص Markdown للخريطة الذهنية بدون أي مقدمات أو علامات كود زائدة."
+            "4. التشكيل والحركات التامة: يجب ضبط وتشكيل كافة العناوين والمفاهيم والقواعد باللغة العربية بالحركات التامة (الفتحة، الضمة، الكسرة، السكون، الشدة، التنوين) لتسهيل الفهم والنطق الصوتي السليم.\n"
+            "5. أخرج فقط نص Markdown للخريطة الذهنية بدون أي مقدمات أو علامات كود زائدة."
         )
         user_prompt = f"""
-قم بإنشاء خريطة ذهنية بيداغوجية تفاعلية ومفصلة بصيغة Markdown Markmap لدرس: {course_title} (مادة: {subject}).
+قم بإنشاء خريطة ذهنية بيداغوجية تفاعلية ومفصلة بصيغة Markdown Markmap مضبوطة بالحركات التامة لدرس: {course_title} (مادة: {subject}).
 محتوى الدرس أو ملخصه:
 ---
 {excerpt}
 ---
-نص Markdown للخريطة الذهنية التفاعلية:
+نص Markdown للخريطة الذهنية التفاعلية مشكولاً بالحركات التامة:
 """
     elif language == "en":
         sys_prompt = (
@@ -917,6 +997,11 @@ Texte Markdown de la carte mentale :
 """
 
     raw = call_llm(user_prompt, system_instruction=sys_prompt, temperature=0.2, user_id=user_id)
+    from services.voice_manager import detect_arabic_content
+    if language == "ar" or detect_arabic_content(raw):
+        if get_arabic_tashkeel_ratio(raw) < 0.40:
+            logger.info("Carte mentale arabe insuffisamment vocalisée, application de la vocalisation automatique...")
+            raw = diacritize_arabic_text(raw, user_id=user_id)
     return clean_interactive_mindmap_markdown(
         raw,
         default_title=course_title,
@@ -1112,6 +1197,21 @@ Renvoie UNIQUEMENT un tableau JSON valide contenant cette structure exacte :
                     data = data[k]
                     break
         if isinstance(data, list) and len(data) > 0:
+            from services.voice_manager import detect_arabic_content
+            if language == "ar" or any(detect_arabic_content(str(q.get("question", ""))) for q in data if isinstance(q, dict)):
+                for q in data:
+                    if isinstance(q, dict):
+                        if q.get("question") and get_arabic_tashkeel_ratio(q["question"]) < 0.35:
+                            q["question"] = diacritize_arabic_text(q["question"], user_id=user_id)
+                        if isinstance(q.get("options"), list):
+                            q["options"] = [
+                                diacritize_arabic_text(opt, user_id=user_id) if (isinstance(opt, str) and get_arabic_tashkeel_ratio(opt) < 0.35) else opt
+                                for opt in q["options"]
+                            ]
+                        if q.get("explanation") and get_arabic_tashkeel_ratio(q["explanation"]) < 0.35:
+                            q["explanation"] = diacritize_arabic_text(q["explanation"], user_id=user_id)
+                        if q.get("trap_alert") and get_arabic_tashkeel_ratio(q["trap_alert"]) < 0.35:
+                            q["trap_alert"] = diacritize_arabic_text(q["trap_alert"], user_id=user_id)
             return data
     except Exception as e:
         logger.error(f"Erreur parsing JSON du quiz: {e}")
@@ -1287,4 +1387,10 @@ Tes règles d'or pédagogiques :
     else:
         prompt = f"Historique de l'échange :\n{conv_history}\n\nRéponds maintenant à l'élève en tant que tuteur socratique :"
 
-    return call_llm(prompt, system_instruction=system_instruction, temperature=0.6, user_id=user_id)
+    ans = call_llm(prompt, system_instruction=system_instruction, temperature=0.6, user_id=user_id)
+    from services.voice_manager import detect_arabic_content
+    if language == "ar" or detect_arabic_content(ans):
+        if get_arabic_tashkeel_ratio(ans) < 0.40:
+            logger.info("Réponse de Sanad en arabe insuffisamment vocalisée, application de la vocalisation automatique...")
+            ans = diacritize_arabic_text(ans, user_id=user_id)
+    return ans

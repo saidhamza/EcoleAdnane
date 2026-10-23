@@ -191,9 +191,11 @@ try:
         clean_interactive_mindmap_markdown,
         clean_mermaid_mindmap,
         convert_mermaid_to_markdown,
+        diacritize_arabic_text,
         generate_course_mindmap,
         generate_quiz,
         generate_revision_sheet,
+        get_arabic_tashkeel_ratio,
         socratic_tutor_response,
     )
 except ImportError:
@@ -204,9 +206,11 @@ except ImportError:
         clean_interactive_mindmap_markdown,
         clean_mermaid_mindmap,
         convert_mermaid_to_markdown,
+        diacritize_arabic_text,
         generate_course_mindmap,
         generate_quiz,
         generate_revision_sheet,
+        get_arabic_tashkeel_ratio,
         socratic_tutor_response,
     )
 from services.auth_manager import (
@@ -2188,6 +2192,25 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
 
                 if is_ar:
                     st.markdown(f"<div class='rtl-box'>{fiche_md}</div>", unsafe_allow_html=True)
+                    if get_arabic_tashkeel_ratio(fiche_md) < 0.40:
+                        st.info("💡 بطاقة المراجعة غير مشكولة بالكامل بالحركات. يمكنك ضبطها بضغطة زر واحدة لتسهيل القراءة والنطق الصوتي السليم.")
+                        if st.button("🔤 ضبط وتشكيل النص بالحركات التامة", key=f"btn_vocalize_{current_course['id']}", type="secondary"):
+                            if not user_api_key:
+                                st.error("⚠️ Clé API Gemini requise.")
+                            else:
+                                with st.spinner("جاري ضبط وتشكيل النص بالحركات التامة..."):
+                                    vocalized = diacritize_arabic_text(fiche_md, user_id=active_user_id)
+                                    update_course_summary(current_course["id"], vocalized, user_id=active_user_id)
+                                    try:
+                                        generate_or_get_course_fiche_mp3(
+                                            course_id=current_course["id"],
+                                            text=vocalized,
+                                            language="ar",
+                                            user_id=active_user_id,
+                                        )
+                                    except Exception as e:
+                                        logger.warning(f"Régénération audio post-vocalisation échouée : {e}")
+                                    st.rerun()
                 else:
                     st.markdown(fiche_md)
 

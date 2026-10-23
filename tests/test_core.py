@@ -1411,6 +1411,28 @@ print("debug")
         self.assertFalse(detect_arabic_content("Chapter 1 : Introduction to Physics"))
         self.assertFalse(detect_arabic_content(""))
 
+    def test_get_arabic_tashkeel_ratio(self):
+        from services.ai_engine import get_arabic_tashkeel_ratio
+        unvocalized = "المغرب العربي بين التكامل والتحديات"
+        vocalized = "المَغْرِبُ العَرَبِيُّ بَيْنَ التَّكَامُلِ وَالتَّحَدِّيَاتِ"
+        self.assertLess(get_arabic_tashkeel_ratio(unvocalized), 0.10)
+        self.assertGreater(get_arabic_tashkeel_ratio(vocalized), 0.50)
+        self.assertEqual(get_arabic_tashkeel_ratio(""), 0.0)
+        self.assertEqual(get_arabic_tashkeel_ratio("Hello World"), 0.0)
+
+    def test_diacritize_arabic_text(self):
+        from services.ai_engine import diacritize_arabic_text
+        # 1. Non-arabic returns unchanged without LLM call
+        self.assertEqual(diacritize_arabic_text("Chapitre 3 : Les équilibres"), "Chapitre 3 : Les équilibres")
+        self.assertEqual(diacritize_arabic_text(""), "")
+        # 2. Already vocalized returns unchanged without LLM call
+        already_vocalized = "المَغْرِبُ العَرَبِيُّ بَيْنَ التَّكَامُلِ وَالتَّحَدِّيَاتِ"
+        self.assertEqual(diacritize_arabic_text(already_vocalized), already_vocalized)
+        # 3. Unvocalized calls call_llm
+        with patch("services.ai_engine.call_llm", return_value=already_vocalized):
+            res = diacritize_arabic_text("المغرب العربي بين التكامل والتحديات")
+            self.assertEqual(res, already_vocalized)
+
     def test_generate_or_get_course_fiche_mp3_caching(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             test_db = Path(tmp_dir) / "test_mp3.db"
