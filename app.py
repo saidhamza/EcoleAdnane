@@ -1129,10 +1129,10 @@ if not st.session_state.get("is_authenticated"):
         st.stop()
 
 
-def render_magnificent_trophy_grid(badges: List[Dict[str, Any]], cols_count: int = 2) -> None:
+def render_magnificent_trophy_grid(badges: List[Dict[str, Any]], cols_count: int = 2, is_ar: bool = False) -> None:
     """Affiche une grille de trophées avec un design somptueux, immersif et stimulant."""
     if not badges:
-        st.info("Aucun trophée à afficher dans cette catégorie.")
+        st.info("لا توجد شارات لعرضها في هذه الفئة." if is_ar else "Aucun trophée à afficher dans cette catégorie.")
         return
 
     cols = st.columns(cols_count)
@@ -1149,11 +1149,12 @@ def render_magnificent_trophy_grid(badges: List[Dict[str, Any]], cols_count: int
                 title_color = "#fef08a"
                 desc_color = "#e2e8f0"
                 glow_aura = "radial-gradient(circle, rgba(245, 158, 11, 0.3) 0%, transparent 70%)"
+                badge_tag_text = "✨ تم الفوز به" if is_ar else "✨ DÉBLOQUÉ"
                 badge_tag = (
-                    "<span style='background: linear-gradient(135deg, #10b981 0%, #059669 100%); "
-                    "color: #ffffff; padding: 4px 12px; border-radius: 20px; font-size: 0.75rem; "
-                    "font-weight: 800; letter-spacing: 0.5px; box-shadow: 0 2px 6px rgba(16, 185, 129, 0.4);'>"
-                    "✨ DÉBLOQUÉ</span>"
+                    f"<span style='background: linear-gradient(135deg, #10b981 0%, #059669 100%); "
+                    f"color: #ffffff; padding: 4px 12px; border-radius: 20px; font-size: 0.75rem; "
+                    f"font-weight: 800; letter-spacing: 0.5px; box-shadow: 0 2px 6px rgba(16, 185, 129, 0.4);'>"
+                    f"{badge_tag_text}</span>"
                 )
                 icon_filter = "drop-shadow(0 0 10px rgba(251, 191, 36, 0.65))"
                 pct = 100
@@ -1165,18 +1166,23 @@ def render_magnificent_trophy_grid(badges: List[Dict[str, Any]], cols_count: int
                 title_color = "#cbd5e1"
                 desc_color = "#94a3b8"
                 glow_aura = "none"
+                badge_tag_text = "🔒 قيد الإنجاز" if is_ar else "🔒 EN COURS"
                 badge_tag = (
-                    "<span style='background: rgba(51, 65, 85, 0.8); color: #94a3b8; padding: 4px 12px; "
-                    "border-radius: 20px; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.5px; "
-                    "border: 1px solid #475569;'>🔒 EN COURS</span>"
+                    f"<span style='background: rgba(51, 65, 85, 0.8); color: #94a3b8; padding: 4px 12px; "
+                    f"border-radius: 20px; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.5px; "
+                    f"border: 1px solid #475569;'>{badge_tag_text}</span>"
                 )
                 icon_filter = "grayscale(100%) opacity(0.38)"
                 pct = badge.get("progress_percent", 0)
                 prog_val = badge.get("progress_ratio", 0.0)
 
+            card_dir = "direction: rtl !important; text-align: right !important;" if is_ar else ""
+            mission_label = "🎯 <strong>المهمة :</strong>" if is_ar else "🎯 <strong>Mission :</strong>"
+            target_label = f"الهدف : <strong>{badge['current_value']} / {badge['target_value']} {badge['unit']}</strong>" if is_ar else f"Objectif : <strong>{badge['current_value']} / {badge['target_value']} {badge['unit']}</strong>"
+
             card_html = f"""
-            <div style="background: {bg_style}; border: 1.5px solid {border_color}; border-radius: 16px; padding: 18px 20px; margin-bottom: 14px; box-shadow: {shadow_style}; backdrop-filter: blur(12px); position: relative; overflow: hidden;">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+            <div style="background: {bg_style}; border: 1.5px solid {border_color}; border-radius: 16px; padding: 18px 20px; margin-bottom: 14px; box-shadow: {shadow_style}; backdrop-filter: blur(12px); position: relative; overflow: hidden; {card_dir}">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; {card_dir}">
                     <div style="width: 52px; height: 52px; display: flex; align-items: center; justify-content: center; background: {glow_aura}; border-radius: 50%;">
                         <span style="font-size: 2.2rem; filter: {icon_filter}; line-height: 1;">{badge['icon']}</span>
                     </div>
@@ -1186,13 +1192,13 @@ def render_magnificent_trophy_grid(badges: List[Dict[str, Any]], cols_count: int
                     {badge['title']}
                 </div>
                 <div style="display: inline-block; background: rgba(59, 130, 246, 0.15); color: #93c5fd; padding: 2px 8px; border-radius: 6px; font-size: 0.72rem; font-weight: 600; margin-bottom: 8px;">
-                    {badge.get('category', 'Trophée')}
+                    {badge.get('category', 'شارة' if is_ar else 'Trophée')}
                 </div>
                 <div style="font-size: 0.85rem; color: {desc_color}; line-height: 1.45; margin-bottom: 12px; min-height: 38px;">
-                    🎯 <strong>Mission :</strong> {badge['description']}
+                    {mission_label} {badge['description']}
                 </div>
-                <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.8rem; color: #94a3b8; margin-bottom: 6px;">
-                    <span>Objectif : <strong>{badge['current_value']} / {badge['target_value']} {badge['unit']}</strong></span>
+                <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.8rem; color: #94a3b8; margin-bottom: 6px; {card_dir}">
+                    <span>{target_label}</span>
                     <span style="font-weight: 700; color: {'#34d399' if is_unlocked else '#60a5fa'};">{pct}%</span>
                 </div>
             </div>
@@ -1201,7 +1207,8 @@ def render_magnificent_trophy_grid(badges: List[Dict[str, Any]], cols_count: int
             st.progress(prog_val)
             if is_unlocked and unlocked_at:
                 date_str = str(unlocked_at)[:16]
-                st.caption(f"🎖️ Décroché le {date_str} • *{badge['encouragement']}*")
+                cap_txt = f"🎖️ تم الإنجاز بتاريخ {date_str} • *{badge['encouragement']}*" if is_ar else f"🎖️ Décroché le {date_str} • *{badge['encouragement']}*"
+                st.caption(cap_txt)
             else:
                 st.caption(f"💡 *{badge['encouragement']}*")
             st.write("")
@@ -2099,6 +2106,132 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
         st.write("")
 
         if is_ar:
+            st.markdown(
+                """
+                <style>
+                /* Support RTL complet pour les onglets du cours */
+                div[data-testid="stTabs"] [data-baseweb="tab-list"],
+                .stTabs [data-baseweb="tab-list"] {
+                    direction: rtl !important;
+                    flex-direction: row !important;
+                    justify-content: flex-start !important;
+                    text-align: right !important;
+                }
+                div[data-testid="stTabs"] [data-baseweb="tab"],
+                .stTabs [data-baseweb="tab"] {
+                    direction: rtl !important;
+                    font-family: 'AdnaneSans', 'Noto Sans Arabic', 'Amiri', sans-serif !important;
+                    font-size: 1.05rem !important;
+                    text-align: right !important;
+                }
+                div[data-testid="stTabs"] [data-baseweb="tab"] p,
+                .stTabs [data-baseweb="tab"] p {
+                    direction: rtl !important;
+                    text-align: right !important;
+                    font-family: 'AdnaneSans', 'Noto Sans Arabic', 'Amiri', sans-serif !important;
+                }
+                div[data-testid="stTabs"] [data-baseweb="tab-panel"],
+                .stTabs [data-baseweb="tab-panel"] {
+                    direction: rtl !important;
+                    text-align: right !important;
+                }
+
+                /* Support RTL pour les boutons radio de quiz */
+                div[data-testid="stRadio"] {
+                    direction: rtl !important;
+                    text-align: right !important;
+                }
+                div[data-testid="stRadio"] > div[role="radiogroup"] {
+                    direction: rtl !important;
+                    text-align: right !important;
+                    display: flex !important;
+                    flex-direction: column !important;
+                    align-items: stretch !important;
+                }
+                div[data-testid="stRadio"] label {
+                    direction: rtl !important;
+                    text-align: right !important;
+                    display: flex !important;
+                    flex-direction: row !important;
+                    align-items: center !important;
+                    justify-content: flex-start !important;
+                    gap: 12px !important;
+                    padding: 8px 12px !important;
+                    border-radius: 8px !important;
+                    transition: background 0.2s ease !important;
+                }
+                div[data-testid="stRadio"] label:hover {
+                    background: rgba(255, 255, 255, 0.05) !important;
+                }
+                div[data-testid="stRadio"] label > div:first-child {
+                    margin-right: 0 !important;
+                    margin-left: 10px !important;
+                    flex-shrink: 0 !important;
+                }
+                div[data-testid="stRadio"] label [data-testid="stMarkdownContainer"] {
+                    direction: rtl !important;
+                    text-align: right !important;
+                    flex-grow: 1 !important;
+                }
+                div[data-testid="stRadio"] label [data-testid="stMarkdownContainer"] p {
+                    font-family: 'AdnaneNaskh', 'Noto Naskh Arabic', 'Amiri', serif !important;
+                    font-size: 1.2rem !important;
+                    line-height: 2 !important;
+                    direction: rtl !important;
+                    text-align: right !important;
+                    margin: 0 !important;
+                }
+
+                /* Blocs horizontaux et métriques RTL */
+                .stTabs div[data-testid="stHorizontalBlock"] {
+                    direction: rtl !important;
+                }
+                .stTabs div[data-testid="stMetric"] {
+                    direction: rtl !important;
+                    text-align: right !important;
+                }
+                .stTabs div[data-testid="stMetricLabel"] {
+                    text-align: right !important;
+                }
+                .stTabs div[data-testid="stMetricValue"] {
+                    text-align: right !important;
+                }
+
+                /* Alertes Streamlit RTL */
+                div[data-testid="stAlert"] {
+                    direction: rtl !important;
+                    text-align: right !important;
+                }
+                div[data-testid="stAlert"] [data-testid="stMarkdownContainer"] {
+                    direction: rtl !important;
+                    text-align: right !important;
+                }
+                div[data-testid="stAlert"] [data-testid="stMarkdownContainer"] p {
+                    direction: rtl !important;
+                    text-align: right !important;
+                    font-family: 'AdnaneNaskh', 'Noto Naskh Arabic', serif !important;
+                    font-size: 1.15rem !important;
+                    line-height: 2 !important;
+                }
+
+                /* Expanders RTL */
+                div[data-testid="stExpander"] details summary {
+                    direction: rtl !important;
+                    text-align: right !important;
+                    font-family: 'AdnaneSans', 'Noto Sans Arabic', sans-serif !important;
+                }
+                div[data-testid="stExpander"] details summary p {
+                    direction: rtl !important;
+                    text-align: right !important;
+                    font-family: 'AdnaneSans', 'Noto Sans Arabic', sans-serif !important;
+                    font-size: 1.05rem !important;
+                }
+                </style>
+                """,
+                unsafe_allow_html=True,
+            )
+
+        if is_ar:
             tab_doc, tab_fiche, tab_schema, tab_notions, tab_quiz, tab_tuteur, tab_trophies = st.tabs([
                 "📄 وثيقة الدرس",
                 "⚡ بطاقة المراجعة",
@@ -2435,13 +2568,20 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                 with st.container(border=True):
                     col_title, col_badge = st.columns([0.72, 0.28], vertical_alignment="center")
                     with col_title:
-                        st.markdown(f"**{idx + 1}. {c_title}**")
+                        if is_ar:
+                            st.markdown(f"<div class='rtl-box' style='font-size:1.15rem; font-weight:700;'>{idx + 1}. {c_title}</div>", unsafe_allow_html=True)
+                        else:
+                            st.markdown(f"**{idx + 1}. {c_title}**")
                         if c_ctx:
                             st.caption(c_ctx)
                     with col_badge:
-                        st.markdown(f"<div style='text-align: right; font-weight: 600;'>{badge_str}</div>", unsafe_allow_html=True)
+                        badge_align = "left" if is_ar else "right"
+                        st.markdown(f"<div style='text-align: {badge_align}; font-weight: 600;'>{badge_str}</div>", unsafe_allow_html=True)
                         if c_attempts > 0:
-                            st.caption(f"Score : {c_rate}% ({c_attempts} test{'s' if c_attempts > 1 else ''})")
+                            if is_ar:
+                                st.caption(f"النتيجة : {c_rate}% ({c_attempts} اختبار)")
+                            else:
+                                st.caption(f"Score : {c_rate}% ({c_attempts} test{'s' if c_attempts > 1 else ''})")
 
                     # Bouton d'action directe vers Sanad
                     col_act1, col_act2 = st.columns([0.5, 0.5])
@@ -2455,12 +2595,14 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                             else:
                                 prompt_text = f"Peux-tu m'expliquer clairement la notion '{c_title}' du cours {current_course['title']} et me donner un exemple concret avec une petite question d'entraînement ?"
                             st.session_state[f"sanad_quick_prompt_{current_course['id']}"] = prompt_text
-                            st.success("Question envoyée à Sanad ! Rendez-vous sur l'onglet 🤖 Tuteur Virtuel pour voir sa réponse." if not is_en else "Sent to Sanad! Switch to the 🤖 Tutor tab to see his guidance.")
+                            sanad_sent_msg = "تم إرسال السؤال إلى سند ! توجه إلى تبويب 🤖 الأستاذ سند لقراءة إرشاداته." if is_ar else ("Sent to Sanad! Switch to the 🤖 Tutor tab to see his guidance." if is_en else "Question envoyée à Sanad ! Rendez-vous sur l'onglet 🤖 Tuteur Virtuel pour voir sa réponse.")
+                            st.success(sanad_sent_msg)
 
                     with col_act2:
                         btn_quiz_link = "🎯 S'entraîner (Quiz)" if not is_ar else "🎯 تدرب على الأسئلة"
                         if st.button(btn_quiz_link if not is_en else "🎯 Practice Quiz", key=f"btn_quiz_concept_{idx}_{current_course['id']}", use_container_width=True):
-                            st.info("Rendez-vous sur l'onglet 📝 Entraînement Examen pour tester vos connaissances !" if not is_en else "Go to the 📝 Exam Quiz tab to practice!")
+                            quiz_hint_msg = "توجه إلى تبويب 📝 تدريب الامتحان لاختبار معلوماتك !" if is_ar else ("Go to the 📝 Exam Quiz tab to practice!" if is_en else "Rendez-vous sur l'onglet 📝 Entraînement Examen pour tester vos connaissances !")
+                            st.info(quiz_hint_msg)
 
             st.write("")
             refresh_label = "🔄 Actualiser le diagnostic d'assimilation" if not is_ar else ("🔄 تحديث تشخيص الاستيعاب" if is_ar else "🔄 Refresh Mastery Diagnostic")
@@ -2506,14 +2648,21 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
 
                 answers_chosen = {}
                 for idx, q in enumerate(questions):
-                    st.markdown(f"**Question {idx + 1} :** {q['question']}")
+                    if is_ar:
+                        st.markdown(
+                            f"<div class='rtl-box' style='font-size:1.22rem; font-weight:700; margin-top:16px; margin-bottom:8px;'>"
+                            f"السؤال {idx + 1} : {q['question']}</div>",
+                            unsafe_allow_html=True,
+                        )
+                    else:
+                        st.markdown(f"**Question {idx + 1} :** {q['question']}")
                     options = q.get("options", [])
                     ans_idx = q.get("answer_index", 0)
                     explanation = q.get("explanation", "")
                     trap_alert = q.get("trap_alert", "")
 
                     selected_opt = st.radio(
-                        f"Choix pour Q{idx+1}:",
+                        f"اختيار السؤال {idx+1}:" if is_ar else (f"Choice for Q{idx+1}:" if is_en else f"Choix pour Q{idx+1}:"),
                         options,
                         key=f"q_{quiz_id}_{idx}",
                         disabled=is_submitted,
@@ -2525,19 +2674,27 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                     if is_submitted:
                         user_ans = answers_chosen.get(idx)
                         if user_ans == ans_idx:
-                            st.success(f"✅ Excellente réponse ! ({options[ans_idx]})" if not is_en else f"✅ Excellent answer! ({options[ans_idx]})")
+                            if is_ar:
+                                st.success(f"✅ إجابة ممتازة وصحيحة ! ({options[ans_idx]})")
+                            else:
+                                st.success(f"✅ Excellente réponse ! ({options[ans_idx]})" if not is_en else f"✅ Excellent answer! ({options[ans_idx]})")
                         else:
-                            st.error(f"❌ La bonne réponse était : **{options[ans_idx]}**" if not is_en else f"❌ The correct answer was: **{options[ans_idx]}**")
+                            if is_ar:
+                                st.error(f"❌ الإجابة الصحيحة كانت : **{options[ans_idx]}**")
+                            else:
+                                st.error(f"❌ La bonne réponse était : **{options[ans_idx]}**" if not is_en else f"❌ The correct answer was: **{options[ans_idx]}**")
 
                         if explanation:
-                            expl_title = "💡 شرح :" if is_ar else ("💡 Explanation:" if is_en else "💡 Explication :")
-                            st.markdown(f"<div class='explanation-card'><strong>{expl_title}</strong> {explanation}</div>", unsafe_allow_html=True)
+                            card_cls = "explanation-card-rtl" if is_ar else "explanation-card"
+                            expl_title = "💡 شرح وتوضيح :" if is_ar else ("💡 Explanation:" if is_en else "💡 Explication :")
+                            st.markdown(f"<div class='{card_cls}'><strong>{expl_title}</strong> {explanation}</div>", unsafe_allow_html=True)
                         if trap_alert:
-                            trap_title = "⚠️ فخ شائع :" if is_ar else ("⚠️ Common Exam Trap:" if is_en else "⚠️ Piège classique :")
-                            st.markdown(f"<div class='trap-card'><strong>{trap_title}</strong> {trap_alert}</div>", unsafe_allow_html=True)
+                            trap_cls = "trap-card-rtl" if is_ar else "trap-card"
+                            trap_title = "⚠️ فخ شائع في الامتحانات :" if is_ar else ("⚠️ Common Exam Trap:" if is_en else "⚠️ Piège classique :")
+                            st.markdown(f"<div class='{trap_cls}'><strong>{trap_title}</strong> {trap_alert}</div>", unsafe_allow_html=True)
 
                 if not is_submitted:
-                    submit_label = "🏆 Valider mes réponses" if not is_en else "🏆 Submit My Answers"
+                    submit_label = "🏆 تأكيد إجاباتي وحساب النتيجة" if is_ar else ("🏆 Submit My Answers" if is_en else "🏆 Valider mes réponses")
                     if st.button(submit_label, type="primary"):
                         score = sum(1 for idx, q in enumerate(questions) if answers_chosen.get(idx) == q.get("answer_index", 0))
                         save_quiz_attempt(
@@ -2576,26 +2733,46 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                             height=0,
                         )
                         for nb in c_badges:
-                            st.toast(f"🎉 Nouveau trophée débloqué sur {c_title} : {nb['icon']} {nb['title']} !", icon="🏆")
+                            cel_toast = f"🎉 تم فتح شارة جديدة في {c_title} : {nb['icon']} {nb['title']} !" if is_ar else f"🎉 Nouveau trophée débloqué sur {c_title} : {nb['icon']} {nb['title']} !"
+                            st.toast(cel_toast, icon="🏆")
 
                         badges_str = " &bull; ".join([f"{b['icon']} <strong>{b['title']}</strong>" for b in c_badges])
-                        st.markdown(
-                            f"""
-                            <div style="background: linear-gradient(135deg, rgba(245, 158, 11, 0.22) 0%, rgba(180, 83, 9, 0.18) 100%); border: 1.5px solid #f59e0b; border-radius: 12px; padding: 14px 18px; margin-bottom: 16px; box-shadow: 0 4px 15px rgba(245, 158, 11, 0.25);">
-                                <div style="font-size: 1.05rem; font-weight: 800; color: #fbbf24;">
-                                    🏆 Félicitations ! Nouveau(x) trophée(s) conquis :
+                        if is_ar:
+                            st.markdown(
+                                f"""
+                                <div class="rtl-box" style="background: linear-gradient(135deg, rgba(245, 158, 11, 0.22) 0%, rgba(180, 83, 9, 0.18) 100%); border: 1.5px solid #f59e0b; border-radius: 12px; padding: 14px 18px; margin-bottom: 16px; box-shadow: 0 4px 15px rgba(245, 158, 11, 0.25);">
+                                    <div style="font-size: 1.15rem; font-weight: 800; color: #fbbf24; text-align: right; direction: rtl;">
+                                        🏆 هنيئاً لك ! تم فتح شارات وكؤوس جديدة :
+                                    </div>
+                                    <div style="margin-top: 6px; color: #fef08a; font-size: 1.05rem; text-align: right; direction: rtl;">
+                                        {badges_str}
+                                    </div>
                                 </div>
-                                <div style="margin-top: 4px; color: #fef08a; font-size: 0.95rem;">
-                                    {badges_str}
+                                """,
+                                unsafe_allow_html=True,
+                            )
+                        else:
+                            st.markdown(
+                                f"""
+                                <div style="background: linear-gradient(135deg, rgba(245, 158, 11, 0.22) 0%, rgba(180, 83, 9, 0.18) 100%); border: 1.5px solid #f59e0b; border-radius: 12px; padding: 14px 18px; margin-bottom: 16px; box-shadow: 0 4px 15px rgba(245, 158, 11, 0.25);">
+                                    <div style="font-size: 1.05rem; font-weight: 800; color: #fbbf24;">
+                                        🏆 Félicitations ! Nouveau(x) trophée(s) conquis :
+                                    </div>
+                                    <div style="margin-top: 4px; color: #fef08a; font-size: 0.95rem;">
+                                        {badges_str}
+                                    </div>
                                 </div>
-                            </div>
-                            """,
-                            unsafe_allow_html=True,
-                        )
+                                """,
+                                unsafe_allow_html=True,
+                            )
 
                     score = sum(1 for idx, q in enumerate(questions) if answers_chosen.get(idx) == q.get("answer_index", 0))
-                    score_txt = f"### Score obtenu : **{score} / {len(questions)}**" if not is_en else f"### Score: **{score} / {len(questions)}**"
-                    st.markdown(score_txt)
+                    if is_ar:
+                        score_txt = f"<div class='rtl-box' style='font-size:1.35rem; font-weight:800; margin-top:12px; margin-bottom:12px;'>النتيجة المحصلة : <strong>{score} / {len(questions)}</strong></div>"
+                        st.markdown(score_txt, unsafe_allow_html=True)
+                    else:
+                        score_txt = f"### Score obtenu : **{score} / {len(questions)}**" if not is_en else f"### Score: **{score} / {len(questions)}**"
+                        st.markdown(score_txt)
                     if score >= len(questions) * 0.8 and not celebration:
                         st.balloons()
 
@@ -2873,11 +3050,12 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                     else f"Vous avez conquis <strong>{c_unlocked} sur {c_total}</strong> trophées sur cette leçon ({c_rate}%)."
                 )
             )
+            banner_dir = "direction: rtl !important;" if is_ar else ""
             st.markdown(
                 f"""
-                <div style="background: linear-gradient(135deg, rgba(30, 41, 59, 0.95) 0%, rgba(15, 23, 42, 0.98) 100%); border: 1.5px solid #f59e0b; border-radius: 14px; padding: 16px 20px; margin-bottom: 20px; box-shadow: 0 4px 14px rgba(245, 158, 11, 0.2);">
-                    <div style="display: flex; justify-content: space-between; align-items: center;">
-                        <div>
+                <div style="background: linear-gradient(135deg, rgba(30, 41, 59, 0.95) 0%, rgba(15, 23, 42, 0.98) 100%); border: 1.5px solid #f59e0b; border-radius: 14px; padding: 16px 20px; margin-bottom: 20px; box-shadow: 0 4px 14px rgba(245, 158, 11, 0.2); {banner_dir}">
+                    <div style="display: flex; justify-content: space-between; align-items: center; {banner_dir}">
+                        <div style="text-align: {'right' if is_ar else 'left'};">
                             <span style="font-size: 1.15rem; font-weight: 800; color: #fef08a;">{banner_title}</span>
                             <div style="color: #cbd5e1; font-size: 0.85rem; margin-top: 4px;">{banner_sub}</div>
                         </div>
@@ -2892,7 +3070,7 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
             st.progress(c_rate / 100.0)
 
             st.write("")
-            render_magnificent_trophy_grid(c_overview.get("badges", []), cols_count=2)
+            render_magnificent_trophy_grid(c_overview.get("badges", []), cols_count=2, is_ar=is_ar)
 
     # -----------------------------------------------------------------------
     # GESTION & AJOUT DES COURS (ADMINISTRATEUR)
