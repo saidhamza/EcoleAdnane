@@ -2121,7 +2121,9 @@ def get_quiz_stats(user_id: Optional[int] = None) -> Dict[str, Any]:
         global_row = dict(cur.fetchone() or {})
         total_questions = global_row.get("total_questions", 0)
         total_score = global_row.get("total_score", 0)
+        total_errors = max(0, total_questions - total_score)
         avg_rate = (total_score / total_questions * 100) if total_questions > 0 else 0.0
+        failure_rate = round(100.0 - avg_rate, 1) if total_questions > 0 else 0.0
 
         # 2. Stats par matière
         subj_query = """
@@ -2145,6 +2147,8 @@ def get_quiz_stats(user_id: Optional[int] = None) -> Dict[str, Any]:
             sq = d.get("subject_questions", 0)
             ss = d.get("subject_score", 0)
             d["success_rate"] = round((ss / sq * 100), 1) if sq > 0 else 0.0
+            d["errors_count"] = max(0, sq - ss)
+            d["failure_rate"] = round(100.0 - d["success_rate"], 1) if sq > 0 else 0.0
             by_subject.append(d)
 
         # 3. Dernières tentatives
@@ -2171,7 +2175,9 @@ def get_quiz_stats(user_id: Optional[int] = None) -> Dict[str, Any]:
             "total_attempts": global_row.get("total_attempts", 0),
             "total_score": total_score,
             "total_questions": total_questions,
+            "total_errors": total_errors,
             "average_success_rate": round(avg_rate, 1),
+            "failure_rate": failure_rate,
             "by_subject": by_subject,
             "recent_attempts": recent_attempts,
         }
@@ -2636,10 +2642,11 @@ def evaluate_and_sync_concept_mastery(user_id: int, course_id: int) -> List[Dict
     for concept in concepts:
         concept_words = [w.lower() for w in re.findall(r"\w+", concept) if len(w) > 3]
 
-        # Si cette notion a déjà été validée par Sanad ou marquée comme 'mastered' avec mention Sanad,
-        # on la préserve à 100% comme point acquis en faveur de l'élève !
+        # Si cette notion a déjà été validée par Sanad ou marquée comme 'mastered' avec mention Sanad :
+        # - Si aucun quiz n'a encore été tenté (total_attempts == 0), on la préserve à 100% comme point acquis.
+        # - Si des quiz ont été passés, la réalité des tests prévaut : les réussites ET les échecs sont pris en compte !
         existing_entry = existing_mastery_map.get(concept)
-        if existing_entry and existing_entry.get("status") == "mastered":
+        if total_attempts == 0 and existing_entry and existing_entry.get("status") == "mastered":
             ctx_str = existing_entry.get("last_context") or ""
             if "sanad" in ctx_str.lower() or "سند" in ctx_str:
                 results.append(existing_entry)
@@ -2647,6 +2654,8 @@ def evaluate_and_sync_concept_mastery(user_id: int, course_id: int) -> List[Dict
 
         concept_attempts = 0
         concept_scores = []
+        total_errors = sum(a.get("total_questions", 0) - a.get("score", 0) for a in attempts)
+        total_questions_course = sum(a.get("total_questions", 0) for a in attempts)
 
         if total_attempts > 0:
             for a in attempts:
@@ -2660,17 +2669,28 @@ def evaluate_and_sync_concept_mastery(user_id: int, course_id: int) -> List[Dict
             concept_rate = round(sum(concept_scores) / len(concept_scores), 1) if concept_scores else overall_rate
             if concept_rate >= 75.0:
                 status = "mastered"
+                if course_lang == "ar":
+                    context = f"تم الاستيعاب بنجاح (المعدل: {concept_rate}% عبر {concept_attempts} اختبار)"
+                elif course_lang == "en":
+                    context = f"Mastered successfully ({concept_rate}% average across {concept_attempts} quiz attempt(s))"
+                else:
+                    context = f"Maîtrisé avec succès ({concept_rate}% de réussite sur {concept_attempts} entraînement(s))"
             elif concept_rate >= 50.0:
                 status = "in_progress"
+                if course_lang == "ar":
+                    context = f"قيد التثبيت : تم تسجيل {total_errors} خطأ (نسبة النجاح: {concept_rate}%)"
+                elif course_lang == "en":
+                    context = f"In consolidation: {total_errors} error(s) logged (Success rate: {concept_rate}%)"
+                else:
+                    context = f"En consolidation : {total_errors} erreur(s) à combler (Taux de réussite : {concept_rate}%)"
             else:
                 status = "to_review"
-
-            if course_lang == "ar":
-                context = f"تم التقييم بناءً على {concept_attempts} اختبار(ات) (المعدل: {concept_rate}%)"
-            elif course_lang == "en":
-                context = f"Assessed across {concept_attempts} quiz attempt(s) (Average: {concept_rate}%)"
-            else:
-                context = f"Évalué sur {concept_attempts} entraînement(s) (Moyenne : {concept_rate}%)"
+                if course_lang == "ar":
+                    context = f"بحاجة لمراجعة دقيقة : تم تسجيل {total_errors} خطأ من أصل {total_questions_course} سؤال (نسبة النجاح: {concept_rate}%)"
+                elif course_lang == "en":
+                    context = f"Needs review: {total_errors} failure(s) out of {total_questions_course} questions (Success rate: {concept_rate}%)"
+                else:
+                    context = f"À réviser d'urgence : {total_errors} échec(s) sur {total_questions_course} questions (Taux de réussite : {concept_rate}%)"
         else:
             concept_rate = 0.0
             if in_chat:
@@ -2873,27 +2893,74 @@ BADGE_CATALOG: List[Dict[str, Any]] = COURSE_BADGE_CATALOG + GLOBAL_BADGE_CATALO
 BADGE_CATALOG_MAP: Dict[str, Dict[str, Any]] = {b["key"]: b for b in BADGE_CATALOG}
 ALL_BADGES_MAP = BADGE_CATALOG_MAP
 
-# Paliers de médailles de progression (nombre de trophées débloqués), du plus haut au plus bas.
+# Paliers de médailles de progression (nombre de trophées débloqués et taux de réussite minimum requis).
 RANK_TIERS: List[Dict[str, Any]] = [
-    {"min_badges": 25, "emoji": "💎", "label": "Diamant"},
-    {"min_badges": 12, "emoji": "🥇", "label": "Or"},
-    {"min_badges": 5, "emoji": "🥈", "label": "Argent"},
-    {"min_badges": 1, "emoji": "🥉", "label": "Bronze"},
-    {"min_badges": 0, "emoji": "🌱", "label": "Débutant"},
+    {"min_badges": 25, "min_rate": 80.0, "emoji": "💎", "label": "Diamant"},
+    {"min_badges": 12, "min_rate": 70.0, "emoji": "🥇", "label": "Or"},
+    {"min_badges": 5, "min_rate": 55.0, "emoji": "🥈", "label": "Argent"},
+    {"min_badges": 1, "min_rate": 30.0, "emoji": "🥉", "label": "Bronze"},
+    {"min_badges": 0, "min_rate": 0.0, "emoji": "🌱", "label": "Débutant"},
 ]
 
 
-def rank_from_badge_count(count: int) -> Dict[str, Any]:
-    """Retourne le palier de médaille correspondant à un nombre de trophées."""
+def rank_from_badge_count(count: int, success_rate: Optional[float] = None) -> Dict[str, Any]:
+    """
+    Retourne le palier de médaille correspondant à un nombre de trophées.
+    Prend en compte équitablement les échecs de l'élève :
+    Si un taux de réussite (success_rate) est fourni, l'élève ne peut débloquer
+    une médaille supérieure que si son taux de réussite respecte le seuil minimal du palier
+    (ex: au moins 55% de réussite pour l'Argent, 70% pour l'Or, 80% pour Diamant).
+    Si le taux d'échec est trop élevé, la médaille est rétrogradée au palier mérité.
+    """
+    raw_tier = None
     for tier in RANK_TIERS:
         if count >= tier["min_badges"]:
-            return {"emoji": tier["emoji"], "label": tier["label"], "badge_count": count}
-    return {"emoji": "🌱", "label": "Débutant", "badge_count": count}
+            raw_tier = tier
+            break
+    if not raw_tier:
+        raw_tier = RANK_TIERS[-1]
+
+    # Si aucun success_rate n'est fourni, retourner le palier brut (rétro-compatibilité)
+    if success_rate is None:
+        return {
+            "emoji": raw_tier["emoji"],
+            "label": raw_tier["label"],
+            "badge_count": count,
+            "adjusted_for_failures": False,
+        }
+
+    # Prise en compte équitable des échecs : trouver le palier respectant à la fois le quota de badges ET le taux de réussite
+    effective_tier = None
+    for tier in RANK_TIERS:
+        if count >= tier["min_badges"] and success_rate >= tier["min_rate"]:
+            effective_tier = tier
+            break
+    if not effective_tier:
+        effective_tier = RANK_TIERS[-1]
+
+    is_adjusted = (effective_tier["label"] != raw_tier["label"])
+    reason = None
+    if is_adjusted:
+        failure_rate = round(100.0 - success_rate, 1)
+        reason = f"En consolidation : {failure_rate}% d'échec aux quiz (nécessite {raw_tier['min_rate']}% de réussite pour {raw_tier['label']})"
+
+    return {
+        "emoji": effective_tier["emoji"],
+        "label": effective_tier["label"],
+        "badge_count": count,
+        "success_rate": success_rate,
+        "adjusted_for_failures": is_adjusted,
+        "adjustment_reason": reason,
+        "target_label": raw_tier["label"] if is_adjusted else None,
+    }
 
 
 def get_student_ranks(user_ids: List[int]) -> Dict[int, Dict[str, Any]]:
-    """Calcule en une seule requête (lecture seule) la médaille de chaque élève."""
+    """Calcule en requête groupée la médaille de chaque élève en tenant compte de ses réussites et échecs."""
     counts: Dict[int, int] = {int(u): 0 for u in user_ids}
+    stats_map: Dict[int, Dict[str, Any]] = {
+        int(u): {"total_score": 0, "total_questions": 0} for u in user_ids
+    }
     if counts:
         conn = get_connection()
         try:
@@ -2905,13 +2972,41 @@ def get_student_ranks(user_ids: List[int]) -> Dict[int, Dict[str, Any]]:
             )
             for r in cur.fetchall():
                 counts[int(r["user_id"])] = int(r["cnt"])
+
+            cur.execute(
+                f"""
+                SELECT user_id, COALESCE(SUM(score), 0) AS total_score, COALESCE(SUM(total_questions), 0) AS total_questions
+                FROM quiz_attempts
+                WHERE user_id IN ({placeholders})
+                GROUP BY user_id
+                """,
+                list(counts.keys()),
+            )
+            for r in cur.fetchall():
+                stats_map[int(r["user_id"])] = {
+                    "total_score": int(r["total_score"]),
+                    "total_questions": int(r["total_questions"]),
+                }
         finally:
             conn.close()
-    return {uid: rank_from_badge_count(c) for uid, c in counts.items()}
+
+    result = {}
+    for uid, c in counts.items():
+        st = stats_map[uid]
+        tq = st["total_questions"]
+        ts = st["total_score"]
+        rate = round((ts / tq * 100), 1) if tq > 0 else None
+        res = rank_from_badge_count(c, success_rate=rate)
+        res["total_questions"] = tq
+        res["total_score"] = ts
+        res["total_errors"] = max(0, tq - ts) if tq > 0 else 0
+        res["failure_rate"] = round(100.0 - rate, 1) if rate is not None else 0.0
+        result[uid] = res
+    return result
 
 
 def get_student_rank(user_id: int) -> Dict[str, Any]:
-    """Retourne la médaille de progression d'un élève (🌱 🥉 🥈 🥇 💎)."""
+    """Retourne la médaille de progression d'un élève (🌱 🥉 🥈 🥇 💎) en tenant compte de ses échecs."""
     return get_student_ranks([user_id])[int(user_id)]
 
 

@@ -855,7 +855,10 @@ def render_student_progress_details(
         with head_col1:
             _hdr_rank = get_student_rank(student_id)
             st.markdown(f"### 📊 Progression de l'Élève : {_hdr_rank['emoji']} **{student_name}**")
-            st.caption(f"Rang {_hdr_rank['label']} {_hdr_rank['emoji']} • {_hdr_rank['badge_count']} trophée(s) débloqué(s)")
+            rank_desc = f"Rang {_hdr_rank['label']} {_hdr_rank['emoji']} • {_hdr_rank['badge_count']} trophée(s) débloqué(s)"
+            if _hdr_rank.get("adjusted_for_failures"):
+                rank_desc += f" • ⚠️ *{_hdr_rank.get('adjustment_reason')}*"
+            st.caption(rank_desc)
             status_text = "🔴 Compte Suspendu" if is_blocked else "🟢 Compte Actif"
             level_name = student_cycle.get("level") or student_cycle["stage_label"]
             meta_info = f"📧 `{student_email}` | 🎯 Niveau : **{level_name}** ({student_age} ans - {student_cycle['stage_label']}) | {status_text}"
@@ -879,8 +882,8 @@ def render_student_progress_details(
 
         st.divider()
 
-        # Cartes métriques
-        m1, m2, m3, m4 = st.columns(4)
+        # Cartes métriques équitables (réussites & échecs)
+        m1, m2, m3, m4, m5 = st.columns(5)
         with m1:
             st.metric("Total Quiz passés", stats.get("total_attempts", 0))
         with m2:
@@ -888,7 +891,11 @@ def render_student_progress_details(
         with m3:
             st.metric("Bonnes réponses", stats.get("total_score", 0))
         with m4:
-            st.metric("Moyenne générale", f"{stats.get('average_success_rate', 0.0)}%")
+            st.metric("❌ Erreurs commises", stats.get("total_errors", 0), help="Total des questions manquées nécessitant une consolidation")
+        with m5:
+            avg_rate = stats.get('average_success_rate', 0.0)
+            fail_rate = stats.get('failure_rate', 0.0)
+            st.metric("Moyenne générale", f"{avg_rate}%", delta=f"-{fail_rate}% échecs" if fail_rate > 0 else "0% échec", delta_color="inverse")
 
         st.divider()
 
@@ -2609,6 +2616,13 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                 (f"**التقدم العام :** {mastered_count} من أصل {total_concepts} مفهوم مستوعب ({m_pct}%)" if is_ar else f"**Overall Progress:** {mastered_count} of {total_concepts} concepts mastered ({m_pct}%)")
             )
             st.caption(progress_caption)
+            if to_rev_count > 0:
+                if is_ar:
+                    st.warning(f"⚠️ تم تسجيل أخطاء في {to_rev_count} مفهوم(مفاهيم) في الاختبارات. راجعها مع الأستاذ سند لتدارك الصعوبات واستيعابها بنجاح !")
+                elif is_en:
+                    st.warning(f"⚠️ {to_rev_count} concept(s) have logged quiz errors. Review them with Sanad to reinforce your mastery!")
+                else:
+                    st.warning(f"⚠️ {to_rev_count} notion(s) ont enregistré des erreurs lors des quiz. Révisez-les avec Sanad pour combler vos lacunes !")
             st.write("---")
 
             status_labels = {
@@ -3288,15 +3302,19 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
 
         stats = get_quiz_stats(user_id=active_user_id)
 
-        m1, m2, m3, m4 = st.columns(4)
+        m1, m2, m3, m4, m5 = st.columns(5)
         with m1:
-            st.metric("Total Quiz passés", stats["total_attempts"])
+            st.metric("Total Quiz passés", stats.get("total_attempts", 0))
         with m2:
-            st.metric("Questions répondues", stats["total_questions"])
+            st.metric("Questions répondues", stats.get("total_questions", 0))
         with m3:
-            st.metric("Bonnes réponses", stats["total_score"])
+            st.metric("Bonnes réponses", stats.get("total_score", 0))
         with m4:
-            st.metric("Moyenne générale", f"{stats['average_success_rate']}%")
+            st.metric("❌ Erreurs à corriger", stats.get("total_errors", 0), help="Nombre de questions où tu t'es trompé pour t'aider à progresser")
+        with m5:
+            avg_rate = stats.get('average_success_rate', 0.0)
+            fail_rate = stats.get('failure_rate', 0.0)
+            st.metric("Moyenne générale", f"{avg_rate}%", delta=f"-{fail_rate}% échecs" if fail_rate > 0 else "0% échec", delta_color="inverse")
 
         st.divider()
 

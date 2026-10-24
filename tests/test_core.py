@@ -2884,12 +2884,55 @@ class TestStudentRankMedal(unittest.TestCase):
         self.assertEqual(rank_from_badge_count(12)["emoji"], "🥇")
         self.assertEqual(rank_from_badge_count(40)["emoji"], "💎")
 
+    def test_rank_adjusted_for_failures(self):
+        from models.database import rank_from_badge_count
+        # 5 badges avec 80% de réussite -> 🥈 Argent mérité
+        res_ok = rank_from_badge_count(5, success_rate=80.0)
+        self.assertEqual(res_ok["emoji"], "🥈")
+        self.assertFalse(res_ok["adjusted_for_failures"])
+
+        # 5 badges mais 40% de réussite (60% d'échec) -> Rétrogradé à 🥉 Bronze (< 55% requis pour Argent)
+        res_fail = rank_from_badge_count(5, success_rate=40.0)
+        self.assertEqual(res_fail["emoji"], "🥉")
+        self.assertTrue(res_fail["adjusted_for_failures"])
+        self.assertIn("En consolidation", res_fail["adjustment_reason"])
+        self.assertEqual(res_fail["target_label"], "Argent")
+
+        # 12 badges mais 20% de réussite -> Rétrogradé à 🌱 Débutant (car < 30% de réussite requis pour Bronze)
+        res_poor = rank_from_badge_count(12, success_rate=20.0)
+        self.assertEqual(res_poor["emoji"], "🌱")
+        self.assertTrue(res_poor["adjusted_for_failures"])
+
     def test_get_student_ranks_unknown_user(self):
         from models.database import get_student_ranks
         with tempfile.TemporaryDirectory() as td:
             with patch("models.database.get_db_path", return_value=Path(td) / "rank.db"):
                 init_db()
                 self.assertEqual(get_student_ranks([987654321])[987654321]["emoji"], "🌱")
+
+    def test_get_student_ranks_with_quiz_failures(self):
+        from models.database import get_student_ranks, award_badge, save_course, save_quiz, save_quiz_attempt, create_or_get_google_user
+        with tempfile.TemporaryDirectory() as td:
+            with patch("models.database.get_db_path", return_value=Path(td) / "rank_fail.db"):
+                init_db()
+                u = create_or_get_google_user("fail_test@test.ma", "Eleve Echec", role="student")
+                uid = u["id"]
+                # Créer cours et quiz
+                cid = save_course("Cours Test", "Math", "fr", "f.pdf", "hash1", "f.pdf", "raw", "summary", ["Notion"], user_id=uid)
+                qid = save_quiz(cid, [{"question": "Q1", "options": ["A", "B"], "answer_index": 0}], user_id=uid)
+                # Attribuer 5 badges
+                for i in range(5):
+                    award_badge(uid, f"badge_{i}")
+                # Enregistrer une tentative avec échec (1/10 = 10% de réussite, 9 erreurs)
+                save_quiz_attempt(cid, qid, score=1, total_questions=10, answers={0: 0}, user_id=uid)
+
+                rank_info = get_student_ranks([uid])[uid]
+                self.assertEqual(rank_info["total_errors"], 9)
+                self.assertEqual(rank_info["failure_rate"], 90.0)
+                self.assertEqual(rank_info["success_rate"], 10.0)
+                # Le rang doit être rétrogradé en raison du taux d'échec de 90%
+                self.assertTrue(rank_info["adjusted_for_failures"])
+                self.assertEqual(rank_info["emoji"], "🌱")
 
 
 class TestQuizAntiCheatAndSanadValidation(unittest.TestCase):
@@ -2993,6 +3036,30 @@ class TestQuizAntiCheatAndSanadValidation(unittest.TestCase):
         self.assertEqual(c1_updated["status"], "mastered")
         self.assertIn("Sanad", c1_updated["last_context"])
         self.assertEqual(c1_updated["success_rate"], 100.0)
+
+    def test_concept_mastered_by_sanad_downgraded_upon_subsequent_quiz_failures(self):
+        from models.database import (
+            mark_concept_mastered_by_sanad,
+            evaluate_and_sync_concept_mastery,
+            save_quiz,
+            save_quiz_attempt,
+        )
+        # 1. Sanad valide la notion
+        mark_concept_mastered_by_sanad(self.user_id, self.course_id, "Théorème direct de Pythagore")
+        res_sanad = evaluate_and_sync_concept_mastery(self.user_id, self.course_id)
+        c_sanad = next(c for c in res_sanad if c["concept_title"] == "Théorème direct de Pythagore")
+        self.assertEqual(c_sanad["status"], "mastered")
+
+        # 2. L'élève tente ensuite un quiz et échoue lourdement (1/5 = 20% de réussite, 4 erreurs)
+        qid = save_quiz(self.course_id, [{"question": "Q1", "options": ["A", "B"], "answer_index": 0}], user_id=self.user_id)
+        save_quiz_attempt(self.course_id, qid, score=1, total_questions=5, answers={0: 0}, user_id=self.user_id)
+
+        # 3. La synchronisation prend équitablement en compte l'échec et rétrograde la notion à 'to_review'
+        res_after = evaluate_and_sync_concept_mastery(self.user_id, self.course_id)
+        c_after = next(c for c in res_after if c["concept_title"] == "Théorème direct de Pythagore")
+        self.assertEqual(c_after["status"], "to_review")
+        self.assertEqual(c_after["success_rate"], 20.0)
+        self.assertIn("échec", c_after["last_context"].lower())
 
 
 if __name__ == "__main__":
