@@ -713,7 +713,7 @@ def generate_tts_player_html(
     if not cleaned:
         return ""
 
-    use_server = force_server_tts if force_server_tts is not None else is_linux_platform()
+    use_server = force_server_tts if force_server_tts is not None else True
 
     if use_server:
         data_uri = get_server_tts_audio_base64(cleaned, language=language)
@@ -745,13 +745,14 @@ def generate_fiche_audio_player_html(
     player_id: str = "fiche_audio_player",
     rate: float = 1.0,
     audio_data_uri: Optional[str] = None,
+    force_server_tts: Optional[bool] = None,
 ) -> str:
     """
     Génère un composant HTML5 discret et élégant pour la Fiche Express (style pilule Sanad).
     - Design compact et sobre identique à Sanad (hauteur 32px, pilule bleue au repos, rouge animé en lecture).
-    - Supporte le flux MP3 serveur (audio_data_uri) pour une lecture 100% fiable sur Linux, Windows, Mac, iOS, Android.
-    - Détection automatique et infaillible du texte en Arabe (orientation RTL, prononciation authentique).
-    - Mode de repli Web Speech API avec file d'attente intelligente si aucun flux MP3 n'est fourni.
+    - Génération audio MP3 côté serveur via gTTS par défaut (100% fiable sur tous les appareils : Android, iOS, Windows, Mac, Linux).
+    - Détection automatique et infaillible du texte en Arabe (orientation RTL, prononciation authentique avec tashkeel).
+    - Mode de repli Web Speech API si le serveur ou la génération MP3 est indisponible.
     - Zéro consommation de quota d'API Gemini (100% gratuit).
     """
     cleaned = clean_text_for_speech(text)
@@ -761,6 +762,11 @@ def generate_fiche_audio_player_html(
     # Détection automatique de la langue réelle du texte
     is_ar = detect_arabic_content(cleaned) or bool(language and language.lower().startswith("ar"))
     eff_lang = "ar" if is_ar else (language or "fr")
+
+    # Si aucun flux MP3 fourni et mode serveur activé par défaut, générer le MP3 côté serveur via gTTS
+    use_server = force_server_tts if force_server_tts is not None else True
+    if not audio_data_uri and use_server:
+        audio_data_uri = get_server_tts_audio_base64(cleaned, language=eff_lang)
 
     cfg = get_speech_config(eff_lang)
     lang_code = cfg["lang_code"]
@@ -1071,8 +1077,7 @@ def generate_fiche_audio_player_html(
             if (langCode.startsWith('ar')) {{
               const v = findBestVoice(synth);
               if (!v) {{
-                alert("{html.escape(no_ar_voice_msg)}");
-                return;
+                console.warn("{html.escape(no_ar_voice_msg)}");
               }}
             }}
 

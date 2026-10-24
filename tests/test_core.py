@@ -1281,11 +1281,10 @@ print("debug")
         self.assertIn("border-radius: 8px", html_server)
         self.assertIn("width: 32px; height: 32px", html_server)
 
-        # 3. Comportement par défaut sous Linux : utilisation automatique du lecteur serveur
-        if is_linux_platform():
-            html_default_linux = generate_tts_player_html("Explication Sanad", language="fr", player_id="test_linux_def")
-            self.assertIn("<audio id=\"audio_test_linux_def\"", html_default_linux)
-            self.assertIn("data:audio/mp3;base64,", html_default_linux)
+        # 3. Comportement par défaut : utilisation automatique du lecteur serveur partout
+        html_default = generate_tts_player_html("Explication Sanad", language="fr", player_id="test_srv_def")
+        self.assertIn("<audio id=\"audio_test_srv_def\"", html_default)
+        self.assertIn("data:audio/mp3;base64,", html_default)
 
         # Si texte vide
         self.assertEqual(generate_tts_player_html("", language="fr"), "")
@@ -1365,24 +1364,30 @@ print("debug")
         self.assertIn("استمع للشرح", html_srv_pill_ar)
 
     def test_generate_fiche_audio_player_html(self):
-        # 1. En français (mode repli client ou standard)
+        # 1. En français (mode serveur par défaut pour universalité mobile/desktop)
         sample_fr = "### Théorème de Thalès\nVoici la formule clé du cours.\n- Condition 1 : Parallélisme obligatoire."
         html_fr = generate_fiche_audio_player_html(sample_fr, language="fr", player_id="test_fiche_fr")
         self.assertIn("btn_test_fiche_fr", html_fr)
         self.assertIn("border-radius: 16px", html_fr)
-        self.assertIn("wave-bars_test_fiche_fr", html_fr)
-        self.assertIn("splitIntoSentences", html_fr)
-        self.assertIn("fr-FR", html_fr)
+        self.assertIn("<audio id=\"audio_test_fiche_fr\"", html_fr)
+        self.assertIn("data:audio/mp3;base64,", html_fr)
         self.assertIn("Écouter la fiche", html_fr)
 
-        # 2. En arabe avec direction RTL (détection automatique)
+        # Mode repli client Web Speech API explicite (force_server_tts=False)
+        html_fr_client = generate_fiche_audio_player_html(sample_fr, language="fr", player_id="test_fiche_client", force_server_tts=False)
+        self.assertIn("splitIntoSentences", html_fr_client)
+        self.assertIn("fr-FR", html_fr_client)
+        self.assertIn("Écouter la fiche", html_fr_client)
+
+        # 2. En arabe avec direction RTL (détection automatique + génération serveur gTTS)
         sample_ar = "### مبرهنة طاليس\nهذه هي القواعد الأساسية للدرس.\n- الشرط الأول : التوازي."
         html_ar = generate_fiche_audio_player_html(sample_ar, language="ar", player_id="test_fiche_ar")
         self.assertIn("direction: rtl", html_ar)
-        self.assertIn("ar-SA", html_ar)
+        self.assertIn("<audio id=\"audio_test_fiche_ar\"", html_ar)
+        self.assertIn("data:audio/mp3;base64,", html_ar)
         self.assertIn("استمع للبطاقة", html_ar)
 
-        # 3. Avec flux audio MP3 (mode serveur instantané / Linux)
+        # 3. Avec flux audio MP3 fourni explicitement (mode fichier pré-généré sur disque)
         html_mp3 = generate_fiche_audio_player_html(
             sample_ar,
             language="ar",
@@ -1394,16 +1399,16 @@ print("debug")
         self.assertIn("toggleFicheAudio_test_fiche_mp3", html_mp3)
         self.assertIn("استمع للبطاقة", html_mp3)
 
-        # 4. En anglais
+        # 4. En anglais (mode repli client)
         sample_en = "### Summary\nKey points to memorize."
-        html_en = generate_fiche_audio_player_html(sample_en, language="en", player_id="test_fiche_en")
+        html_en = generate_fiche_audio_player_html(sample_en, language="en", player_id="test_fiche_en", force_server_tts=False)
         self.assertIn("en-US", html_en)
         self.assertIn("Listen to Sheet", html_en)
 
         # 5. Détection automatique de l'arabe même si language='fr'
         html_ar_auto = generate_fiche_audio_player_html("### سورة الحشر المباركة\nهذا ملخص الدرس الشامل.", language="fr", player_id="test_fiche_auto_ar")
         self.assertIn("direction: rtl", html_ar_auto)
-        self.assertIn("ar-SA", html_ar_auto)
+        self.assertIn("<audio id=\"audio_test_fiche_auto_ar\"", html_ar_auto)
         self.assertIn("استمع للبطاقة", html_ar_auto)
 
         # 6. Si texte vide

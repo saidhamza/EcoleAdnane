@@ -2382,6 +2382,20 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                             audio_data_uri = f"data:audio/mp3;base64,{b64_audio}"
                     except Exception as e:
                         logger.warning(f"Impossible de lire le cache MP3 : {e}")
+                else:
+                    try:
+                        mp3_path = generate_or_get_course_fiche_mp3(
+                            course_id=current_course["id"],
+                            text=fiche_md,
+                            language=current_course.get("language", "fr"),
+                            user_id=active_user_id,
+                        )
+                        if mp3_path and os.path.exists(mp3_path) and os.path.getsize(mp3_path) > 500:
+                            with open(mp3_path, "rb") as f_mp3:
+                                b64_audio = base64.b64encode(f_mp3.read()).decode("ascii")
+                                audio_data_uri = f"data:audio/mp3;base64,{b64_audio}"
+                    except Exception as e:
+                        logger.warning(f"Erreur lors de la génération automatique du MP3 de la fiche: {e}")
 
                 # 2. Barre de lecture vocale discrète type Sanad (hauteur 38px, pilule bleue/rouge)
                 fiche_audio_html = generate_fiche_audio_player_html(
