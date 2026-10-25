@@ -1149,49 +1149,41 @@ def generate_or_get_course_fiche_mp3(
         return None
 
 
-def generate_chat_mic_injector_html(language: str = "fr", widget_id: str = "chat_mic") -> str:
+def generate_chat_mic_injector_html(
+    language: str = "fr",
+    widget_id: str = "chat_mic",
+    gemini_api_key: Optional[str] = None,
+) -> str:
     """
-    Génère un script discret qui injecte l'icône de dictée vocale (micro) directement
-    à l'intérieur du champ de saisie de texte st.chat_input, juste à côté du bouton d'envoi.
-    Fournit une expérience utilisateur fluide type WhatsApp / ChatGPT :
-    - Icône micro discrète et élégante
-    - Dictée en temps réel avec insertion directe dans le textarea
-    - Animation rouge pulsante pendant l'écoute
-    Coût : 0 token Gemini, 100% exécuté localement par SpeechRecognition.
+    Génère un composant d'injection discret pour la dictée vocale au micro directement
+    dans le champ de discussion st.chat_input, à côté du bouton d'envoi.
+    - Utilise MediaRecorder (HTML5 natif 100% universel sous Linux Chrome, Firefox, Windows, macOS, Android, iOS).
+    - Transcrit l'audio capturé via Google Gemini 3.5 Flash (avec détection automatique de la parole et de l'arabe avec tashkeel).
+    - Détection intelligente de fin de parole (silence automatique) et envoi direct du message.
+    - Élimine définitivement les erreurs 'network' et blocages de la Web Speech API propriétaire sous Linux.
     """
     cfg = get_speech_config(language)
     lang_code = cfg["lang_code"]
     mic_tooltip = cfg["mic_tooltip"]
     clean_id = re.sub(r"[^a-zA-Z0-9_]", "_", widget_id)
+    is_ar = bool(language and language.lower().startswith("ar"))
+
+    json_key = json.dumps(gemini_api_key or "")
 
     html_code = f"""
     <div id="mic_injector_container_{clean_id}" style="display:none; height:0; width:0; overflow:hidden;">
       <script>
         (function() {{
           const langCode = '{lang_code}';
+          const isArabic = {'true' if is_ar else 'false'};
           const micTooltip = "{html.escape(mic_tooltip)}";
+          const geminiApiKey = {json_key};
 
           function getParentDoc() {{
             try {{
               if (window.parent && window.parent.document) return window.parent.document;
             }} catch(e) {{}}
             return document;
-          }}
-
-          function getSpeechRecClass() {{
-            try {{
-              if (window.parent) {{
-                if (window.parent.SpeechRecognition) return window.parent.SpeechRecognition;
-                if (window.parent.webkitSpeechRecognition) return window.parent.webkitSpeechRecognition;
-              }}
-              if (window.top) {{
-                if (window.top.SpeechRecognition) return window.top.SpeechRecognition;
-                if (window.top.webkitSpeechRecognition) return window.top.webkitSpeechRecognition;
-              }}
-              if (window.SpeechRecognition) return window.SpeechRecognition;
-              if (window.webkitSpeechRecognition) return window.webkitSpeechRecognition;
-            }} catch(e) {{}}
-            return null;
           }}
 
           // Autoriser les permissions audio sur l'iframe du composant Streamlit
@@ -1219,13 +1211,21 @@ def generate_chat_mic_injector_html(language: str = "fr", widget_id: str = "chat
               toast._timer = setTimeout(function() {{
                 toast.style.opacity = "0";
                 setTimeout(function() {{ toast.style.display = "none"; }}, 350);
-              }}, 5000);
+              }}, 4500);
             }} catch(e) {{}}
           }}
 
-          let recognition = null;
-          let isListening = false;
+          // Support universel MediaRecorder avec rétrocompatibilité SpeechRecognition
+          let SpeechRecognition = (window.parent && (window.parent.SpeechRecognition || window.parent.webkitSpeechRecognition)) || window.SpeechRecognition || window.webkitSpeechRecognition || null;
           let hasDictated = false;
+          let mediaRecorder = null;
+          let audioChunks = [];
+          let mediaStream = null;
+          let isRecording = false;
+          let isTranscribing = false;
+          let audioContext = null;
+          let maxTimer = null;
+          let silenceTimer = null;
           let micBtn = null;
 
           function scrollToChatBottom() {{
@@ -1234,7 +1234,6 @@ def generate_chat_mic_injector_html(language: str = "fr", widget_id: str = "chat
               if (!pDoc) return;
               const pWin = window.parent || window;
 
-              // 1. Défilement ciblé vers l'ancre basse de la conversation
               const anchor = pDoc.getElementById("sanad_chat_bottom_anchor");
               if (anchor) {{
                 try {{
@@ -1244,7 +1243,6 @@ def generate_chat_mic_injector_html(language: str = "fr", widget_id: str = "chat
                 }}
               }}
 
-              // 2. Défilement des conteneurs scrollables Streamlit
               const scrollers = pDoc.querySelectorAll('[data-testid="stAppViewContainer"], section.main');
               scrollers.forEach(function(el) {{
                 if (el && el.scrollHeight > el.clientHeight) {{
@@ -1272,7 +1270,6 @@ def generate_chat_mic_injector_html(language: str = "fr", widget_id: str = "chat
               submitBtn.style.pointerEvents = 'auto';
             }}
 
-            // 1. Déclencher l'événement Enter sur le textarea
             try {{
               const KeyboardEventClass = pWin.KeyboardEvent || KeyboardEvent;
               const enterDown = new KeyboardEventClass('keydown', {{
@@ -1286,31 +1283,356 @@ def generate_chat_mic_injector_html(language: str = "fr", widget_id: str = "chat
               textarea.dispatchEvent(enterDown);
             }} catch(e) {{}}
 
-            // 2. Déclencher le clic sur le bouton submit
             if (submitBtn) {{
               try {{
                 submitBtn.click();
               }} catch(e) {{}}
             }}
 
-            // Scroller vers le bas après soumission
             setTimeout(scrollToChatBottom, 120);
+          }}
+
+          function insertTextIntoChatInput(text) {{
+            const pDoc = getParentDoc();
+            if (!pDoc) return;
+            const pWin = window.parent || window;
+            const textarea = pDoc.querySelector('textarea[data-testid="stChatInputTextArea"]');
+            if (!textarea) return;
+
+            try {{
+              const proto = (pWin.HTMLTextAreaElement && pWin.HTMLTextAreaElement.prototype)
+                            || window.HTMLTextAreaElement.prototype;
+              const desc = Object.getOwnPropertyDescriptor(proto, 'value');
+              if (desc && desc.set) {{
+                desc.set.call(textarea, text);
+              }} else {{
+                textarea.value = text;
+              }}
+            }} catch(e) {{
+              textarea.value = text;
+            }}
+
+            if (textarea._valueTracker) {{
+              textarea._valueTracker.setValue('');
+            }}
+
+            const EventClass = pWin.Event || Event;
+            textarea.dispatchEvent(new EventClass('input', {{ bubbles: true, cancelable: true }}));
+            textarea.dispatchEvent(new EventClass('change', {{ bubbles: true, cancelable: true }}));
+
+            if (submitBtn) {{
+              submitBtn.disabled = false;
+              submitBtn.removeAttribute('disabled');
+              submitBtn.style.pointerEvents = 'auto';
+            }}
+
+            hasDictated = true;
+            textarea.focus();
+          }}
+
+          function setMicListeningState(listening) {{
+            if (!micBtn) return;
+            if (listening) {{
+              micBtn.style.color = "#dc2626";
+              micBtn.style.background = "#fee2e2";
+              micBtn.style.transform = "scale(1.15)";
+              micBtn.title = isArabic ? "🔴 جاري الاستماع... اضغط على الميكروفون للإرسال" : "🔴 Écoute en cours... Cliquez à nouveau sur le micro pour envoyer";
+              micBtn.innerHTML = `{SVG_MIC}`;
+            }} else if (!isTranscribing) {{
+              micBtn.style.color = "#6b7280";
+              micBtn.style.background = "transparent";
+              micBtn.style.transform = "scale(1.0)";
+              micBtn.title = micTooltip;
+              micBtn.innerHTML = `{SVG_MIC}`;
+            }}
+          }}
+
+          function setMicTranscribingState(transcribing) {{
+            isTranscribing = transcribing;
+            if (!micBtn) return;
+            if (transcribing) {{
+              micBtn.style.color = "#2563eb";
+              micBtn.style.background = "#eff6ff";
+              micBtn.style.transform = "scale(1.05)";
+              micBtn.title = isArabic ? "⏳ جاري تحويل صوتك إلى نص عبر الذكاء الاصطناعي..." : "⏳ Transcription de votre voix par IA en cours...";
+              micBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="animation: sanadSpin 0.9s linear infinite;"><line x1="12" y1="2" x2="12" y2="6"></line><line x1="12" y1="18" x2="12" y2="22"></line><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line><line x1="2" y1="12" x2="6" y2="12"></line><line x1="18" y1="12" x2="22" y2="12"></line><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"></line><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"></line></svg>`;
+            }} else {{
+              setMicListeningState(false);
+            }}
+          }}
+
+          function cleanUpStream() {{
+            if (silenceTimer) clearTimeout(silenceTimer);
+            if (maxTimer) clearTimeout(maxTimer);
+            if (audioContext) {{
+              try {{ audioContext.close(); }} catch(e) {{}}
+              audioContext = null;
+            }}
+            if (mediaStream) {{
+              try {{
+                mediaStream.getTracks().forEach(function(t) {{ t.stop(); }});
+              }} catch(e) {{}}
+              mediaStream = null;
+            }}
+          }}
+
+          function stopRecordingAndProcess() {{
+            if (mediaRecorder && mediaRecorder.state !== 'inactive') {{
+              try {{
+                mediaRecorder.stop();
+              }} catch(e) {{}}
+            }}
+            isRecording = false;
+            setMicListeningState(false);
+          }}
+
+          function blobToBase64(blob) {{
+            return new Promise(function(resolve, reject) {{
+              const reader = new FileReader();
+              reader.onloadend = function() {{
+                try {{
+                  const dataUrl = reader.result;
+                  const b64 = dataUrl.split(',')[1];
+                  resolve(b64);
+                }} catch(e) {{
+                  reject(e);
+                }}
+              }};
+              reader.onerror = reject;
+              reader.readAsDataURL(blob);
+            }});
+          }}
+
+          async function transcribeAudioBlob(blob, mimeType) {{
+            setMicTranscribingState(true);
+            showToast(isArabic ? "⏳ جاري تحويل صوتك إلى نص عبر الذكاء الاصطناعي..." : "⏳ Transcription de votre voix par IA en cours...", false);
+
+            try {{
+              const base64Audio = await blobToBase64(blob);
+              if (!base64Audio) throw new Error("Audio vide");
+
+              let cleanMime = (mimeType || 'audio/webm').split(';')[0].trim();
+              if (!cleanMime) cleanMime = 'audio/webm';
+
+              const promptText = isArabic 
+                ? "أعد كتابة هذا التسجيل الصوتي للتلميذ حرفياً بدقة باللغة العربية مع الشكل التام (التشكيل). أرجع النص المنطوق فقط بدون أي مقدمات أو شروحات وبدون علامات اقتباس."
+                : "Transcris fidèlement et mot à mot cet enregistrement vocal de l'élève en texte brut. Retourne UNIQUEMENT la transcription, sans guillemets, sans politesses, sans aucun commentaire ajouté.";
+
+              let text = "";
+
+              if (geminiApiKey) {{
+                const pWin = window.parent || window;
+                const fetchFn = (pWin.fetch || window.fetch);
+                const modelsToTry = ["gemini-3.5-flash", "gemini-3.8-flash", "gemini-flash-latest"];
+                for (let i = 0; i < modelsToTry.length; i++) {{
+                  const m = modelsToTry[i];
+                  try {{
+                    const url = "https://generativelanguage.googleapis.com/v1beta/models/" + m + ":generateContent?key=" + encodeURIComponent(geminiApiKey);
+                    const resp = await fetchFn(url, {{
+                      method: "POST",
+                      headers: {{ "Content-Type": "application/json" }},
+                      body: JSON.stringify({{
+                        contents: [{{
+                          parts: [
+                            {{ inline_data: {{ mime_type: cleanMime, data: base64Audio }} }},
+                            {{ text: promptText }}
+                          ]
+                        }}],
+                        generationConfig: {{
+                          temperature: 0.1
+                        }}
+                      }})
+                    }});
+
+                    if (resp.ok) {{
+                      const jsonResp = await resp.json();
+                      const cand = jsonResp?.candidates?.[0]?.content?.parts?.[0]?.text;
+                      if (cand && cand.trim().length > 0) {{
+                        text = cand.trim().replace(/^["']|["']$/g, '');
+                        break;
+                      }}
+                    }}
+                  }} catch(e) {{
+                    console.warn("Échec transcription " + m, e);
+                  }}
+                }}
+              }}
+
+              setMicTranscribingState(false);
+
+              if (text && text.length > 0) {{
+                insertTextIntoChatInput(text);
+                setTimeout(function() {{
+                  submitChatInput();
+                }}, 300);
+              }} else {{
+                showToast(isArabic ? "لم يتم التقاط أي صوت واضح، يرجى المحاولة ثانية." : "Aucune parole distincte reconnue. Veuillez parler plus près du micro.", true);
+              }}
+
+            }} catch(err) {{
+              setMicTranscribingState(false);
+              console.error("Erreur de transcription audio:", err);
+              showToast("Erreur lors de la transcription : " + (err.message || err), true);
+            }}
+          }}
+
+          function startVoiceRecording() {{
+            const pWin = window.parent || window;
+            const nav = (pWin.navigator && pWin.navigator.mediaDevices) ? pWin.navigator : navigator;
+
+            if (!nav || !nav.mediaDevices || !nav.mediaDevices.getUserMedia) {{
+              showToast("Votre navigateur ne permet pas l'accès au microphone.", true);
+              return;
+            }}
+
+            nav.mediaDevices.getUserMedia({{
+              audio: {{
+                echoCancellation: true,
+                noiseSuppression: true,
+                autoGainControl: true
+              }}
+            }}).then(function(stream) {{
+              mediaStream = stream;
+              audioChunks = [];
+
+              const MR = pWin.MediaRecorder || window.MediaRecorder;
+              if (!MR) {{
+                showToast("MediaRecorder non supporté par ce navigateur.", true);
+                return;
+              }}
+
+              let mimeType = 'audio/webm';
+              if (MR.isTypeSupported('audio/webm;codecs=opus')) {{
+                mimeType = 'audio/webm;codecs=opus';
+              }} else if (MR.isTypeSupported('audio/webm')) {{
+                mimeType = 'audio/webm';
+              }} else if (MR.isTypeSupported('audio/mp4')) {{
+                mimeType = 'audio/mp4';
+              }} else if (MR.isTypeSupported('audio/ogg')) {{
+                mimeType = 'audio/ogg';
+              }}
+
+              try {{
+                mediaRecorder = new MR(stream, {{ mimeType: mimeType }});
+              }} catch(e) {{
+                mediaRecorder = new MR(stream);
+                mimeType = mediaRecorder.mimeType || 'audio/webm';
+              }}
+
+              mediaRecorder.ondataavailable = function(e) {{
+                if (e.data && e.data.size > 0) {{
+                  audioChunks.push(e.data);
+                }}
+              }};
+
+              mediaRecorder.onstart = function() {{
+                isRecording = true;
+                setMicListeningState(true);
+                showToast(isArabic ? "🎙️ استمع إليك... تكلم ثم اضغط على الميكروفون مجدداً للإرسال" : "🎙️ Je vous écoute... Parlez puis recliquez sur le micro pour envoyer", false);
+              }};
+
+              mediaRecorder.onstop = function() {{
+                isRecording = false;
+                setMicListeningState(false);
+                cleanUpStream();
+
+                const blob = new Blob(audioChunks, {{ type: mimeType }});
+                if (!blob || blob.size < 1800) {{
+                  showToast(isArabic ? "لم يتم التقاط أي صوت، يرجى المحاولة ثانية." : "Enregistrement trop court ou aucun son détecté.", false);
+                  return;
+                }}
+
+                transcribeAudioBlob(blob, mimeType);
+              }};
+
+              mediaRecorder.start(250);
+
+              if (maxTimer) clearTimeout(maxTimer);
+              maxTimer = setTimeout(function() {{
+                if (isRecording) {{
+                  stopRecordingAndProcess();
+                }}
+              }}, 45000);
+
+              // Détection intelligente de silence après parole
+              try {{
+                const AC = pWin.AudioContext || pWin.webkitAudioContext || window.AudioContext || window.webkitAudioContext;
+                if (AC) {{
+                  audioContext = new AC();
+                  const source = audioContext.createMediaStreamSource(stream);
+                  const analyser = audioContext.createAnalyser();
+                  analyser.fftSize = 512;
+                  source.connect(analyser);
+
+                  const dataArray = new Uint8Array(analyser.frequencyBinCount);
+                  let hasSpoken = false;
+                  let silenceStart = 0;
+
+                  function checkAudioLevel() {{
+                    if (!isRecording) return;
+                    analyser.getByteFrequencyData(dataArray);
+                    let sum = 0;
+                    for (let i = 0; i < dataArray.length; i++) {{
+                      sum += dataArray[i];
+                    }}
+                    const avg = sum / dataArray.length;
+
+                    if (avg > 15) {{
+                      hasSpoken = true;
+                      silenceStart = 0;
+                    }} else if (hasSpoken) {{
+                      if (silenceStart === 0) {{
+                        silenceStart = Date.now();
+                      }} else if (Date.now() - silenceStart > 2400) {{
+                        stopRecordingAndProcess();
+                        return;
+                      }}
+                    }}
+                    pWin.requestAnimationFrame(checkAudioLevel);
+                  }}
+                  pWin.requestAnimationFrame(checkAudioLevel);
+                }}
+              }} catch(e) {{}}
+
+            }}).catch(function(err) {{
+              isRecording = false;
+              setMicListeningState(false);
+              const msg = err && err.message ? err.message : (err.name || "Inconnue");
+              showToast("Impossible d'accéder au micro : " + msg + ". Vérifiez l'icône cadenas dans Chrome pour autoriser le micro.", true);
+            }});
           }}
 
           function setupMic() {{
             const pDoc = getParentDoc();
             if (!pDoc) return;
 
-            // Trouver le bouton d'envoi st.chat_input
             const submitBtn = pDoc.querySelector('button[data-testid="stChatInputSubmitButton"]');
             if (!submitBtn) return;
 
-            // Vérifier s'il est déjà injecté
             let existingMic = pDoc.getElementById("sanad_chat_input_mic_btn");
             if (existingMic) {{
-              // Mettre à jour la langue active
               existingMic.dataset.langCode = langCode;
               return;
+            }}
+
+            // Injecter les styles CSS pour animations du micro
+            if (!pDoc.getElementById("sanad_mic_keyframes")) {{
+              const styleEl = pDoc.createElement("style");
+              styleEl.id = "sanad_mic_keyframes";
+              styleEl.textContent = `
+                @keyframes sanadSpin {{
+                  100% {{ transform: rotate(360deg); }}
+                }}
+                @keyframes sanadPulseMic {{
+                  0% {{ box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.45); }}
+                  70% {{ box-shadow: 0 0 0 8px rgba(220, 38, 38, 0); }}
+                  100% {{ box-shadow: 0 0 0 0 rgba(220, 38, 38, 0); }}
+                }}
+                #sanad_chat_input_mic_btn.recording-active {{
+                  animation: sanadPulseMic 1.4s infinite !important;
+                }}
+              `;
+              pDoc.head.appendChild(styleEl);
             }}
 
             micBtn = pDoc.createElement("button");
@@ -1338,193 +1660,35 @@ def generate_chat_mic_injector_html(language: str = "fr", widget_id: str = "chat
             `;
 
             micBtn.onmouseenter = function() {{
-              if (!isListening) {{
+              if (!isRecording && !isTranscribing) {{
                 micBtn.style.color = "#2563eb";
                 micBtn.style.background = "#eff6ff";
               }}
             }};
 
             micBtn.onmouseleave = function() {{
-              if (!isListening) {{
+              if (!isRecording && !isTranscribing) {{
                 micBtn.style.color = "#6b7280";
                 micBtn.style.background = "transparent";
               }}
             }};
 
-            // Injecter juste avant le bouton d'envoi
             submitBtn.parentNode.insertBefore(micBtn, submitBtn);
 
             micBtn.onclick = function(e) {{
               e.preventDefault();
               e.stopPropagation();
 
-              if (isListening && recognition) {{
-                recognition.stop();
-                setMicListeningState(false);
-                return;
-              }}
+              if (isTranscribing) return;
 
-              const RecClass = getSpeechRecClass();
-              if (!RecClass) {{
-                showToast("La reconnaissance vocale instantanée du navigateur n'est pas supportée. Utilisez l'enregistreur vocal universel juste au-dessus.", true);
-                return;
-              }}
-
-              const pWin = window.parent || window;
-              const nav = (pWin.navigator && pWin.navigator.mediaDevices) ? pWin.navigator : navigator;
-
-              function startActualRecognition() {{
-                try {{
-                  recognition = new RecClass();
-                  recognition.lang = micBtn.dataset.langCode || langCode;
-                  recognition.continuous = false;
-                  recognition.interimResults = true;
-
-                  recognition.onstart = function() {{
-                    hasDictated = false;
-                    setMicListeningState(true);
-                  }};
-
-                  recognition.onresult = function(event) {{
-                    let interim = '';
-                    let finalTranscript = '';
-                    for (let i = event.resultIndex; i < event.results.length; ++i) {{
-                      if (event.results[i].isFinal) {{
-                        finalTranscript += event.results[i][0].transcript;
-                      }} else {{
-                        interim += event.results[i][0].transcript;
-                      }}
-                    }}
-                    const txt = finalTranscript || interim;
-                    if (txt && txt.trim().length > 0) {{
-                      hasDictated = true;
-                      insertTextIntoChatInput(txt);
-                    }}
-                  }};
-
-                  recognition.onerror = function(event) {{
-                    setMicListeningState(false);
-                    hasDictated = false;
-                    const err = event && event.error ? event.error : "inconnue";
-                    if (err === "no-speech") {{
-                      return;
-                    }}
-                    if (err === "not-allowed" || err === "permission-denied") {{
-                      showToast("Microphone bloqué : autorisez le micro dans Chrome (icône cadenas à gauche de l'URL), ou utilisez l'enregistreur vocal juste au-dessus.", true);
-                    }} else if (err === "network") {{
-                      showToast("Reconnaissance vocale Google indisponible (courant sous Linux Chromium). Utilisez l'enregistreur vocal juste au-dessus.", true);
-                    }} else if (err === "audio-capture") {{
-                      showToast("Aucun microphone actif détecté sous Linux. Vérifiez votre micro dans les paramètres audio.", true);
-                    }} else {{
-                      showToast("Erreur reconnaissance vocale (" + err + "). Utilisez l'enregistreur vocal au-dessus si besoin.", true);
-                    }}
-                  }};
-
-                  recognition.onend = function() {{
-                    setMicListeningState(false);
-                    const pDoc = getParentDoc();
-                    if (pDoc) {{
-                      const textarea = pDoc.querySelector('textarea[data-testid="stChatInputTextArea"]');
-                      const submitBtn = pDoc.querySelector('button[data-testid="stChatInputSubmitButton"]');
-                      if (textarea && textarea.value && textarea.value.trim().length > 0 && submitBtn) {{
-                        submitBtn.disabled = false;
-                        submitBtn.removeAttribute('disabled');
-                      }}
-                    }}
-
-                    // Envoi automatique après dictée vocale
-                    if (hasDictated) {{
-                      hasDictated = false;
-                      setTimeout(function() {{
-                        submitChatInput();
-                      }}, 250);
-                    }}
-                  }};
-
-                  recognition.start();
-                }} catch(err) {{
-                  setMicListeningState(false);
-                  hasDictated = false;
-                  showToast("Impossible de démarrer le micro : " + (err.message || err), true);
-                }}
-              }}
-
-              // Vérifier/demander l'accès au micro via getUserMedia (débloque PulseAudio/PipeWire et déclenche le prompt Chrome)
-              if (nav && nav.mediaDevices && nav.mediaDevices.getUserMedia) {{
-                nav.mediaDevices.getUserMedia({{ audio: true }}).then(function(stream) {{
-                  try {{
-                    stream.getTracks().forEach(function(t) {{ t.stop(); }});
-                  }} catch(e) {{}}
-                  startActualRecognition();
-                }}).catch(function(err) {{
-                  setMicListeningState(false);
-                  showToast("Accès au microphone refusé ou non disponible sous Linux : " + (err.message || err.name || "Refusé"), true);
-                }});
+              if (isRecording) {{
+                stopRecordingAndProcess();
               }} else {{
-                startActualRecognition();
+                startVoiceRecording();
               }}
             }};
           }}
 
-          function setMicListeningState(listening) {{
-            isListening = listening;
-            if (!micBtn) return;
-            if (listening) {{
-              micBtn.style.color = "#dc2626";
-              micBtn.style.background = "#fee2e2";
-              micBtn.style.transform = "scale(1.15)";
-              micBtn.title = "🔴 Écoute en cours... Parlez puis le message s'enverra automatiquement";
-            }} else {{
-              micBtn.style.color = "#6b7280";
-              micBtn.style.background = "transparent";
-              micBtn.style.transform = "scale(1.0)";
-              micBtn.title = micTooltip;
-            }}
-          }}
-
-          function insertTextIntoChatInput(text) {{
-            const pDoc = getParentDoc();
-            if (!pDoc) return;
-            const pWin = window.parent || window;
-            const textarea = pDoc.querySelector('textarea[data-testid="stChatInputTextArea"]');
-            if (!textarea) return;
-
-            // Utiliser le setter natif du prototype HTMLTextAreaElement de la fenêtre parent
-            try {{
-              const proto = (pWin.HTMLTextAreaElement && pWin.HTMLTextAreaElement.prototype)
-                            || window.HTMLTextAreaElement.prototype;
-              const desc = Object.getOwnPropertyDescriptor(proto, 'value');
-              if (desc && desc.set) {{
-                desc.set.call(textarea, text);
-              }} else {{
-                textarea.value = text;
-              }}
-            }} catch(e) {{
-              textarea.value = text;
-            }}
-
-            // Mettre à jour le valueTracker interne de React si présent
-            if (textarea._valueTracker) {{
-              textarea._valueTracker.setValue('');
-            }}
-
-            // Événements dans le contexte parent pour notifier le state React
-            const EventClass = pWin.Event || Event;
-            textarea.dispatchEvent(new EventClass('input', {{ bubbles: true, cancelable: true }}));
-            textarea.dispatchEvent(new EventClass('change', {{ bubbles: true, cancelable: true }}));
-
-            // Activer directement le bouton envoyer
-            const submitBtn = pDoc.querySelector('button[data-testid="stChatInputSubmitButton"]');
-            if (submitBtn) {{
-              submitBtn.disabled = false;
-              submitBtn.removeAttribute('disabled');
-              submitBtn.style.pointerEvents = 'auto';
-            }}
-
-            textarea.focus();
-          }}
-
-          // Observer les mutations du chat pour déclencher l'auto-scroll fluide
           function setupChatObserver() {{
             const pDoc = getParentDoc();
             if (!pDoc) return;
@@ -1538,7 +1702,6 @@ def generate_chat_mic_injector_html(language: str = "fr", widget_id: str = "chat
             }}
           }}
 
-          // Tenter d'injecter immédiatement et avec un observateur
           setupMic();
           setupChatObserver();
           const timer = setInterval(function() {{
@@ -1547,7 +1710,6 @@ def generate_chat_mic_injector_html(language: str = "fr", widget_id: str = "chat
           }}, 400);
           setTimeout(() => clearInterval(timer), 6000);
 
-          // Défilement automatique fluide vers le bas de la conversation
           setTimeout(scrollToChatBottom, 80);
           setTimeout(scrollToChatBottom, 300);
           setTimeout(scrollToChatBottom, 750);

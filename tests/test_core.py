@@ -3094,11 +3094,12 @@ class VoiceTranscriptionAndMicTests(unittest.TestCase):
 
     def test_generate_chat_mic_injector_html_structure(self):
         from services.voice_manager import generate_chat_mic_injector_html
-        html_code = generate_chat_mic_injector_html(language="fr", widget_id="test_mic")
+        html_code = generate_chat_mic_injector_html(language="fr", widget_id="test_mic", gemini_api_key="test_key_123")
         self.assertIn("sanad_chat_input_mic_btn", html_code)
-        self.assertIn("window.parent.SpeechRecognition", html_code)
+        self.assertIn("MediaRecorder", html_code)
         self.assertIn("getUserMedia", html_code)
         self.assertIn("sanad_voice_toast", html_code)
+        self.assertIn("gemini-3.5-flash", html_code)
         self.assertIn("allow", html_code)
 
 
