@@ -3062,6 +3062,46 @@ class TestQuizAntiCheatAndSanadValidation(unittest.TestCase):
         self.assertIn("échec", c_after["last_context"].lower())
 
 
+
+class VoiceTranscriptionAndMicTests(unittest.TestCase):
+    """Tests pour la reconnaissance vocale et la transcription audio via IA."""
+
+    def test_transcribe_audio_empty_bytes(self):
+        from services.ai_engine import transcribe_audio_with_ai
+        self.assertEqual(transcribe_audio_with_ai(b""), "")
+        self.assertEqual(transcribe_audio_with_ai(b"short"), "")
+
+    def test_transcribe_audio_missing_api_keys(self):
+        from services.ai_engine import transcribe_audio_with_ai
+        with patch("services.ai_engine.get_user_gemini_api_key", return_value=None), \
+             patch("services.ai_engine.get_user_openai_api_key", return_value=None):
+            with self.assertRaises(ValueError):
+                transcribe_audio_with_ai(b"x" * 200, api_key=None)
+
+    def test_transcribe_audio_with_gemini_mock(self):
+        from services.ai_engine import transcribe_audio_with_ai
+        fake_bytes = b"RIFF" + b"x" * 200
+
+        mock_response = MagicMock()
+        mock_response.text = "Bonjour Sanad, peux-tu m'expliquer le théorème de Pythagore ?"
+
+        mock_client = MagicMock()
+        mock_client.models.generate_content.return_value = mock_response
+
+        with patch("google.genai.Client", return_value=mock_client):
+            result = transcribe_audio_with_ai(fake_bytes, api_key="dummy_gemini_key")
+            self.assertEqual(result, "Bonjour Sanad, peux-tu m'expliquer le théorème de Pythagore ?")
+
+    def test_generate_chat_mic_injector_html_structure(self):
+        from services.voice_manager import generate_chat_mic_injector_html
+        html_code = generate_chat_mic_injector_html(language="fr", widget_id="test_mic")
+        self.assertIn("sanad_chat_input_mic_btn", html_code)
+        self.assertIn("window.parent.SpeechRecognition", html_code)
+        self.assertIn("getUserMedia", html_code)
+        self.assertIn("sanad_voice_toast", html_code)
+        self.assertIn("allow", html_code)
+
+
 if __name__ == "__main__":
     unittest.main()
 

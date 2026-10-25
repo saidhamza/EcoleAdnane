@@ -210,6 +210,7 @@ try:
         generate_revision_sheet,
         get_arabic_tashkeel_ratio,
         socratic_tutor_response,
+        transcribe_audio_with_ai,
     )
 except ImportError:
     import services.ai_engine
@@ -225,6 +226,7 @@ except ImportError:
         generate_revision_sheet,
         get_arabic_tashkeel_ratio,
         socratic_tutor_response,
+        transcribe_audio_with_ai,
     )
 from services.auth_manager import (
     check_active_user_session,
@@ -3026,9 +3028,48 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
             if mic_injector_html:
                 st.components.v1.html(mic_injector_html, height=0)
 
+            # Option d'enregistrement audio direct (Microphone Linux / Enregistrement universel)
+            # Fournit un enregistreur vocal infaillible sous Linux et tous navigateurs via st.audio_input et l'IA Gemini
+            voice_record_prompt = None
+            with st.expander("🎙️ Dictée vocale directe (Microphone Linux / Enregistrement)", expanded=False):
+                st.caption(
+                    "Si le bouton micro dans la zone de texte ci-dessous ne démarre pas sur votre système Linux ou votre navigateur, "
+                    "enregistrez votre voix ici directement. Sanad la transcrira et vous répondra instantanément."
+                    if not is_ar else
+                    "إذا لم يعمل زر الميكروفون المدمج في خانة الكتابة على نظام لينكس، يمكنك تسجيل صوتك هنا مباشرة وسيقوم سند بالإجابة عليك فوراً."
+                )
+                audio_val = st.audio_input(
+                    "Enregistrer votre question" if not is_ar else "تسجيل سؤالك",
+                    key=f"sanad_audio_input_{current_course['id']}",
+                )
+                if audio_val:
+                    try:
+                        audio_bytes = audio_val.read()
+                        if audio_bytes:
+                            import hashlib
+                            audio_hash = hashlib.sha256(audio_bytes).hexdigest()
+                            last_processed_hash = st.session_state.get(f"last_audio_hash_{current_course['id']}")
+                            if audio_hash != last_processed_hash:
+                                with st.spinner("Transcription de votre voix en cours..." if not is_ar else "جاري تحويل صوتك إلى نص..."):
+                                    transcribed_text = transcribe_audio_with_ai(
+                                        audio_bytes=audio_bytes,
+                                        mime_type=getattr(audio_val, "type", "audio/wav") or "audio/wav",
+                                        language=current_course.get("language", "fr"),
+                                        user_id=active_user_id,
+                                        api_key=user_api_key,
+                                    )
+                                    if transcribed_text:
+                                        st.session_state[f"last_audio_hash_{current_course['id']}"] = audio_hash
+                                        voice_record_prompt = transcribed_text
+                                        st.success(f"🗣️ Dicté : *{transcribed_text}*" if not is_ar else f"🗣️ النص المنطوق : *{transcribed_text}*")
+                                    else:
+                                        st.warning("Aucun son ou parole distincte n'a été détecté. Veuillez réessayer." if not is_ar else "لم يتم التقاط أي صوت واضح، يرجى المحاولة ثانية.")
+                    except Exception as ex_transcribe:
+                        st.error(f"Erreur de transcription audio : {ex_transcribe}")
+
             chat_placeholder = "اطرح سؤالك على الأستاذ المساعد سند..." if is_ar else ("Ask Sanad a question about this lesson..." if is_en else "Pose ta question à Sanad...")
             user_input = st.chat_input(chat_placeholder)
-            prompt_to_send = user_input or suggested_prompt
+            prompt_to_send = user_input or suggested_prompt or voice_record_prompt
             if prompt_to_send:
                 if not user_api_key:
                     st.error("⚠️ Clé API Gemini requise pour échanger avec Sanad. Obtenez votre clé 100% gratuite sur [Google AI Studio](https://aistudio.google.com/) et activez-la dans **⚙️ Paramètres** ou la barre latérale." if not is_en else "⚠️ Gemini API key required to chat with Sanad. Get your free key on [Google AI Studio](https://aistudio.google.com/) and configure it in **⚙️ Settings** or the sidebar.")

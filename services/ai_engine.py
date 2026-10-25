@@ -1402,3 +1402,82 @@ Tes règles d'or pédagogiques :
             logger.info("Réponse de Sanad en arabe insuffisamment vocalisée, application de la vocalisation automatique...")
             ans = diacritize_arabic_text(ans, user_id=user_id)
     return ans
+
+
+def transcribe_audio_with_ai(
+    audio_bytes: bytes,
+    mime_type: str = "audio/wav",
+    language: str = "fr",
+    user_id: Optional[int] = None,
+    api_key: Optional[str] = None,
+) -> str:
+    """
+    Transcrit un enregistrement audio vocal en texte via Google Gemini (ou OpenAI Whisper en repli).
+    Garantit une reconnaissance vocale infaillible sous Linux (Chrome/Chromium/Firefox/etc.)
+    lorsque l'API Web Speech du navigateur n'est pas supportée ou bloque.
+    """
+    if not audio_bytes or len(audio_bytes) < 100:
+        return ""
+
+    gemini_key = api_key or get_user_gemini_api_key(user_id)
+    openai_key = get_user_openai_api_key(user_id)
+
+    if not gemini_key and not openai_key:
+        raise ValueError(
+            "Aucune clé API configurée. Veuillez ajouter votre clé Google Gemini gratuite dans vos Paramètres pour utiliser la transcription vocale."
+        )
+
+    # 1. Google Gemini
+    if gemini_key:
+        try:
+            from google import genai
+            from google.genai import types
+
+            client = genai.Client(
+                api_key=gemini_key,
+                http_options=types.HttpOptions(timeout=30000),
+            )
+            prompt_instruction = (
+                "Transcris fidèlement et mot à mot cet enregistrement vocal de l'élève en texte. "
+                "Retourne UNIQUEMENT la transcription brute, sans guillemets, sans politesses, "
+                "sans explications ni commentaires ajoutés. Si la parole est en arabe, écris-la en arabe avec tashkeel."
+            )
+            part = types.Part.from_bytes(data=audio_bytes, mime_type=mime_type or "audio/wav")
+            config = types.GenerateContentConfig(
+                temperature=0.1,
+            )
+            for m in ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-3.5-flash"]:
+                try:
+                    res = client.models.generate_content(
+                        model=m,
+                        contents=[part, prompt_instruction],
+                        config=config,
+                    )
+                    if res and res.text:
+                        return res.text.strip().strip('"').strip("'")
+                except Exception as e_m:
+                    logger.debug(f"Transcription audio avec {m} échouée : {e_m}")
+                    continue
+        except Exception as e_genai:
+            logger.warning(f"Erreur transcription google-genai : {e_genai}")
+
+    # 2. Fallback OpenAI Whisper
+    if openai_key:
+        try:
+            from io import BytesIO
+            from openai import OpenAI
+            client = OpenAI(api_key=openai_key)
+            ext = "wav" if "wav" in (mime_type or "") else ("webm" if "webm" in (mime_type or "") else "mp3")
+            bio = BytesIO(audio_bytes)
+            bio.name = f"voice_input.{ext}"
+            transcript = client.audio.transcriptions.create(
+                model="whisper-1",
+                file=bio,
+                language=language if language in ("fr", "ar", "en") else None,
+            )
+            if transcript and transcript.text:
+                return transcript.text.strip()
+        except Exception as e_whisper:
+            logger.warning(f"Erreur transcription Whisper : {e_whisper}")
+
+    return ""

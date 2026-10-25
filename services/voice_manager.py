@@ -1180,14 +1180,47 @@ def generate_chat_mic_injector_html(language: str = "fr", widget_id: str = "chat
 
           function getSpeechRecClass() {{
             try {{
-              if (window.SpeechRecognition) return window.SpeechRecognition;
-              if (window.webkitSpeechRecognition) return window.webkitSpeechRecognition;
               if (window.parent) {{
                 if (window.parent.SpeechRecognition) return window.parent.SpeechRecognition;
                 if (window.parent.webkitSpeechRecognition) return window.parent.webkitSpeechRecognition;
               }}
+              if (window.top) {{
+                if (window.top.SpeechRecognition) return window.top.SpeechRecognition;
+                if (window.top.webkitSpeechRecognition) return window.top.webkitSpeechRecognition;
+              }}
+              if (window.SpeechRecognition) return window.SpeechRecognition;
+              if (window.webkitSpeechRecognition) return window.webkitSpeechRecognition;
             }} catch(e) {{}}
             return null;
+          }}
+
+          // Autoriser les permissions audio sur l'iframe du composant Streamlit
+          try {{
+            if (window.frameElement) {{
+              window.frameElement.setAttribute("allow", "microphone *; speech-recognition *");
+            }}
+          }} catch(e) {{}}
+
+          function showToast(msg, isError) {{
+            try {{
+              const pDoc = getParentDoc();
+              if (!pDoc) return;
+              let toast = pDoc.getElementById("sanad_voice_toast");
+              if (!toast) {{
+                toast = pDoc.createElement("div");
+                toast.id = "sanad_voice_toast";
+                toast.style.cssText = "position:fixed;bottom:90px;left:50%;transform:translateX(-50%);background:#1f2937;color:#fff;padding:10px 18px;border-radius:10px;font-size:13px;z-index:9999999;box-shadow:0 4px 16px rgba(0,0,0,0.3);transition:opacity 0.3s ease;pointer-events:none;max-width:90%;text-align:center;display:flex;align-items:center;gap:8px;";
+                pDoc.body.appendChild(toast);
+              }}
+              toast.innerHTML = (isError ? "⚠️ " : "ℹ️ ") + msg;
+              toast.style.opacity = "1";
+              toast.style.display = "flex";
+              if (toast._timer) clearTimeout(toast._timer);
+              toast._timer = setTimeout(function() {{
+                toast.style.opacity = "0";
+                setTimeout(function() {{ toast.style.display = "none"; }}, 350);
+              }}, 5000);
+            }} catch(e) {{}}
           }}
 
           let recognition = null;
@@ -1333,68 +1366,102 @@ def generate_chat_mic_injector_html(language: str = "fr", widget_id: str = "chat
 
               const RecClass = getSpeechRecClass();
               if (!RecClass) {{
-                alert("La reconnaissance vocale par micro nécessite un navigateur compatible (Chrome, Edge, Safari).");
+                showToast("La reconnaissance vocale instantanée du navigateur n'est pas supportée. Utilisez l'enregistreur vocal universel juste au-dessus.", true);
                 return;
               }}
 
-              try {{
-                recognition = new RecClass();
-                recognition.lang = micBtn.dataset.langCode || langCode;
-                recognition.continuous = false;
-                recognition.interimResults = true;
+              const pWin = window.parent || window;
+              const nav = (pWin.navigator && pWin.navigator.mediaDevices) ? pWin.navigator : navigator;
 
-                recognition.onstart = function() {{
-                  hasDictated = false;
-                  setMicListeningState(true);
-                }};
+              function startActualRecognition() {{
+                try {{
+                  recognition = new RecClass();
+                  recognition.lang = micBtn.dataset.langCode || langCode;
+                  recognition.continuous = false;
+                  recognition.interimResults = true;
 
-                recognition.onresult = function(event) {{
-                  let interim = '';
-                  let finalTranscript = '';
-                  for (let i = event.resultIndex; i < event.results.length; ++i) {{
-                    if (event.results[i].isFinal) {{
-                      finalTranscript += event.results[i][0].transcript;
-                    }} else {{
-                      interim += event.results[i][0].transcript;
-                    }}
-                  }}
-                  const txt = finalTranscript || interim;
-                  if (txt && txt.trim().length > 0) {{
-                    hasDictated = true;
-                    insertTextIntoChatInput(txt);
-                  }}
-                }};
-
-                recognition.onerror = function() {{
-                  setMicListeningState(false);
-                  hasDictated = false;
-                }};
-
-                recognition.onend = function() {{
-                  setMicListeningState(false);
-                  const pDoc = getParentDoc();
-                  if (pDoc) {{
-                    const textarea = pDoc.querySelector('textarea[data-testid="stChatInputTextArea"]');
-                    const submitBtn = pDoc.querySelector('button[data-testid="stChatInputSubmitButton"]');
-                    if (textarea && textarea.value && textarea.value.trim().length > 0 && submitBtn) {{
-                      submitBtn.disabled = false;
-                      submitBtn.removeAttribute('disabled');
-                    }}
-                  }}
-
-                  // Envoi automatique après dictée vocale
-                  if (hasDictated) {{
+                  recognition.onstart = function() {{
                     hasDictated = false;
-                    setTimeout(function() {{
-                      submitChatInput();
-                    }}, 250);
-                  }}
-                }};
+                    setMicListeningState(true);
+                  }};
 
-                recognition.start();
-              }} catch(err) {{
-                setMicListeningState(false);
-                hasDictated = false;
+                  recognition.onresult = function(event) {{
+                    let interim = '';
+                    let finalTranscript = '';
+                    for (let i = event.resultIndex; i < event.results.length; ++i) {{
+                      if (event.results[i].isFinal) {{
+                        finalTranscript += event.results[i][0].transcript;
+                      }} else {{
+                        interim += event.results[i][0].transcript;
+                      }}
+                    }}
+                    const txt = finalTranscript || interim;
+                    if (txt && txt.trim().length > 0) {{
+                      hasDictated = true;
+                      insertTextIntoChatInput(txt);
+                    }}
+                  }};
+
+                  recognition.onerror = function(event) {{
+                    setMicListeningState(false);
+                    hasDictated = false;
+                    const err = event && event.error ? event.error : "inconnue";
+                    if (err === "no-speech") {{
+                      return;
+                    }}
+                    if (err === "not-allowed" || err === "permission-denied") {{
+                      showToast("Microphone bloqué : autorisez le micro dans Chrome (icône cadenas à gauche de l'URL), ou utilisez l'enregistreur vocal juste au-dessus.", true);
+                    }} else if (err === "network") {{
+                      showToast("Reconnaissance vocale Google indisponible (courant sous Linux Chromium). Utilisez l'enregistreur vocal juste au-dessus.", true);
+                    }} else if (err === "audio-capture") {{
+                      showToast("Aucun microphone actif détecté sous Linux. Vérifiez votre micro dans les paramètres audio.", true);
+                    }} else {{
+                      showToast("Erreur reconnaissance vocale (" + err + "). Utilisez l'enregistreur vocal au-dessus si besoin.", true);
+                    }}
+                  }};
+
+                  recognition.onend = function() {{
+                    setMicListeningState(false);
+                    const pDoc = getParentDoc();
+                    if (pDoc) {{
+                      const textarea = pDoc.querySelector('textarea[data-testid="stChatInputTextArea"]');
+                      const submitBtn = pDoc.querySelector('button[data-testid="stChatInputSubmitButton"]');
+                      if (textarea && textarea.value && textarea.value.trim().length > 0 && submitBtn) {{
+                        submitBtn.disabled = false;
+                        submitBtn.removeAttribute('disabled');
+                      }}
+                    }}
+
+                    // Envoi automatique après dictée vocale
+                    if (hasDictated) {{
+                      hasDictated = false;
+                      setTimeout(function() {{
+                        submitChatInput();
+                      }}, 250);
+                    }}
+                  }};
+
+                  recognition.start();
+                }} catch(err) {{
+                  setMicListeningState(false);
+                  hasDictated = false;
+                  showToast("Impossible de démarrer le micro : " + (err.message || err), true);
+                }}
+              }}
+
+              // Vérifier/demander l'accès au micro via getUserMedia (débloque PulseAudio/PipeWire et déclenche le prompt Chrome)
+              if (nav && nav.mediaDevices && nav.mediaDevices.getUserMedia) {{
+                nav.mediaDevices.getUserMedia({{ audio: true }}).then(function(stream) {{
+                  try {{
+                    stream.getTracks().forEach(function(t) {{ t.stop(); }});
+                  }} catch(e) {{}}
+                  startActualRecognition();
+                }}).catch(function(err) {{
+                  setMicListeningState(false);
+                  showToast("Accès au microphone refusé ou non disponible sous Linux : " + (err.message || err.name || "Refusé"), true);
+                }});
+              }} else {{
+                startActualRecognition();
               }}
             }};
           }}
