@@ -767,16 +767,16 @@ Google met à disposition une clé d'accès **100% gratuite** (mention officiell
 ##### 1️⃣ Étape 1 : Accéder à la page officielle des clés API
 - Rendez-vous directement sur **[aistudio.google.com/api-keys](https://aistudio.google.com/api-keys)**.
 - Connectez-vous avec votre compte Google (Gmail ordinaire ou compte scolaire).
-- Dans le menu latéral gauche sous **PROJET**, vérifiez que la section **"Clés API"** est bien sélectionnée.
+- Dans le menu latéral de gauche sous **PROJET**, vérifiez que la section **"Clés API"** est bien sélectionnée :
             """
         )
         if step1_img.exists():
-            st.image(str(step1_img), caption="Menu latéral gauche : PROJET > Clés API", width=200)
+            st.image(str(step1_img), caption="Menu latéral gauche : PROJET > Clés API", width=240)
 
         st.markdown(
             """
 ---
-##### 2️⃣ Étape 2 : Créer une clé API
+##### 2️⃣ Étape 2 : Créer une nouvelle clé API
 - En haut à droite de l'écran, cliquez sur le bouton :
             """
         )
@@ -785,18 +785,17 @@ Google met à disposition une clé d'accès **100% gratuite** (mention officiell
 
         st.markdown(
             """
-- Dans la boîte de dialogue qui s'ouvre, choisissez **"Créer une clé API dans un nouveau projet"** (ou sélectionnez un projet Gemini existant).
+- Dans la boîte de dialogue qui s'affiche, choisissez **"Créer une clé API dans un nouveau projet"** (ou sélectionnez un projet existant).
 - La clé sera créée instantanément en quelques secondes.
 
 ---
-##### 3️⃣ Étape 3 : Vérifier la gratuité et copier votre clé
-- Votre clé apparaît immédiatement dans le tableau sous le nom de votre projet.
-- **Vérification de gratuité :** La colonne *Niveau de facturation* affiche bien **"Niveau sans frais"** (aucune carte bancaire requise, aucun coût).
-- Cliquez sur l'icône de copie 📋 située tout à droite de la ligne pour copier votre clé secrète dans le presse-papiers.
+##### 3️⃣ Étape 3 : Copier votre clé API générée
+- La fenêtre **"Détails de la clé API"** s'affiche avec votre nouvelle clé secrète.
+- Cliquez directement sur le bouton **"Copier la clé"** en bas à droite (indiqué par la flèche rouge) ou sur l'icône de copie 📋 à côté de votre clé :
             """
         )
         if step3_img.exists():
-            st.image(str(step3_img), caption="Tableau Google AI Studio : Clé générée, Niveau sans frais garanti, et bouton de copie 📋", use_container_width=True)
+            st.image(str(step3_img), caption="Fenêtre Détails de la clé API : cliquez sur 'Copier la clé' (flèche rouge) ou l'icône 📋", use_container_width=True)
 
         st.markdown(
             """
