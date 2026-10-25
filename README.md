@@ -82,7 +82,7 @@ L'application s'ouvrira automatiquement dans votre navigateur à l'adresse : `ht
 ## 🔑 Configuration de la Clé API (En 2 Minutes)
 
 1. Ouvrez l'application et allez dans l'onglet **⚙️ Configuration & Guide**.
-2. Suivez le lien direct vers [Google AI Studio](https://aistudio.google.com/) pour générer une clé d'API gratuite (aucune carte bancaire requise).
+2. Suivez le lien direct vers [Google AI Studio - Clés API](https://aistudio.google.com/api-keys) pour générer votre clé d'API gratuite en cliquant sur **"Créer une clé API"** (Niveau sans frais, aucune carte bancaire requise).
 3. Collez la clé dans le champ prévu et cliquez sur **💾 Enregistrer la clé**.
 4. Cliquez sur **🔍 Tester la connexion** : un badge vert vous confirmera immédiatement que l'IA est prête !
 

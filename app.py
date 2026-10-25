@@ -750,31 +750,64 @@ def render_mermaid_mindmap(mermaid_code: str, is_ar: bool = False) -> str:
 
 
 def render_gemini_key_instructions(expanded: bool = False) -> None:
-    """Affiche un guide pas à pas clair pour obtenir une clé API Google Gemini 100% gratuite."""
+    """Affiche un guide pas à pas clair et illustré pour obtenir une clé API Google Gemini 100% gratuite."""
+    guide_dir = Path(__file__).parent / "assets" / "guide"
+    step1_img = guide_dir / "gemini_step1_menu.png"
+    step2_img = guide_dir / "gemini_step2_button.png"
+    step3_img = guide_dir / "gemini_step3_table.png"
+
     with st.expander("💡 Comment obtenir votre clé API Google Gemini (100% Gratuite) ?", expanded=expanded):
         st.markdown(
             """
-#### 🔑 Guide pas à pas : Obtenir votre clé API Google Gemini gratuite
+#### 🔑 Guide pas à pas illustré : Obtenir votre clé API Google Gemini gratuite
 
-Google met à disposition une clé d'accès **100% gratuite**, sans carte bancaire, offrant un quota très généreux pour vos révisions, fiches express et quiz.
+Google met à disposition une clé d'accès **100% gratuite** (mention officielle **"Niveau sans frais"**), sans carte bancaire, offrant un quota très généreux pour les cours, les révisions, les fiches express, la dictée vocale et les quiz avec Sanad.
 
-1. **Accédez à Google AI Studio :**
-   - Rendez-vous sur **[aistudio.google.com](https://aistudio.google.com/)**.
-   - Connectez-vous avec votre compte Google ordinaire (Gmail ou compte scolaire).
-2. **Ouvrez la section des clés d'API :**
-   - En haut à gauche, cliquez sur le bouton bleu **"Get API key"** (ou rendez-vous directement sur [aistudio.google.com/app/apikey](https://aistudio.google.com/app/apikey)).
-3. **Créez votre clé en un clic :**
-   - Cliquez sur le bouton bleu **"Create API key"**.
-   - Choisissez *"Create API key in new project"* (Créer une clé dans un nouveau projet) ou sélectionnez un projet existant.
-4. **Copiez la clé générée :**
-   - Une fenêtre s'affiche avec votre clé secrète commençant généralement par `AIzaSy...`.
-   - Cliquez sur l'icône **Copier**.
-5. **Collez-la dans Ecole Adnane :**
-   - Revenez sur cette page, collez votre clé dans le champ prévu et cliquez sur **"💾 Enregistrer la clé"**.
-   - Cliquez ensuite sur **"🔍 Tester ma connexion Gemini"** pour vérifier que le voyant vert s'allume.
+---
+##### 1️⃣ Étape 1 : Accéder à la page officielle des clés API
+- Rendez-vous directement sur **[aistudio.google.com/api-keys](https://aistudio.google.com/api-keys)**.
+- Connectez-vous avec votre compte Google (Gmail ordinaire ou compte scolaire).
+- Dans le menu latéral gauche sous **PROJET**, vérifiez que la section **"Clés API"** est bien sélectionnée.
+            """
+        )
+        if step1_img.exists():
+            st.image(str(step1_img), caption="Menu latéral gauche : PROJET > Clés API", width=200)
+
+        st.markdown(
+            """
+---
+##### 2️⃣ Étape 2 : Créer une clé API
+- En haut à droite de l'écran, cliquez sur le bouton :
+            """
+        )
+        if step2_img.exists():
+            st.image(str(step2_img), caption="Bouton en haut à droite : Créer une clé API", width=220)
+
+        st.markdown(
+            """
+- Dans la boîte de dialogue qui s'ouvre, choisissez **"Créer une clé API dans un nouveau projet"** (ou sélectionnez un projet Gemini existant).
+- La clé sera créée instantanément en quelques secondes.
+
+---
+##### 3️⃣ Étape 3 : Vérifier la gratuité et copier votre clé
+- Votre clé apparaît immédiatement dans le tableau sous le nom de votre projet.
+- **Vérification de gratuité :** La colonne *Niveau de facturation* affiche bien **"Niveau sans frais"** (aucune carte bancaire requise, aucun coût).
+- Cliquez sur l'icône de copie 📋 située tout à droite de la ligne pour copier votre clé secrète dans le presse-papiers.
+            """
+        )
+        if step3_img.exists():
+            st.image(str(step3_img), caption="Tableau Google AI Studio : Clé générée, Niveau sans frais garanti, et bouton de copie 📋", use_container_width=True)
+
+        st.markdown(
+            """
+---
+##### 4️⃣ Étape 4 : Activer votre clé dans Ecole Adnane
+- Revenez sur cette page ci-dessous.
+- Collez votre clé dans le champ prévu et cliquez sur **"💾 Enregistrer la clé"**.
+- Cliquez ensuite sur **"🔍 Tester ma connexion Gemini"** pour valider : le badge vert s'allumera immédiatement !
 
 > 💡 **Pourquoi une clé individuelle ?**  
-> Chaque élève dispose ainsi de son propre quota gratuit et indépendant. Vos échanges avec le tuteur Sanad et vos révisions ne risquent jamais d'être ralentis par les autres utilisateurs.
+> Chaque élève dispose ainsi de son propre quota gratuit et indépendant. Vos échanges avec le tuteur Sanad, la dictée vocale et vos révisions ne risquent jamais d'être ralentis par les autres utilisateurs.
             """
         )
 
@@ -1376,7 +1409,7 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
         st.sidebar.warning("⚠️ Clé IA non configurée", icon="🔑")
         if not is_admin:
             with st.sidebar.expander("🔑 Saisir ma clé Gemini (Optionnel)", expanded=False):
-                st.caption("👉 Obtenez votre clé gratuite en 1 minute sur [Google AI Studio](https://aistudio.google.com/).")
+                st.caption("👉 Obtenez votre clé gratuite en 1 minute sur [Google AI Studio](https://aistudio.google.com/api-keys).")
                 new_st_key = st.text_input("Clé Gemini :", type="password", key="sidebar_student_gemini_key", placeholder="AIzaSy...")
                 if st.button("Enregistrer ma clé", key="sidebar_save_gemini_btn"):
                     if new_st_key:
@@ -1691,7 +1724,7 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                 value=current_admin_key,
                 type="password",
                 placeholder="AIzaSy...",
-                help="Clé gratuite issue de https://aistudio.google.com/",
+                help="Clé gratuite issue de https://aistudio.google.com/api-keys",
             )
         with col_ak2:
             st.write("")
@@ -2359,7 +2392,7 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                 btn_gen_fiche = "⚡ توليد بطاقة المراجعة المركزة بالذكاء الاصطناعي" if is_ar else ("⚡ Generate AI Revision Sheet" if is_en else "⚡ Générer la Fiche Express avec l'IA")
                 if st.button(btn_gen_fiche, type="primary"):
                     if not user_api_key:
-                        st.error("⚠️ Clé API Gemini requise. Obtenez votre clé 100% gratuite sur [Google AI Studio](https://aistudio.google.com/) et activez-la dans **⚙️ Paramètres** ou la barre latérale." if not is_en else "⚠️ Gemini API key required. Get your free key on [Google AI Studio](https://aistudio.google.com/) and configure it in **⚙️ Settings** or the sidebar.")
+                        st.error("⚠️ Clé API Gemini requise. Obtenez votre clé 100% gratuite sur [Google AI Studio](https://aistudio.google.com/api-keys) et activez-la dans **⚙️ Paramètres** ou la barre latérale." if not is_en else "⚠️ Gemini API key required. Get your free key on [Google AI Studio](https://aistudio.google.com/api-keys) and configure it in **⚙️ Settings** or the sidebar.")
                     else:
                         with st.spinner("Génération de la fiche express..." if not is_en else "Generating revision sheet..."):
                             generated_summary = generate_revision_sheet(
@@ -2448,7 +2481,7 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                     regen_label = "🔄 إعادة توليد بطاقة المراجعة" if is_ar else ("🔄 Regenerate Revision Sheet" if is_en else "🔄 Régénérer la Fiche Express")
                     if st.button(regen_label, key=f"btn_regen_fiche_{current_course['id']}"):
                         if not user_api_key:
-                            st.error("⚠️ Clé API Gemini requise. Obtenez votre clé 100% gratuite sur [Google AI Studio](https://aistudio.google.com/) et activez-la dans **⚙️ Paramètres** ou la barre latérale." if not is_en else "⚠️ Gemini API key required. Get your free key on [Google AI Studio](https://aistudio.google.com/) and configure it in **⚙️ Settings** or the sidebar.")
+                            st.error("⚠️ Clé API Gemini requise. Obtenez votre clé 100% gratuite sur [Google AI Studio](https://aistudio.google.com/api-keys) et activez-la dans **⚙️ Paramètres** ou la barre latérale." if not is_en else "⚠️ Gemini API key required. Get your free key on [Google AI Studio](https://aistudio.google.com/api-keys) and configure it in **⚙️ Settings** or the sidebar.")
                         else:
                             with st.spinner("Régénération..." if not is_en else "Regenerating..."):
                                 generated_summary = generate_revision_sheet(
@@ -2495,7 +2528,7 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                                     text=fiche_md,
                                     language=current_course.get("language", "fr"),
                                     user_id=current_course.get("user_id"),
-                                )
+                                    )
                                 st.rerun()
 
         with tab_schema:
@@ -2520,7 +2553,7 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                 )
                 if st.button(btn_gen_map, type="primary", key=f"btn_gen_mindmap_{current_course['id']}"):
                     if not user_api_key:
-                        st.error("⚠️ Clé API Gemini requise. Obtenez votre clé 100% gratuite sur [Google AI Studio](https://aistudio.google.com/) et activez-la dans **⚙️ Paramètres** ou la barre latérale." if not is_en else "⚠️ Gemini API key required. Get your free key on [Google AI Studio](https://aistudio.google.com/) and configure it in **⚙️ Settings** or the sidebar.")
+                        st.error("⚠️ Clé API Gemini requise. Obtenez votre clé 100% gratuite sur [Google AI Studio](https://aistudio.google.com/api-keys) et activez-la dans **⚙️ Paramètres** ou la barre latérale." if not is_en else "⚠️ Gemini API key required. Get your free key on [Google AI Studio](https://aistudio.google.com/api-keys) and configure it in **⚙️ Settings** or the sidebar.")
                     else:
                         spin_msg = "Génération de la carte mentale..." if not is_en else ("Generating mind map..." if not is_ar else "جاري إنشاء الخريطة الذهنية...")
                         with st.spinner(spin_msg):
@@ -2697,7 +2730,7 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
             btn_new_quiz = "🎯 توليد اختبار تدريبي جديد (5 أسئلة)" if is_ar else ("🎯 Generate Exam Practice Quiz (5 questions)" if is_en else "🎯 Générer un nouveau quiz d'examen (5 questions)")
             if st.button(btn_new_quiz, type="secondary"):
                 if not user_api_key:
-                    st.error("⚠️ Clé API Gemini requise. Obtenez votre clé 100% gratuite sur [Google AI Studio](https://aistudio.google.com/) et activez-la dans **⚙️ Paramètres** ou la barre latérale." if not is_en else "⚠️ Gemini API key required. Get your free key on [Google AI Studio](https://aistudio.google.com/) and configure it in **⚙️ Settings** or the sidebar.")
+                    st.error("⚠️ Clé API Gemini requise. Obtenez votre clé 100% gratuite sur [Google AI Studio](https://aistudio.google.com/api-keys) et activez-la dans **⚙️ Paramètres** ou la barre latérale." if not is_en else "⚠️ Gemini API key required. Get your free key on [Google AI Studio](https://aistudio.google.com/api-keys) and configure it in **⚙️ Settings** or the sidebar.")
                 else:
                     with st.spinner("Génération des questions d'examen..." if not is_en else "Generating exam quiz questions..."):
                         quiz_questions = generate_quiz(
@@ -3035,7 +3068,7 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
             prompt_to_send = user_input or suggested_prompt
             if prompt_to_send:
                 if not user_api_key:
-                    st.error("⚠️ Clé API Gemini requise pour échanger avec Sanad. Obtenez votre clé 100% gratuite sur [Google AI Studio](https://aistudio.google.com/) et activez-la dans **⚙️ Paramètres** ou la barre latérale." if not is_en else "⚠️ Gemini API key required to chat with Sanad. Get your free key on [Google AI Studio](https://aistudio.google.com/) and configure it in **⚙️ Settings** or the sidebar.")
+                    st.error("⚠️ Clé API Gemini requise pour échanger avec Sanad. Obtenez votre clé 100% gratuite sur [Google AI Studio](https://aistudio.google.com/api-keys) et activez-la dans **⚙️ Paramètres** ou la barre latérale." if not is_en else "⚠️ Gemini API key required to chat with Sanad. Get your free key on [Google AI Studio](https://aistudio.google.com/api-keys) and configure it in **⚙️ Settings** or the sidebar.")
                 else:
                     add_chat_message(current_course["id"], "user", prompt_to_send, user_id=active_user_id)
                     with st.chat_message("user", avatar="🧑‍🎓"):
@@ -3543,7 +3576,7 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                 value=current_user_gemini,
                 type="password",
                 placeholder="AIzaSy...",
-                help="Gratuite sur https://aistudio.google.com/ sans carte de crédit.",
+                help="Gratuite sur https://aistudio.google.com/api-keys sans carte de crédit.",
             )
         with col_k2:
             st.write("")

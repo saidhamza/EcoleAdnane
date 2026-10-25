@@ -229,7 +229,7 @@ def test_gemini_connection(api_key: Optional[str] = None) -> Dict[str, Any]:
         "success": False,
         "provider": "gemini",
         "error": f"Échec de connexion à Gemini : {last_err}",
-        "tip": "Vérifiez que votre clé est bien issue de https://aistudio.google.com/ et que le projet est actif.",
+        "tip": "Vérifiez que votre clé est bien issue de https://aistudio.google.com/api-keys et que le projet est actif.",
     }
 
 
