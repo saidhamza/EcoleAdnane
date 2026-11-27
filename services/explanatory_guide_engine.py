@@ -824,6 +824,7 @@ def build_interactive_guide_reader_html(
     next_text = "❮ التالي" if is_ar else "Suivant ❯"
     default_trap_title = "انتبه للخطأ" if is_ar else "Attention au Piège"
     default_ex_title = "نموذج امتحان" if is_ar else "Exemple d'Examen"
+    deck_title = guide_deck.get("title", course_title)
 
     return f"""<!DOCTYPE html>
 <html lang="{language}" dir="{'rtl' if is_ar else 'ltr'}">
