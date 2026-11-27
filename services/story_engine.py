@@ -1001,3 +1001,43 @@ def html_escape(text: str) -> str:
         .replace('"', "&quot;")
         .replace("'", "&#039;")
     )
+
+
+def generate_complete_story_and_pdf(
+    course_text: str,
+    subject: str,
+    course_title: str,
+    course_id: int,
+    language: str = "ar",
+    user_id: Optional[int] = None,
+) -> Tuple[Dict[str, Any], str, str]:
+    """
+    Exécute le pipeline complet en 1 clic :
+    1. Génération du scénario narratif jeunesse (Tashkeel complet, 4 à 5 scènes).
+    2. Enregistrement en base de données.
+    3. Génération des peintures à l'aquarelle par IA, audios TTS, visionneuse et PDF 16:9 haute résolution.
+    4. Enregistrement du PDF en base de données.
+    Retourne (scenario, pdf_url, html_url).
+    """
+    from models.database import save_course_story_pdf, save_course_story_scenario
+
+    scen = generate_course_story_scenario(
+        course_text=course_text,
+        subject=subject,
+        course_title=course_title,
+        language=language,
+        user_id=user_id,
+    )
+    save_course_story_scenario(course_id, scen)
+
+    pdf_url, html_url = build_story_pdf_and_viewer(
+        scenario=scen,
+        course_id=course_id,
+        subject=subject,
+        course_title=course_title,
+        language=language,
+        user_id=user_id,
+    )
+    save_course_story_pdf(course_id, pdf_url)
+    return scen, pdf_url, html_url
+

@@ -251,6 +251,7 @@ except ImportError:
 from services.story_engine import (
     generate_course_story_scenario,
     build_story_pdf_and_viewer,
+    generate_complete_story_and_pdf,
 )
 from services.auth_manager import (
     check_active_user_session,
@@ -2901,7 +2902,37 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                         )
                 with col_btn_menu:
                     with st.popover("⚙️ Options" if not is_ar else "⚙️ خيارات"):
-                        if st.button("📝 Régénérer le Scénario" if not is_ar else "📝 إعادة كتابة السيناريو", key=f"btn_regen_scen_{course_id}"):
+                        if st.button("🔄 Tout Régénérer en 1 clic (Scénario + Peintures + PDF)" if not is_ar else "🔄 إعادة إنشاء الألبوم بالكامل (بنقرة واحدة)", key=f"btn_regen_all_{course_id}", type="primary"):
+                            with st.status("Régénération complète de l'album..." if not is_ar else "جارٍ إعادة إنشاء الألبوم بالكامل...", expanded=True) as status_box:
+                                try:
+                                    st.write("📝 Écriture du nouveau scénario pédagogique..." if not is_ar else "📝 كتابة السيناريو التربوي الجديد...")
+                                    scen = generate_course_story_scenario(
+                                        course_text=course_raw,
+                                        subject=course_subj,
+                                        course_title=course_tit,
+                                        language=course_lang,
+                                        user_id=active_user_id,
+                                    )
+                                    save_course_story_scenario(course_id, scen)
+                                    st.write("🎨 Génération des illustrations et du PDF..." if not is_ar else "🎨 رسم اللوحات وتجميع الـ PDF...")
+                                    p_url, h_url = build_story_pdf_and_viewer(
+                                        scenario=scen,
+                                        course_id=course_id,
+                                        subject=course_subj,
+                                        course_title=course_tit,
+                                        language=course_lang,
+                                        user_id=active_user_id,
+                                    )
+                                    save_course_story_pdf(course_id, p_url)
+                                    status_box.update(label="✅ Album régénéré avec succès !" if not is_ar else "✅ تم تحديث الألبوم بنجاح!", state="complete", expanded=False)
+                                    st.success("Album régénéré avec succès !" if not is_ar else "تم تحديث الألبوم بنجاح!")
+                                    st.rerun()
+                                except Exception as e_reg_all:
+                                    status_box.update(label="❌ Erreur lors de la régénération" if not is_ar else "❌ حدث خطأ", state="error")
+                                    st.error(f"Erreur : {e_reg_all}")
+
+                        st.divider()
+                        if st.button("📝 Régénérer le Scénario uniquement" if not is_ar else "📝 إعادة كتابة السيناريو فقط", key=f"btn_regen_scen_{course_id}"):
                             with st.spinner("Conception du nouveau scénario..." if not is_ar else "جارٍ كتابة السيناريو الجديد..."):
                                 try:
                                     scen = generate_course_story_scenario(
@@ -2917,7 +2948,7 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                                 except Exception as e_sc:
                                     st.error(f"Erreur : {e_sc}")
 
-                        if st.button("🎨 Recompiler le Livre & PDF" if not is_ar else "🎨 إعادة تلوين وإنشاء الـ PDF", key=f"btn_recompile_pdf_{course_id}"):
+                        if st.button("🎨 Recompiler les Illustrations & PDF" if not is_ar else "🎨 إعادة تلوين وتجميع الـ PDF", key=f"btn_recompile_pdf_{course_id}"):
                             if not story_scenario:
                                 st.warning("Veuillez d'abord générer le scénario." if not is_ar else "يرجى إنشاء السيناريو أولاً.")
                             else:
@@ -2958,90 +2989,94 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
 
             else:
                 st.write("")
-                col_step1, col_step2 = st.columns(2)
+                st.markdown(
+                    """
+                    <div style="background: linear-gradient(135deg, rgba(37, 99, 235, 0.07) 0%, rgba(16, 185, 129, 0.07) 100%); border: 2px solid #3b82f6; border-radius: 16px; padding: 22px; margin-bottom: 20px;">
+                        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
+                            <span style="font-size: 30px;">🎨</span>
+                            <div>
+                                <h3 style="margin: 0; color: #1e3a8a; font-size: 19px;">Génération Complète de l'Album Histoire & PDF</h3>
+                                <p style="margin: 3px 0 0 0; color: #64748b; font-size: 13.5px;">Création automatique du conte jeunesse, des peintures aquarelle par IA, de l'audio et du livre PDF 16:9 haute résolution.</p>
+                            </div>
+                        </div>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin-top: 14px;">
+                            <div style="background: white; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px;">
+                                <strong style="color: #2563eb;">📝 1. Scénario Pédagogique</strong>
+                                <p style="font-size: 12.5px; color: #475569; margin: 4px 0 0 0;">Découpage en 4 à 5 scènes vivantes avec Tashkeel complet et morale éducative.</p>
+                            </div>
+                            <div style="background: white; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px;">
+                                <strong style="color: #059669;">🎨 2. Peintures Aquarelle IA</strong>
+                                <p style="font-size: 12.5px; color: #475569; margin: 4px 0 0 0;">Illustrations artistiques 16:9 widescreen captivantes pour chaque scène.</p>
+                            </div>
+                            <div style="background: white; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px;">
+                                <strong style="color: #d97706;">🔊 3. Audio & Export PDF</strong>
+                                <p style="font-size: 12.5px; color: #475569; margin: 4px 0 0 0;">Narration vocale intégrée et compilation en album PDF 1376x768 paysage.</p>
+                            </div>
+                        </div>
+                    </div>
+                    """ if not is_ar else """
+                    <div style="background: linear-gradient(135deg, rgba(37, 99, 235, 0.07) 0%, rgba(16, 185, 129, 0.07) 100%); border: 2px solid #3b82f6; border-radius: 16px; padding: 22px; margin-bottom: 20px;">
+                        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
+                            <span style="font-size: 30px;">🎨</span>
+                            <div>
+                                <h3 style="margin: 0; color: #1e3a8a; font-size: 19px;">إنشاء ألبوم القصة المصور والـ PDF بنقرة واحدة</h3>
+                                <p style="margin: 3px 0 0 0; color: #64748b; font-size: 13.5px;">تأليف قصة للأطفال، رسم لوحات مائية بالذكاء الاصطناعي، تسجيل صوتي بالتشكيل وتصدير كتاب PDF عالي الدقة.</p>
+                            </div>
+                        </div>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin-top: 14px;">
+                            <div style="background: white; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px;">
+                                <strong style="color: #2563eb;">📝 1. سيناريو تربوي مشكول</strong>
+                                <p style="font-size: 12.5px; color: #475569; margin: 4px 0 0 0;">تقسيم الدرس إلى مشاهد شيقة مع تشكيل كامل وعبر تربوية مستفادة.</p>
+                            </div>
+                            <div style="background: white; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px;">
+                                <strong style="color: #059669;">🎨 2. لوحات مائية بالذكاء الاصطناعي</strong>
+                                <p style="font-size: 12.5px; color: #475569; margin: 4px 0 0 0;">لوحات فنية ساحرة 16:9 لكل مشهد تناسب الأطفال والناشئة.</p>
+                            </div>
+                            <div style="background: white; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px;">
+                                <strong style="color: #d97706;">🔊 3. قراءة صوتية وألبوم PDF</strong>
+                                <p style="font-size: 12.5px; color: #475569; margin: 4px 0 0 0;">تسجيل صوتي وتجميع ألبوم PDF عالي الدقة (1376x768) قابل للتحميل.</p>
+                            </div>
+                        </div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
 
-                with col_step1:
-                    st.markdown(
-                        """
-                        <div style="background: rgba(37, 99, 235, 0.08); border: 2px solid #3b82f6; border-radius: 14px; padding: 18px; min-height: 220px;">
-                            <h4 style="margin-top:0; color: #2563eb;">📝 Étape 1 : Scénario Pédagogique</h4>
-                            <p style="font-size: 14px; color: #475569;">
-                                L'IA transforme la leçon en un récit vivant pour enfants, découpé en 4 à 5 scènes captivantes avec narration imagée et diacritiques complets (Tashkeel).
-                            </p>
-                        </div>
-                        """ if not is_ar else """
-                        <div style="background: rgba(37, 99, 235, 0.08); border: 2px solid #3b82f6; border-radius: 14px; padding: 18px; min-height: 220px;">
-                            <h4 style="margin-top:0; color: #2563eb;">📝 الخطوة 1 : كتابة سيناريو القصة</h4>
-                            <p style="font-size: 14px; color: #475569;">
-                                يقوم الذكاء الاصطناعي بتحويل الدرس إلى حكاية شيقة ومبسطة للأطفال، مقسمة إلى 4 أو 5 مشاهد ممتعة مع تشكيل كامل للنصوص وعبر تربوية.
-                            </p>
-                        </div>
-                        """,
-                        unsafe_allow_html=True,
-                    )
-                    st.write("")
-                    if story_scenario:
-                        st.success("✅ Scénario prêt !" if not is_ar else "✅ السيناريو مكتمل وجاهز !")
-                        with st.expander("👁️ Voir le scénario généré" if not is_ar else "👁️ عرض تفاصيل السيناريو", expanded=False):
-                            st.json(story_scenario)
-                        btn_label_step1 = "🔄 Réécrire le Scénario" if not is_ar else "🔄 إعادة كتابة السيناريو"
-                    else:
-                        btn_label_step1 = "✨ 1. Générer le Scénario d'Histoire" if not is_ar else "✨ 1. كتابة سيناريو القصة"
+                btn_label = "🎨 Générer l'Album Histoire Illustré & PDF (en 1 clic)" if not is_ar else "🎨 إنشاء كتاب القصة المصور والـ PDF (بنقرة واحدة)"
+                if st.button(btn_label, type="primary", use_container_width=True, key=f"btn_single_generate_{course_id}"):
+                    with st.status("Génération de l'Album d'Histoire en cours..." if not is_ar else "جارٍ إنشاء كتاب القصة والـ PDF...", expanded=True) as status_box:
+                        try:
+                            st.write("📝 **Étape 1/2 :** Écriture du conte pédagogique et du scénario par l'IA..." if not is_ar else "📝 **الخطوة 1/2 :** تأليف قصة الدرس والسيناريو التربوي...")
+                            scen = generate_course_story_scenario(
+                                course_text=course_raw,
+                                subject=course_subj,
+                                course_title=course_tit,
+                                language=course_lang,
+                                user_id=active_user_id,
+                            )
+                            save_course_story_scenario(course_id, scen)
 
-                    if st.button(btn_label_step1, type="secondary" if story_scenario else "primary", use_container_width=True, key=f"btn_step1_{course_id}"):
-                        with st.spinner("Écriture du conte pédagogique en cours..." if not is_ar else "جارٍ تأليف القصة وكتابة السيناريو..."):
-                            try:
-                                scen = generate_course_story_scenario(
-                                    course_text=course_raw,
-                                    subject=course_subj,
-                                    course_title=course_tit,
-                                    language=course_lang,
-                                    user_id=active_user_id,
-                                )
-                                save_course_story_scenario(course_id, scen)
-                                st.success("Scénario créé avec succès !" if not is_ar else "تم تأليف السيناريو بنجاح!")
-                                st.rerun()
-                            except Exception as e_s1:
-                                st.error(f"Erreur : {e_s1}")
+                            st.write("🎨 **Étape 2/2 :** Création des peintures à l'aquarelle, narration audio et compilation du PDF (1376x768)..." if not is_ar else "🎨 **الخطوة 2/2 :** رسم اللوحات المائية وتسجيل الصوت وتجميع الـ PDF...")
+                            p_url, h_url = build_story_pdf_and_viewer(
+                                scenario=scen,
+                                course_id=course_id,
+                                subject=course_subj,
+                                course_title=course_tit,
+                                language=course_lang,
+                                user_id=active_user_id,
+                            )
+                            save_course_story_pdf(course_id, p_url)
 
-                with col_step2:
-                    st.markdown(
-                        """
-                        <div style="background: rgba(16, 185, 129, 0.08); border: 2px solid #10b981; border-radius: 14px; padding: 18px; min-height: 220px;">
-                            <h4 style="margin-top:0; color: #059669;">🎨 Étape 2 : Livre Illustré & PDF</h4>
-                            <p style="font-size: 14px; color: #475569;">
-                                Génération des illustrations féeriques à l'aquarelle pour chaque scène, synthèse vocale de la narration et compilation en livre PDF haute qualité (16:9).
-                            </p>
-                        </div>
-                        """ if not is_ar else """
-                        <div style="background: rgba(16, 185, 129, 0.08); border: 2px solid #10b981; border-radius: 14px; padding: 18px; min-height: 220px;">
-                            <h4 style="margin-top:0; color: #059669;">🎨 الخطوة 2 : توليد الرسوم وكتاب الـ PDF</h4>
-                            <p style="font-size: 14px; color: #475569;">
-                                رسم لوحات مائية فنية لكل مشهد عبر الذكاء الاصطناعي، تسجيل الصوت بالتشكيل الكامل وتجميع القصة في كتاب PDF رائع عالي الدقة.
-                            </p>
-                        </div>
-                        """,
-                        unsafe_allow_html=True,
-                    )
-                    st.write("")
-                    btn_step2_disabled = not bool(story_scenario)
-                    btn_label_step2 = "🎨 2. Générer le Livre & PDF Illustré" if not is_ar else "🎨 2. إنشاء كتاب القصة والـ PDF"
-                    if st.button(btn_label_step2, type="primary", disabled=btn_step2_disabled, use_container_width=True, key=f"btn_step2_{course_id}"):
-                        with st.spinner("Génération des illustrations à l'aquarelle et compilation du PDF (cela peut prendre environ 30 secondes)..." if not is_ar else "جارٍ رسم اللوحات الفنية وتجميع كتاب الـ PDF..."):
-                            try:
-                                p_url, h_url = build_story_pdf_and_viewer(
-                                    scenario=story_scenario,
-                                    course_id=course_id,
-                                    subject=course_subj,
-                                    course_title=course_tit,
-                                    language=course_lang,
-                                    user_id=active_user_id,
-                                )
-                                save_course_story_pdf(course_id, p_url)
-                                st.success("Livre d'histoire et PDF créés avec succès !" if not is_ar else "تم إنشاء كتاب القصة والـ PDF بنجاح!")
-                                st.rerun()
-                            except Exception as e_s2:
-                                st.error(f"Erreur : {e_s2}")
+                            status_box.update(label="✅ Album Histoire et PDF générés avec succès !" if not is_ar else "✅ تم إنشاء كتاب القصة والـ PDF بنجاح!", state="complete", expanded=False)
+                            st.success("Livre d'histoire et PDF créés avec succès !" if not is_ar else "تم إنشاء كتاب القصة والـ PDF بنجاح!")
+                            st.rerun()
+                        except Exception as e_oneclick:
+                            status_box.update(label="❌ Erreur lors de la génération" if not is_ar else "❌ حدث خطأ أثناء الإنشاء", state="error")
+                            st.error(f"Erreur : {e_oneclick}")
+
+                if story_scenario and story_scenario.get("scenes"):
+                    with st.expander("👁️ Voir les détails du scénario déjà rédigé" if not is_ar else "👁️ تفاصيل السيناريو المحفوظ", expanded=False):
+                        st.json(story_scenario)
 
                 with st.expander("🧪 Besoin d'une simulation scientifique interactive de laboratoire ?" if not is_ar else "🧪 هل تفضل تجربة محاكاة علمية تفاعلية؟", expanded=False):
                     st.caption("Convient particulièrement aux cours de Physique-Chimie, SVT ou Mathématiques complexes." if not is_ar else "مناسبة لدروس الفيزياء والكيمياء وعلوم الحياة والأرض.")
