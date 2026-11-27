@@ -945,6 +945,7 @@ html[dir="rtl"] .keypoints-card {{
         language=language,
         theme=theme,
     )
+    html_file_path = base_static_dir / f"guide_course_{course_id}.html"
     html_file_path.write_text(interactive_html, encoding="utf-8")
 
     pdf_url = f"/static/guides/guide_course_{course_id}.pdf"
