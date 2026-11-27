@@ -2596,10 +2596,13 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                         use_container_width=True,
                     )
                 with col_dl_btn:
+                    clean_dl_name = current_course.get("file_name") or f"{current_course.get('title', 'cours')}.pdf"
+                    if not clean_dl_name.lower().endswith(".pdf"):
+                        clean_dl_name = f"{clean_dl_name}.pdf"
                     st.download_button(
                         label="💾 Téléchargement alternatif" if not is_ar else "💾 تحميل بديل",
                         data=gen_pdf_data,
-                        file_name=gen_pdf_path.name,
+                        file_name=clean_dl_name,
                         mime="application/pdf",
                         key=f"dl_gen_pdf_{current_course['id']}",
                         use_container_width=True,

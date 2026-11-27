@@ -875,47 +875,18 @@ html[dir="rtl"] .keypoints-card {{
     pdf_file_path = base_static_dir / f"guide_course_{course_id}.pdf"
     compiled_pdf = False
 
-    # 3. Compilation en PDF haute résolution via Chromium Headless
     try:
-        cmd = [
-            "chromium-browser",
-            "--headless",
-            "--disable-gpu",
-            "--no-sandbox",
-            "--print-to-pdf-no-header",
-            f"--print-to-pdf=/root/guide_course_{course_id}.pdf",
-            f"https://ecole.code-xpert.net/static/guides/guide_course_{course_id}_print.html",
-        ]
-        res = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-        if res.returncode == 0 and os.path.exists(f"/root/guide_course_{course_id}.pdf"):
-            os.system(f"cp /root/guide_course_{course_id}.pdf {pdf_file_path} && rm -f /root/guide_course_{course_id}.pdf")
-            compiled_pdf = True
-            logger.info("PDF guide explicatif généré avec succès via Chromium headless !")
-    except Exception as e_chrom:
-        logger.warning(f"Échec compilation PDF via Chromium ({e_chrom})")
+        from services.pdf_compiler import compile_html_to_pdf_headless
 
-    # Fallback Pillow si Chromium n'est pas dispo
-    if not compiled_pdf:
-        try:
-            from PIL import Image
+        web_print_url = f"https://ecole.code-xpert.net/static/guides/guide_course_{course_id}_print.html"
+        local_print_url = f"file://{print_html_file_path.resolve()}"
 
-            pil_images = []
-            for sl in slide_data:
-                lp = sl.get("img_local_path")
-                if lp and os.path.exists(lp):
-                    im = Image.open(lp).convert("RGB")
-                    pil_images.append(im)
-            if pil_images:
-                pil_images[0].save(
-                    str(pdf_file_path),
-                    save_all=True,
-                    append_images=pil_images[1:],
-                    resolution=100.0,
-                )
-                compiled_pdf = True
-                logger.info("PDF guide explicatif généré via Pillow Image fallback !")
-        except Exception as e_pil_pdf:
-            logger.error(f"Échec compilation PDF Pillow: {e_pil_pdf}")
+        compiled_pdf = compile_html_to_pdf_headless(web_print_url, pdf_file_path)
+        if not compiled_pdf:
+            logger.warning("Échec compilation PDF guide via URL web, tentative via file://...")
+            compiled_pdf = compile_html_to_pdf_headless(local_print_url, pdf_file_path)
+    except Exception as e_pdf_comp:
+        logger.error(f"Erreur compilation PDF guide explicatif: {e_pdf_comp}")
 
     # Sauvegarde persistante dans storage/ (sécurité anti-perte, archivage et sauvegardes ZIP)
     if pdf_file_path.exists():

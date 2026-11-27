@@ -470,51 +470,24 @@ body {{
 </body>
 </html>"""
 
-    html_file_path = base_static_dir / f"story_course_{course_id}.html"
-    html_file_path.write_text(print_html_content, encoding="utf-8")
+    print_html_file_path = base_static_dir / f"story_course_{course_id}_print.html"
+    print_html_file_path.write_text(print_html_content, encoding="utf-8")
 
     pdf_file_path = base_static_dir / f"story_course_{course_id}.pdf"
     compiled_pdf = False
 
     try:
-        cmd = [
-            "chromium-browser",
-            "--headless",
-            "--disable-gpu",
-            "--no-sandbox",
-            "--print-to-pdf-no-header",
-            f"--print-to-pdf=/root/story_course_{course_id}.pdf",
-            f"https://ecole.code-xpert.net/static/stories/story_course_{course_id}.html",
-        ]
-        res = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-        if res.returncode == 0 and os.path.exists(f"/root/story_course_{course_id}.pdf"):
-            os.system(f"cp /root/story_course_{course_id}.pdf {pdf_file_path} && rm -f /root/story_course_{course_id}.pdf")
-            compiled_pdf = True
-            logger.info("PDF histoire généré avec succès via Chromium headless !")
-    except Exception as e_chrom:
-        logger.warning(f"Échec compilation PDF via Chromium ({e_chrom})")
+        from services.pdf_compiler import compile_html_to_pdf_headless
 
-    if not compiled_pdf:
-        try:
-            from PIL import Image
+        web_print_url = f"https://ecole.code-xpert.net/static/stories/story_course_{course_id}_print.html"
+        local_print_url = f"file://{print_html_file_path.resolve()}"
 
-            pil_images = []
-            for sc in scene_data:
-                lp = sc.get("img_local_path")
-                if lp and os.path.exists(lp):
-                    im = Image.open(lp).convert("RGB")
-                    pil_images.append(im)
-            if pil_images:
-                pil_images[0].save(
-                    str(pdf_file_path),
-                    save_all=True,
-                    append_images=pil_images[1:],
-                    resolution=100.0,
-                )
-                compiled_pdf = True
-                logger.info("PDF histoire généré avec succès via Pillow Image compilation !")
-        except Exception as e_pil_pdf:
-            logger.error(f"Échec compilation PDF Pillow: {e_pil_pdf}")
+        compiled_pdf = compile_html_to_pdf_headless(web_print_url, pdf_file_path)
+        if not compiled_pdf:
+            logger.warning("Échec compilation PDF histoire via URL web, tentative via file://...")
+            compiled_pdf = compile_html_to_pdf_headless(local_print_url, pdf_file_path)
+    except Exception as e_pdf_comp:
+        logger.error(f"Erreur compilation PDF histoire: {e_pdf_comp}")
 
     # Sauvegarde persistante dans storage/ (sécurité anti-perte, archivage et sauvegardes ZIP)
     if pdf_file_path.exists():
@@ -544,6 +517,7 @@ body {{
         course_title=course_title,
         language=language,
     )
+    html_file_path = base_static_dir / f"story_course_{course_id}.html"
     html_file_path.write_text(interactive_html, encoding="utf-8")
 
     pdf_url = f"/static/stories/story_course_{course_id}.pdf"
