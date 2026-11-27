@@ -77,6 +77,7 @@ CONSIGNES PÉDAGOGIQUES :
    - "narration" : texte du conte (3 à 5 phrases riches, immersives et imagées, racontées à l'enfant avec Tashkeel complet si arabe)
    - "did_you_know" : une leçon clé à retenir ou morale historique/scientifique simplifiée (1 phrase percutante)
    - "image_prompt" : prompt en ANGLAIS ultra-détaillé pour générer une illustration féerique à l'aquarelle pour livre jeunesse (16:9 widescreen, fairytale storybook watercolor style, warm lighting, soft detailed watercolor art, cinematic composition, highly detailed).
+6. RÈGLE FORMAT JSON ABSOLUE : Dans les champs de texte ('title', 'narration', 'did_you_know', etc.), n'utilise JAMAIS de guillemets doubles ordinaires (") à l'intérieur du texte ! Utilise EXCLUSIVEMENT des guillemets français « » ou des apostrophes ' pour les mots cités (ex: «الفوهرر» ou «الرايخ»).
 
 RÉPONDS STRICTEMENT SOUS FORME D'UN OBJET JSON VALIDE SANS TEXTE AVANT NI APRÈS :
 {{
@@ -96,7 +97,7 @@ RÉPONDS STRICTEMENT SOUS FORME D'UN OBJET JSON VALIDE SANS TEXTE AVANT NI APRÈ
 
     system_instruction = (
         "Tu es un auteur international de livres de contes et d'albums illustrés pour enfants. "
-        "Tu réponds EXCLUSIVEMENT en JSON valide rigoureusement formaté."
+        "Tu réponds EXCLUSIVEMENT en JSON RFC 8259 valide sans texte avant ni après, et sans guillemets doubles internes non échappés."
     )
 
     is_or_allowed = is_user_openrouter_allowed(user_id)
@@ -132,6 +133,16 @@ RÉPONDS STRICTEMENT SOUS FORME D'UN OBJET JSON VALIDE SANS TEXTE AVANT NI APRÈ
         cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned, flags=re.IGNORECASE)
         cleaned = re.sub(r"\s*```$", "", cleaned)
 
+    # 1. Tentative parsing direct avec json-repair
+    try:
+        import json_repair
+        repaired = json_repair.repair_json(cleaned, return_objects=True)
+        if isinstance(repaired, dict) and "scenes" in repaired and len(repaired["scenes"]) > 0:
+            return repaired
+    except Exception as e_repair:
+        logger.debug(f"Tentative json_repair : {e_repair}")
+
+    # 2. Parsing standard
     try:
         data = json.loads(cleaned)
         if isinstance(data, dict) and "scenes" in data and len(data["scenes"]) > 0:
