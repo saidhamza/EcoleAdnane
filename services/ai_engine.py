@@ -1919,9 +1919,9 @@ def generate_course_animation_simulation(
 ) -> str:
     """
     Génère une expérience interactive immersive haut de gamme pour un cours donné :
-    - Matières narratives & Histoire (Histoire, Géo, Éducation Civique, Langues) -> Bande Dessinée Animée Interactive (BD)
+    - Matières narratives & Histoire (Histoire, Géo, Éducation Civique, Langues) -> Studio NotebookLM (Slide Deck épuré, Audio Overview conversationnel et Flashcards)
     - Matières Scientifiques (Physique, Chimie, SVT, Maths) -> Simulation interactive Canvas/SVG
-    Intègre un moteur vocal Text-To-Speech (TTS) serveur pré-généré pour une restitution audio 100% fiable
+    Intègre un visualiseur d'ondes sonores (Waveform), un moteur vocal Text-To-Speech (TTS) serveur MP3
     et un contrôle de Plein Écran universel.
     Utilise OpenRouter (si autorisé par l'admin) ou Google Gemini.
     """
@@ -1936,13 +1936,13 @@ def generate_course_animation_simulation(
 
     is_scientific = any(k in search_str for k in sci_keywords)
 
-    if force_style in ("comic", "simulation", "history_epic"):
-        style = force_style
+    if force_style in ("notebooklm", "comic", "simulation"):
+        style = "simulation" if force_style == "simulation" else "notebooklm"
     else:
         # Par défaut :
         # - Matières scientifiques -> simulation
-        # - Histoire, Géo, Langues, Littérature -> comic (Bande Dessinée Animée)
-        style = "simulation" if is_scientific else "comic"
+        # - Histoire, Géo, Langues, Littérature -> notebooklm (Studio NotebookLM)
+        style = "simulation" if is_scientific else "notebooklm"
 
     is_ar = language == "ar"
     is_en = language == "en"
@@ -1950,38 +1950,57 @@ def generate_course_animation_simulation(
     # 2. Construction des spécifications selon le style
     truncated_text = (course_text or "")[:8000].strip()
 
-    if style == "comic":
+    if style == "notebooklm":
         mode_desc = (
-            "قصة مصورة تعليمية متحركة وتفاعلية (BANDE DESSINÉE HISTORIQUE / NARRATIVE ANIMÉE)"
+            "استوديو NOTEBOOKLM التفاعلي المتطور: عرض تقديمي بالشرائح، حوار صوتي عميق، وبطاقات دراسية"
             if is_ar
-            else "BANDE DESSINÉE ANIMÉE INTERACTIVE (COMIC BOOK STORYBOARD)"
+            else "GOOGLE NOTEBOOKLM STUDY STUDIO: INTERACTIVE SLIDE DECK, AUDIO OVERVIEW & FLASHCARDS"
         )
         specifications = f"""
-Tu dois concevoir une **{mode_desc}** de très haute qualité artistique et narrative en 4 à 5 planches/cases de bande dessinée animée (Comic Panels).
+Tu dois concevoir un **{mode_desc}** au design ultra-raffiné inspiré fidèlement de l'expérience officielle **Google NotebookLM (Audio Overview & Study Guide)**.
 
-⚠️ RÈGLE FONDAMENTALE VISUELLE :
-- INTERDICTION ABSOLUE ET STRICTE de dessiner des bonshommes allumettes (stick figures), des traits simplistes ou des dessins enfantins.
-- Le style visuel doit être celui d'un roman graphique ou d'une bande dessinée européenne historique de renom (Tintin/Astérix/L'Histoire en BD/Manga historique soigné) : décors immersifs, personnages avec du volume et des silhouettes soignées, costumes d'époque, jeux d'ombres et de lumière.
+🎨 ESTHÉTIQUE & DIRECTION ARTISTIQUE NOTEBOOKLM :
+- Thème sombre épuré et prestigieux (#0b0f19 / #111827), cartes en verre fumé dépoli avec bordures subtiles (rgba(255,255,255,0.08)), typographie moderne épurée (Cairo / Google Sans).
+- AUCUN dessin d'enfant, AUCUN bonhomme simpliste en SVG ! L'interface doit ressembler au produit officiel de Google : moderne, minimaliste, élégante, universitaire et percutante.
 
-Chaque case/scène de BD doit comporter :
-1. Une planche / case de BD majeure encadrée avec style 'Comic Book' moderne :
-   - Un encadrement soigné de case de BD (bordure nette, ombre portée, numéro de case).
-   - Un décor d'époque vectoriel riche en SVG pur (ex: rues d'époque, monuments emblématiques, usines, parlements, cartes stratégiques de front).
-   - Des personnages expressifs dessinés avec style BD (orateurs, dirigeants, ouvriers, citoyens, témoins de l'époque) avec postures vivantes, visages expressifs, costumes d'époque (chapeaux, manteaux, uniformes, ombres portées).
-   - Un cartouche récitatif du narrateur en haut de case (.comic-caption) : ex: « برلين، خريف 1929: أزمة اقتصادية غير مسبوقة تضرب البلاد... »
-   - Des bulles de dialogue / phylactères (.speech-bubble) avec pointeurs orientés vers les personnages pour leurs paroles historiques ou répliques clés.
-   - Des étiquettes ou onomatopées dynamiques de BD stylisées (ex: 'أزمة 1929!', 'صعود الحزب!', '1933!', 'CRASH!').
-2. Balise de Narration Vocale OBLIGATOIRE pour chaque case de BD :
-   - Chaque case DOIT contenir exactement :
-     <div class="narration-script" data-scene="i">النص الكامل للسرد وحوار الشخصيات في هذا المشهد باللغة العربية الفصحى مع التشكيل التام (tashkeel)...</div>
-   - Ce texte doit être rédigé de manière vivante et immersive, combinant la voix du narrateur et les dialogues des personnages.
-3. Barre de navigation et lecture interactive :
-   - Bouton Plein Écran en haut : '⛶ ملء الشاشة' (appelle window.toggleFullscreenOrNewTab())
-   - Boutons: ◀ المشهد السابق | المشهد التالي ▶
-   - Pastilles numérotées des cases de BD (1, 2, 3, 4, 5)
-   - Bouton audio : '🔊 استمع لهذا المشهد'
-   - Bouton de lecture continue : '⏯️ قراءة متتابعة للقصة' (enchaîne les cases de BD avec narration vocale synchronisée comme un dessin animé parlant)
-   - Sélecteur de vitesse : 0.9x | 1x | 1.2x
+L'APPLICATION INTERACTIVE NOTEBOOKLM DOIT COMPORTER :
+
+1. En-tête Studio & Badges (Studio Header) :
+   - Badges 'pilules' : '🎙️ NOTEBOOKLM • DEEP DIVE AUDIO' | '{subject}' | '#3AC'.
+   - Titre du cours en typographie forte et nette.
+   - Bouton Plein Écran en haut : '⛶ ملء الشاشة' (appelle window.toggleFullscreenOrNewTab()).
+
+2. Lecteur Audio Overview Studio (Podcast des deux Hôtes avec Spectre Sonore) :
+   - Carte de podcast avec les deux avatars d'experts animateurs (ex: 'د. سارة' و 'أ. طارق' مع وسم 'مباشر').
+   - Visualiseur d'ondes sonores dynamique (<canvas id="waveform-canvas"> ou barres d'égaliseur animées) qui s'anime avec fluidité quand la voix parle !
+   - Contrôles audio : Bouton Lecture/Pause (▶️/⏸️), barre de progression temporelle (scrubber), boutons -10s / +10s, sélecteur de vitesse (0.8x, 1x, 1.25x, 1.5x).
+
+3. Système d'Onglets Studio (Studio Navigation) :
+   - Onglet 1 : 📊 عرض الشرائح (Slide Deck)
+   - Onglet 2 : 🎙️ الحوار المباشر (Live Transcript)
+   - Onglet 3 : 🧠 بطاقات المراجعة (Study Flashcards)
+
+4. Contenu de l'Onglet 1 - Diapositives Interactives (Slide Deck - 4 à 5 diapositives majeures) :
+   Chaque diapositive doit être structurée comme une slide de présentation de haut niveau :
+   - Numéro et tag de la diapositive (ex: '01 / 05 • سياق الأزمة').
+   - Grand Titre Éditorial Perctutant (Big Idea).
+   - 2 Chiffres Clés Claquants (Big Stat Callouts) avec grands nombres dorés/cyan et libellé explicatif (ex: '1929' - انهيار وول ستريت | '6 ملايين' - عاطل عن العمل).
+   - 2 à 3 Cartes Synthétiques d'Analyse (Key Takeaways) avec icônes modernes (🎯 السبب، ⚙️ الآلية، 💥 النتيجة).
+   - Encart 'مقتطف المصدر الأصلي' (Grounded Source Quote) mettant en valeur une citation authentique du cours.
+   - Contrôles de navigation : ◀ الشريحة السابقة | الشريحة التالية ▶ + pastilles numérotées cliquables.
+   - Bouton d'écoute de la diapositive : '🔊 استمع لهذه الشريحة'.
+
+5. Contenu de l'Onglet 2 - الحوار المباشر (Live Transcript) :
+   - Retranscription du dialogue naturel et captivant entre les deux hôtes analysant le cours avec intelligence.
+   - Chaque prise de parole indique le nom de l'hôte avec pastille colorée (ex: [د. سارة]: ... | [أ. طارق]: ...).
+
+6. Contenu de l'Onglet 3 - بطاقات المراجعة (Study Flashcards) :
+   - 4 cartes mémo interactives recto/verso sur les notions fondamentales du cours (cliquer pour retourner ou afficher la réponse).
+
+7. Balises de Narration Vocale OBLIGATOIRES pour chaque diapositive :
+   - Chaque diapositive/scène DOIT comporter :
+     <div class="narration-script" data-scene="i">النص الكامل للسرد والحوار الصوتي لهذه الشريحة باللغة العربية الفصحى مع التشكيل التام (tashkeel)...</div>
+   - Ce texte doit être riche, fluide et parfaitement vocalisé pour la synthèse vocale serveur.
 """
     elif style == "simulation":
         mode_desc = (
@@ -2004,18 +2023,18 @@ La simulation doit comporter :
 """
     else:
         mode_desc = (
-            "FRESQUE HISTORIQUE & DOCUMENTAIRE INTERACTIF CINÉMATIQUE"
+            "PRESENTATION NOTEBOOKLM"
             if not is_ar
-            else "ملحمة تاريخية ووثائقي تفاعلي سينمائي"
+            else "عرض استوديو NotebookLM"
         )
         specifications = f"""
-Tu dois concevoir une **{mode_desc}** de niveau muséal et documentaire en 4 à 5 scènes :
-1. Cartographie géopolitique vectorielle SVG et sceaux métalliques dorés.
-2. Silhouettes architecturales en contre-jour dramatique.
-3. Fiche Dossier d'Archives & Citation historique.
-4. Balise obligatoire : <div class="narration-script" data-scene="i">النص الكامل للسرد بالتشكيل التام...</div>
-5. Boutons de navigation, audio et bouton plein écran '⛶ ملء الشاشة' (window.toggleFullscreenOrNewTab()).
+Tu dois concevoir un deck de présentation de niveau studio NotebookLM :
+1. Slide deck percutant avec grands titres et chiffres clés.
+2. Lecteur de podcast audio avec égaliseur.
+3. Balise obligatoire : <div class="narration-script" data-scene="i">النص الكامل للسرد بالتشكيل التام...</div>
+4. Bouton plein écran '⛶ ملء الشاشة' (window.toggleFullscreenOrNewTab()).
 """
+
 
 
     lang_instruction = (
@@ -2044,7 +2063,7 @@ SPÉCIFICATIONS TECHNIQUES IMPÉRATIVES :
 
 RÈGLES D'EXÉCUTION :
 1. {lang_instruction}
-2. Design moderne : thème sombre prestigieux (fond #0a0f1d / #111827, cartes de BD en verre fumé avec liserés dorés subtils, responsive pour mobile et écran large).
+2. Design moderne : thème sombre prestigieux (#0a0f1d / #111827, cartes Studio en verre fumé dépoli avec liserés subtils, responsive pour mobile et écran large).
 3. 100% AUTONOME : tout le CSS dans une balise <style>, tout le JS dans une balise <script>. AUCUNE dépendance CDN externe obligatoire.
 4. Le code doit être PRÊT À L'EMPLOI et s'exécuter directement dans un iframe Streamlit avec support du mode plein écran (window.toggleFullscreenOrNewTab()).
 5. SVG épuré et optimisé : Les illustrations vectorielles SVG doivent être propres, structurées et concises (formes géométriques bien agencées, <rect>, <circle>, <polygon>, <path> optimisés). INTERDICTION FORMELLE de boucles répétitives infinies de coordonnées SVG.
@@ -2052,8 +2071,8 @@ RÈGLES D'EXÉCUTION :
 """
 
     system_instruction = (
-        "Tu es un illustrateur de bandes dessinées pédagogiques d'élite, scénariste et développeur Web créatif de calibre international, "
-        "spécialisé en bandes dessinées animées interactives (Comic Book Storyboard), simulations Canvas/SVG et synthèses vocales haute fidélité. "
+        "Tu es un directeur de création pédagogique, designer d'interfaces d'apprentissage et développeur Web créatif d'élite, "
+        "spécialisé dans les présentations interactives de haut niveau inspirées de Google NotebookLM Studio, les simulations scientifiques Canvas/SVG et les synthèses vocales haute fidélité. "
         "Tu génères exclusivement du code HTML5 autonome propre, captivant et rigoureusement complet jusqu'à </html>."
     )
 

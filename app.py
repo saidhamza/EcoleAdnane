@@ -2864,10 +2864,10 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                     with st.popover("🔄 Régénérer..." if not is_ar else "🔄 إعادة التوليد..."):
                         style_choice = st.selectbox(
                             "Style :" if not is_ar else "النمط :",
-                            options=["auto", "comic", "simulation"],
+                            options=["auto", "notebooklm", "simulation"],
                             format_func=lambda x: {
-                                "auto": "🤖 Automatique (BD pour Histoire, Simulation pour Sciences)" if not is_ar else "🤖 تلقائي (قصة مصورة للتاريخ ومحاكاة للعلوم)",
-                                "comic": "🎨 Bande Dessinée Animée (BD)" if not is_ar else "🎨 قصة مصورة متحركة (BD)",
+                                "auto": "🤖 Automatique (Studio NotebookLM pour Histoire, Simulation pour Sciences)" if not is_ar else "🤖 تلقائي (استوديو NotebookLM للتاريخ ومحاكاة للعلوم)",
+                                "notebooklm": "🎙️ Présentation Studio NotebookLM (Slide Deck & Audio)" if not is_ar else "🎙️ استوديو NotebookLM (عرض تفاعلي وحوار صوتي)",
                                 "simulation": "🧪 Simulation Scientifique" if not is_ar else "🧪 محاكاة علمية تفاعلية",
                             }[x],
                             key=f"regen_style_sel_{course_id}",
@@ -2895,23 +2895,23 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                 st.components.v1.html(anim_html, height=840, scrolling=True)
             else:
                 st.info(
-                    "💡 **Donnez vie à ce cours !** Générez une bande dessinée animée par scènes ou une simulation scientifique interactive manipulant atomes, circuits, équations ou cartes historiques avec synthèse vocale TTS intégrée."
+                    "💡 **Donnez vie à ce cours !** Générez une présentation studio façon **Google NotebookLM** (Slide Deck percutant, Audio Overview avec visualiseur d'ondes sonores, dialogue d'experts et flashcards) ou une simulation scientifique interactive."
                     if not is_ar else
-                    "💡 **اجعل هذا الدرس ينبض بالحياة!** أنشئ قصة مصورة تعليمية متحركة أو محاكاة علمية تفاعلية للمفاهيم مع قراءة صوتية بالذكاء الاصطناعي (TTS)."
+                    "💡 **اجعل هذا الدرس ينبض بالحياة!** أنشئ عرضاً تقديمياً تفاعلياً متطوراً بنمط **Google NotebookLM** (شرائح تفاعلية ذكية، حوار صوتي تحليلي بين خبيرين مع تموجات صوتية وبطاقات مراجعة) أو محاكاة علمية تفاعلية."
                 )
 
                 col_gen1, col_gen2 = st.columns([2, 1])
                 with col_gen1:
                     style_sel = st.selectbox(
                         "Format de présentation souhaité :" if not is_ar else "نمط العرض المطلوب :",
-                        options=["auto", "comic", "simulation"],
+                        options=["auto", "notebooklm", "simulation"],
                         format_func=lambda x: {
-                            "auto": "🤖 Automatique (Recommandé selon la matière)",
-                            "comic": "🎨 Bande Dessinée Animée Narrative (Histoire, Géo, Langues)",
+                            "auto": "🤖 Automatique (Studio NotebookLM pour Histoire/Lettres, Simulation pour Sciences)",
+                            "notebooklm": "🎙️ Présentation Studio NotebookLM (Slide Deck, Audio Overview & Flashcards)",
                             "simulation": "🧪 Simulation Scientifique Interactive (Sciences, Physique, SVT, Maths)",
                         }[x] if not is_ar else {
-                            "auto": "🤖 تلقائي (موصى به حسب المادة)",
-                            "comic": "🎨 قصة مصورة متحركة (تاريخ، جغرافيا، لغات)",
+                            "auto": "🤖 تلقائي (استوديو NotebookLM للتاريخ/الأدب، ومحاكاة للعلوم)",
+                            "notebooklm": "🎙️ استوديو NotebookLM (عرض تفاعلي، حوار صوتي وبطاقات مراجعة)",
                             "simulation": "🧪 محاكاة علمية تفاعلية (فيزياء، كيمياء، علوم، رياضيات)",
                         }[x],
                         key=f"init_style_sel_{course_id}",
@@ -2919,31 +2919,29 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                 with col_gen2:
                     st.write("")
                     st.write("")
-                    btn_gen_label = "✨ Générer l'Animation / Simulation" if not is_ar else "✨ إنشاء المحاكاة التفاعلية"
+                    btn_gen_label = "✨ Générer la Présentation Interactive" if not is_ar else "✨ إنشاء العرض التفاعلي"
                     if st.button(btn_gen_label, type="primary", use_container_width=True, key=f"btn_init_gen_anim_{course_id}"):
-                        if not can_generate:
-                            st.warning("Veuillez configurer votre clé API dans vos paramètres ou demander l'activation OpenRouter à l'administrateur.")
-                        else:
-                            with st.spinner("Création de votre simulation interactive en cours (environ 15-30s)..." if not is_ar else "جارٍ إنشاء المحاكاة والتفاعل التوضيحي..."):
-                                try:
-                                    new_html = generate_course_animation_simulation(
-                                        course_text=course_raw,
-                                        subject=course_subj,
-                                        course_title=course_tit,
-                                        language=course_lang,
-                                        user_id=active_user_id,
-                                        force_style=None if style_sel == "auto" else style_sel,
-                                    )
-                                    if new_html and "<html" in new_html.lower():
-                                        save_course_animation(course_id, new_html)
-                                        st.success("Animation générée avec succès !" if not is_ar else "تم إنشاء المحاكاة بنجاح!")
-                                        st.rerun()
-                                    else:
-                                        st.error("Format généré inattendu. Veuillez réessayer.")
-                                except Exception as e_gen:
-                                    st.error(f"Erreur lors de la génération : {e_gen}")
+                        with st.spinner("Génération de l'expérience interactive en cours..." if not is_ar else "جارٍ إنشاء التجربة التفاعلية..."):
+                            try:
+                                new_html = generate_course_animation_simulation(
+                                    course_text=course_raw,
+                                    subject=course_subj,
+                                    course_title=course_tit,
+                                    language=course_lang,
+                                    user_id=active_user_id,
+                                    force_style=None if style_sel == "auto" else style_sel,
+                                )
+                                if new_html and "<html" in new_html.lower():
+                                    save_course_animation(course_id, new_html)
+                                    st.success("Expérience interactive générée avec succès !" if not is_ar else "تم إنشاء التجربة بنجاح!")
+                                    st.rerun()
+                                else:
+                                    st.error("Le format généré est inattendu.")
+                            except Exception as e_gen:
+                                st.error(f"Erreur de génération : {e_gen}")
 
         with tab_quiz:
+
             latest_quiz = get_latest_quiz(current_course["id"], user_id=active_user_id)
 
             btn_new_quiz = "🎯 توليد اختبار تدريبي جديد (5 أسئلة)" if is_ar else ("🎯 Generate Exam Practice Quiz (5 questions)" if is_en else "🎯 Générer un nouveau quiz d'examen (5 questions)")

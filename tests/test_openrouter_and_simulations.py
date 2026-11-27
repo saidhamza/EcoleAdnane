@@ -228,11 +228,11 @@ class OpenRouterAndSimulationsTests(unittest.TestCase):
             self.assertIn('id="server-tts-engine"', out)
 
     @patch("services.ai_engine.call_openrouter_chat_completion")
-    def test_history_course_uses_comic_prompt(self, mock_call_or):
+    def test_history_course_uses_notebooklm_prompt(self, mock_call_or):
         student_id = self.student["id"]
         set_user_openrouter_access(student_id, True)
 
-        mock_call_or.return_value = "```html\n<!DOCTYPE html><html><body>Bande Dessinée Historique</body></html>\n```"
+        mock_call_or.return_value = "```html\n<!DOCTYPE html><html><body>NotebookLM Studio</body></html>\n```"
 
         with patch("services.ai_engine.get_openrouter_api_key", return_value="sk-or-mock-key"):
             out = generate_course_animation_simulation(
@@ -245,11 +245,11 @@ class OpenRouterAndSimulationsTests(unittest.TestCase):
             self.assertTrue(mock_call_or.called)
             call_args = mock_call_or.call_args[1]
             sent_prompt = call_args["messages"][1]["content"]
-            self.assertIn("BANDE DESSINÉE", sent_prompt)
-            self.assertIn("INTERDICTION ABSOLUE", sent_prompt)
-            self.assertIn("stick figures", sent_prompt)
+            self.assertIn("NOTEBOOKLM", sent_prompt)
+            self.assertIn("Slide Deck", sent_prompt)
             self.assertIn("toggleFullscreenOrNewTab", sent_prompt)
             self.assertIn("narration-script", sent_prompt)
+
 
 
 
