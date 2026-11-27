@@ -1733,6 +1733,9 @@ def extract_and_inject_server_tts(html_code: str, language: str = "fr") -> str:
     if scene_audios and not any(s[0] == "podcast" for s in scene_audios):
         scene_audios.insert(0, ("podcast", scene_audios[0][1], scene_audios[0][2]))
 
+    if not scene_audios:
+        return html_code
+
     # Construction du coffre <audio>
     audio_tags_html = ['<div id="server-tts-vault" style="display:none;" aria-hidden="true">']
     for s_id, a_uri, txt in scene_audios:
@@ -2207,7 +2210,7 @@ def generate_course_animation_simulation(
             else "PRÉSENTATION COLORÉE ET PÉDAGOGIQUE (DIAPORAMA INTERACTIF, PODCAST EXPLICATIF ET FLASHCARDS)"
         )
         specifications = f"""
-Tu dois concevoir un **{mode_desc}** au design moderne, dynamique et hautement coloré, spécialement conçu pour expliquer simplement et visuellement la leçon à un élève de collège (3AC / 14 ans) selon l'esprit des meilleures présentations visuelles pédagogiques modernes.
+Tu dois concevoir un **{mode_desc}** au design moderne, dynamique et hautement coloré, spécialement conçu pour expliquer simplement et visuellement la leçon à un élève de collège (3AC / 14 ans) selon l'esprit des meilleures présentations visuelles de **NotebookLM** et **Gamma**.
 
 🎨 DIRECTION ARTISTIQUE & PALETTE DE COULEURS VIVES :
 - Fond lumineux et doux : fond gris-bleu très pâle (#f8fafc à #f1f5f9), cartes blanches aérées avec ombres portées douces (box-shadow: 0 10px 25px -5px rgba(0,0,0,0.06), border-radius: 20px, border: 1px solid #e2e8f0).
@@ -2223,7 +2226,7 @@ Tu dois concevoir un **{mode_desc}** au design moderne, dynamique et hautement c
 L'APPLICATION INTERACTIVE DOIT COMPORTER :
 
 1. En-tête Coloré & Badges (Presentation Header) :
-   - Badges pilules colorés : '📖 عرض تفاعلي' | '{subject}' | '#3AC'.
+   - Badges pilules colorés : '📖 عرض تفاعلي' | '{subject}' | '#3AC' (Ne JAMAIS afficher de badge 'NOTEBOOKLM').
    - Titre du cours en typographie forte et claire.
    - Bouton Plein Écran en haut : '⛶ ملء الشاشة' (appelle window.toggleFullscreenOrNewTab()).
 
