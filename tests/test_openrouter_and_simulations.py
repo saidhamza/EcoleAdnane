@@ -185,6 +185,74 @@ class OpenRouterAndSimulationsTests(unittest.TestCase):
             self.assertEqual(reply, "Réponse générée via OpenRouter pour l'élève.")
             self.assertTrue(mock_call_or.called)
 
+    def test_extract_and_inject_server_tts_with_narration_script(self):
+        from services.ai_engine import extract_and_inject_server_tts
+
+        html_in = """<!DOCTYPE html>
+<html>
+<body>
+  <div class="scene" data-scene="0">
+    <div class="narration-script" data-scene="0">المشهد الأول: أزمة 1929 وسقوط جمهورية فايمار.</div>
+  </div>
+  <div class="scene" data-scene="1">
+    <div class="narration-script" data-scene="1">المشهد الثاني: صعود الحزب النازي.</div>
+  </div>
+</body>
+</html>"""
+
+        with patch("services.voice_manager.get_server_tts_audio_base64", return_value="data:audio/mp3;base64,SUQzBAAAAAAA"):
+            out = extract_and_inject_server_tts(html_in, language="ar")
+            self.assertIn('id="server_audio_0"', out)
+            self.assertIn('id="server_audio_1"', out)
+            self.assertIn('class="scene-server-audio"', out)
+            self.assertIn('src="data:audio/mp3;base64,SUQzBAAAAAAA"', out)
+            self.assertIn('id="server-tts-engine"', out)
+            self.assertIn('window.playSceneAudio', out)
+            self.assertIn('window.stopSceneAudio', out)
+
+    def test_extract_and_inject_server_tts_fallback_scene_caption(self):
+        from services.ai_engine import extract_and_inject_server_tts
+
+        html_in = """<!DOCTYPE html>
+<html>
+<body>
+  <div class="scene" data-scene="3">
+    <p class="caption">Texte de narration pour la scène 3.</p>
+  </div>
+</body>
+</html>"""
+
+        with patch("services.voice_manager.get_server_tts_audio_base64", return_value="data:audio/mp3;base64,SUQzBAAAAAAA"):
+            out = extract_and_inject_server_tts(html_in, language="fr")
+            self.assertIn('id="server_audio_3"', out)
+            self.assertIn('id="server-tts-engine"', out)
+
+    @patch("services.ai_engine.call_openrouter_chat_completion")
+    def test_history_course_uses_history_epic_prompt(self, mock_call_or):
+        student_id = self.student["id"]
+        set_user_openrouter_access(student_id, True)
+
+        mock_call_or.return_value = "```html\n<!DOCTYPE html><html><body>Fresque Historique</body></html>\n```"
+
+        with patch("services.ai_engine.get_openrouter_api_key", return_value="sk-or-mock-key"):
+            out = generate_course_animation_simulation(
+                course_text="دراسة حالة النازية والحرب العالمية الثانية",
+                subject="الاجتماعيات",
+                course_title="ظاهرة الأنظمة الديكتاتورية دراسة حالة النازية",
+                language="ar",
+                user_id=student_id,
+            )
+            self.assertTrue(mock_call_or.called)
+            # Vérification que le prompt envoyé contient les spécifications de la fresque historique documentaire
+            call_args = mock_call_or.call_args[1]
+            sent_prompt = call_args["messages"][1]["content"]
+            self.assertIn("FRESQUE HISTORIQUE", sent_prompt)
+            self.assertIn("INTERDICTION FORMELLE", sent_prompt)
+            self.assertIn("stick figures", sent_prompt)
+            self.assertIn("ambient-canvas", sent_prompt)
+            self.assertIn("narration-script", sent_prompt)
+
 
 if __name__ == "__main__":
     unittest.main()
+

@@ -1579,6 +1579,229 @@ def strip_html_code_blocks(content: str) -> str:
     return content
 
 
+def extract_and_inject_server_tts(html_code: str, language: str = "fr") -> str:
+    """
+    Extrait les textes de narration de chaque scène dans le code HTML généré,
+    génère les flux audio MP3 de haute fidélité via gTTS côté serveur,
+    et injecte les balises <audio> ainsi qu'un contrôleur audio universel avant </body>.
+    Assure une lecture vocale 100% fiable sur toutes les plateformes (Linux, Android, Windows, Mac)
+    sans dépendre de voix de synthèse vocale locales manquantes dans le navigateur.
+    """
+    if not html_code or not html_code.strip():
+        return html_code
+
+    try:
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(html_code, "html.parser")
+    except Exception as e_bs4:
+        logger.warning(f"Impossible d'utiliser BeautifulSoup pour injecter le TTS ({e_bs4})")
+        return html_code
+
+    try:
+        from services.voice_manager import clean_text_for_speech, get_server_tts_audio_base64
+    except ImportError as e_vm:
+        logger.warning(f"Impossible d'importer voice_manager pour le TTS serveur ({e_vm})")
+        return html_code
+
+    # 1. Recherche des textes de narration par scène
+    # Priorité 1 : éléments avec la classe .narration-script ou attribut data-narration
+    narration_items = soup.select(".narration-script, [data-narration]")
+    scene_audios: List[Tuple[str, str, str]] = []  # (scene_id, audio_data_uri, text)
+
+    if narration_items:
+        for idx, el in enumerate(narration_items):
+            scene_id = el.get("data-scene") or el.get("data-index") or str(idx)
+            raw_text = el.get("data-narration") or el.get_text(separator=" ", strip=True)
+            cleaned = clean_text_for_speech(raw_text)
+            if cleaned:
+                audio_uri = get_server_tts_audio_base64(cleaned, language=language)
+                if audio_uri:
+                    scene_audios.append((str(scene_id), audio_uri, cleaned))
+    else:
+        # Priorité 2 : conteneurs de scènes (.scene, .slide, .card, etc.)
+        scenes = soup.select(".scene, .slide, .story-card, .fresco-scene, [data-scene]")
+        for idx, sc in enumerate(scenes):
+            scene_id = sc.get("data-scene") or sc.get("data-index") or str(idx)
+            text_el = sc.select_one(".narration, .caption, .description, .bubble, p")
+            if text_el:
+                cleaned = clean_text_for_speech(text_el.get_text(separator=" ", strip=True))
+                if cleaned:
+                    audio_uri = get_server_tts_audio_base64(cleaned, language=language)
+                    if audio_uri:
+                        scene_audios.append((str(scene_id), audio_uri, cleaned))
+
+    # Priorité 3 : simulation scientifique (boîte d'explication pédagogique)
+    if not scene_audios:
+        explanation_el = soup.select_one("#explanation, .explanation, .pedagogy-text, .info-box")
+        if explanation_el:
+            cleaned = clean_text_for_speech(explanation_el.get_text(separator=" ", strip=True))
+            if cleaned:
+                audio_uri = get_server_tts_audio_base64(cleaned, language=language)
+                if audio_uri:
+                    scene_audios.append(("0", audio_uri, cleaned))
+
+    if not scene_audios:
+        return html_code
+
+    # 2. Construction des balises <audio> et du contrôleur JavaScript
+    audio_tags_html = ['<div id="server-tts-vault" style="display:none;" aria-hidden="true">']
+    for s_id, a_uri, txt in scene_audios:
+        escaped_txt = txt[:120].replace('"', '&quot;')
+        audio_tags_html.append(
+            f'<audio id="server_audio_{s_id}" class="scene-server-audio" data-scene="{s_id}" data-text="{escaped_txt}" preload="auto" src="{a_uri}"></audio>'
+        )
+    audio_tags_html.append('</div>')
+
+    controller_script = """
+<script id="server-tts-engine">
+(function() {
+  var serverAudios = {};
+  var audioList = Array.from(document.querySelectorAll('audio.scene-server-audio'));
+  audioList.forEach(function(aud) {
+    var sc = aud.getAttribute('data-scene');
+    if (sc !== null) {
+      serverAudios[sc] = aud;
+      var num = parseInt(sc, 10);
+      if (!isNaN(num)) serverAudios[num] = aud;
+    }
+  });
+
+  window._serverAudios = serverAudios;
+  window._activeAudio = null;
+
+  function getActiveSceneIndex() {
+    if (typeof window.currentScene !== 'undefined') return window.currentScene;
+    if (typeof window.currentSceneIndex !== 'undefined') return window.currentSceneIndex;
+    if (typeof window.activeSceneIndex !== 'undefined') return window.activeSceneIndex;
+    var el = document.querySelector('.scene.active, .slide.active, .fresco-scene.active, .card.active, [data-active="true"]');
+    if (el) {
+      var ds = el.getAttribute('data-scene') || el.getAttribute('data-index');
+      if (ds !== null) return parseInt(ds, 10);
+    }
+    return 0;
+  }
+
+  window.playSceneAudio = function(sceneIdx, onEnded) {
+    window.stopSceneAudio();
+    var aud = serverAudios[sceneIdx] || document.getElementById('server_audio_' + sceneIdx);
+    if (!aud && audioList.length > 0) {
+      var n = parseInt(sceneIdx, 10);
+      if (!isNaN(n) && audioList[n]) aud = audioList[n];
+      else aud = audioList[0];
+    }
+    if (aud) {
+      aud.currentTime = 0;
+      aud.playbackRate = window._audioPlaybackRate || 1.0;
+      window._activeAudio = aud;
+      aud.onended = function() {
+        window._activeAudio = null;
+        document.querySelectorAll('.is-speaking').forEach(function(b) { b.classList.remove('is-speaking'); });
+        if (typeof onEnded === 'function') onEnded();
+      };
+      var p = aud.play();
+      if (p && typeof p.catch === 'function') {
+        p.catch(function(err) {
+          console.warn("Server audio playback caught:", err);
+          if (typeof onEnded === 'function') onEnded();
+        });
+      }
+      return aud;
+    }
+    if (typeof onEnded === 'function') setTimeout(onEnded, 300);
+    return null;
+  };
+
+  window.stopSceneAudio = function() {
+    if (window._activeAudio) {
+      try { window._activeAudio.pause(); window._activeAudio.currentTime = 0; } catch(e) {}
+      window._activeAudio = null;
+    }
+    audioList.forEach(function(a) {
+      try { a.pause(); a.currentTime = 0; } catch(e) {}
+    });
+    document.querySelectorAll('.is-speaking').forEach(function(b) { b.classList.remove('is-speaking'); });
+    if (window.speechSynthesis) {
+      try { window.speechSynthesis.cancel(); } catch(e) {}
+    }
+  };
+
+  // Interception universelle de window.speechSynthesis pour garantir le fonctionnement audio
+  if (typeof window.speechSynthesis !== 'undefined' && audioList.length > 0) {
+    var origSpeak = window.speechSynthesis.speak.bind(window.speechSynthesis);
+    var origCancel = window.speechSynthesis.cancel.bind(window.speechSynthesis);
+
+    window.speechSynthesis.speak = function(utterance) {
+      var curIdx = getActiveSceneIndex();
+      var aud = serverAudios[curIdx] || document.getElementById('server_audio_' + curIdx);
+      if (aud) {
+        window.stopSceneAudio();
+        if (typeof utterance.onstart === 'function') {
+          try { utterance.onstart(); } catch(e) {}
+        }
+        aud.currentTime = 0;
+        aud.playbackRate = utterance.rate || window._audioPlaybackRate || 1.0;
+        window._activeAudio = aud;
+        aud.onended = function() {
+          window._activeAudio = null;
+          if (typeof utterance.onend === 'function') {
+            try { utterance.onend(); } catch(e) {}
+          }
+        };
+        aud.onerror = function() {
+          try { origSpeak(utterance); } catch(e) {}
+        };
+        var p = aud.play();
+        if (p && typeof p.catch === 'function') {
+          p.catch(function() {
+            try { origSpeak(utterance); } catch(e) {}
+          });
+        }
+      } else {
+        try { origSpeak(utterance); } catch(e) {}
+      }
+    };
+
+    window.speechSynthesis.cancel = function() {
+      window.stopSceneAudio();
+      try { origCancel(); } catch(e) {}
+    };
+  }
+
+  // Écouteur global pour les boutons audio
+  document.addEventListener('click', function(e) {
+    var btn = e.target.closest('button, .btn, .control-btn');
+    if (!btn) return;
+    var txt = (btn.textContent || '').trim();
+    var isAudioBtn = btn.classList.contains('tts-btn') ||
+                     btn.classList.contains('btn-listen') ||
+                     btn.classList.contains('audio-btn') ||
+                     btn.id === 'btn-listen' ||
+                     btn.id === 'btnListen' ||
+                     txt.includes('🔊') || txt.includes('Écouter') || txt.includes('استمع') || txt.includes('استماع');
+
+    if (isAudioBtn && !txt.includes('متتابع') && !txt.includes('enchaînée') && !txt.includes('Auto')) {
+      if (window._activeAudio && !window._activeAudio.paused) {
+        window.stopSceneAudio();
+        btn.classList.remove('is-speaking');
+      } else {
+        var idx = getActiveSceneIndex();
+        btn.classList.add('is-speaking');
+        window.playSceneAudio(idx, function() {
+          btn.classList.remove('is-speaking');
+        });
+      }
+    }
+  });
+})();
+</script>
+"""
+
+    injection = "\n" + "\n".join(audio_tags_html) + "\n" + controller_script + "\n"
+    if "</body>" in html_code:
+        return html_code.replace("</body>", f"{injection}</body>", 1)
+    return html_code + injection
+
+
 def generate_course_animation_simulation(
     course_text: str,
     subject: str,
@@ -1588,81 +1811,125 @@ def generate_course_animation_simulation(
     force_style: Optional[str] = None,
 ) -> str:
     """
-    Génère une animation interactive (HTML5 / Canvas / SVG) ou une Bande Dessinée Animée
-    avec synthèse vocale Text-To-Speech (TTS) intégrée pour un cours donné.
-    - Matières narratives (Histoire, Géo, Langues, etc.) -> BD Animée par scènes
-    - Matières scientifiques (Physique, Chimie, SVT, Maths) -> Simulation interactive
+    Génère une expérience interactive immersive haut de gamme pour un cours donné :
+    - Matières Historiques & Humaines (Histoire, Géo, Éducation Civique) -> Fresque Historique & Documentaire Interactif Cinématique
+    - Matières Scientifiques (Physique, Chimie, SVT, Maths) -> Simulation interactive Canvas/SVG
+    - Autres matières -> Storytelling et Théâtre Pédagogique Interactif
+    Intègre un moteur vocal Text-To-Speech (TTS) serveur pré-généré pour une restitution audio 100% fiable.
     Utilise OpenRouter (si autorisé par l'admin) ou Google Gemini.
     """
-    # 1. Détermination du style (BD Animée vs Simulation Scientifique)
+    # 1. Détection intelligente du style
+    search_str = f"{(subject or '').lower()} {(course_title or '').lower()}"
+
+    hist_keywords = [
+        "histoire", "géo", "geographie", "géographie", "sociales", "société", "citoyenneté", "civique",
+        "تاريخ", "جغرافيا", "اجتماعيات", "مواطنة", "تاريخي", "نازية", "ديكتاتور", "حرب", "ثورة", "حركات",
+        "فاشية", "ستالين", "هتلر", "موسوليني", "استعمار", "إمبريالية", "رأسمالية", "نهضة",
+    ]
     sci_keywords = [
         "physique", "chimie", "svt", "sciences", "math", "techno", "atome", "circuit",
         "cellule", "molécule", "électron", "réaction", "gravité", "vitesse", "théorème",
         "فيزياء", "كيمياء", "رياضيات", "علوم", "بيولوجيا", "ذرة", "دائرة", "طاقة", "خلية", "تفاعل",
     ]
-    is_scientific = any(k in (subject or "").lower() or k in (course_title or "").lower() for k in sci_keywords)
 
-    if force_style in ("comic", "simulation"):
-        style = force_style
+    is_history = any(k in search_str for k in hist_keywords)
+    is_scientific = any(k in search_str for k in sci_keywords)
+
+    if force_style in ("history_epic", "simulation", "narrative", "comic"):
+        style = "history_epic" if force_style in ("history_epic", "comic") and is_history else force_style
     else:
-        style = "simulation" if is_scientific else "comic"
+        if is_history:
+            style = "history_epic"
+        elif is_scientific:
+            style = "simulation"
+        else:
+            style = "narrative"
 
     is_ar = language == "ar"
     is_en = language == "en"
 
-    # 2. Construction du prompt adapté
+    # 2. Construction des spécifications selon le style
     truncated_text = (course_text or "")[:8000].strip()
 
-    if style == "comic":
+    if style == "history_epic":
         mode_desc = (
-            "BANDE DESSINÉE ANIMÉE INTERACTIVE (STORYBOARD MULTI-SCÈNES)"
-            if not is_ar
-            else "قصة مصورة تفاعلية متحركة (مشاهد تعليمية مصورة)"
+            "FRESQUE HISTORIQUE & DOCUMENTAIRE INTERACTIF CINÉMATIQUE (ملحمة تاريخية ووثائقي تفاعلي سينمائي)"
+            if is_ar
+            else "FRESQUE HISTORIQUE & DOCUMENTAIRE INTERACTIF CINÉMATIQUE"
         )
         specifications = f"""
-Tu dois générer une **{mode_desc}** autonome de 4 à 6 scènes illustrant l'histoire, la chronologie ou les concepts clés du cours.
-Chaque scène doit comporter :
-1. Une illustration visuelle remarquable réalisée UNIQUEMENT en SVG vectoriel riche (formes détaillées, personnages stylisés, décors immersifs, couleurs harmonieuses et animations CSS fluides : pulsations, mouvements subtils, apparitions progressives). Pas d'images externes !
-2. Des bulles de dialogue ou phylactères animés (.bubble) pour les personnages clés ou le narrateur.
-3. Un encart narratif pédagogique (.caption) contextualisant l'événement ou le concept.
-4. Une barre de lecture et navigation interactive :
-   - Boutons: ◀ Précédente | ▶ Suivante | 🔄 Recommencer
-   - Sélecteur de scènes (pastilles 1, 2, 3...)
-   - Bouton de lecture audio TTS : '🔊 Écouter cette scène'
-   - Bouton de lecture automatique continue : '⏯️ Lecture enchaînée' (enchaîne les scènes avec narration vocale)
-   - Sélecteur de vitesse audio (0.9x, 1x, 1.2x)
-5. Synthèse vocale (TTS) avec window.speechSynthesis :
-   - Langue de synthèse : {'"ar-SA"' if is_ar else ('"en-US"' if is_en else '"fr-FR"')}
-   - Mise en surbrillance en temps réel des textes ou bulles pendant qu'ils sont prononcés.
-   - Fallback sonore avec Web Audio API (petit jingle agréable lors des transitions de scène).
+Tu dois concevoir une **{mode_desc}** de niveau muséal et documentaire prestigieux (type Arte / BBC History / National Geographic) en 4 à 5 scènes chronologiques ou thématiques.
+
+⚠️ RÈGLE FONDAMENTALE VISUELLE :
+- INTERDICTION FORMELLE ET STRICTE de dessiner des bonshommes simplistes, des bonshommes allumettes (stick figures), des personnages enfantins ou des caricatures grotesques en SVG.
+- Le style doit être sérieux, cinématique, noble et documentaire.
+
+Chaque scène doit être une double page documentaire prestigieuse comprenant :
+1. Une ambiance visuelle vivante :
+   - Fond sombre luxueux (#0b0f19, #111827) avec canvas interactif d'ambiance (<canvas id="ambient-canvas">) diffusant de légères braises incandescentes ou poussière dorée animée de manière fluide avec requestAnimationFrame.
+2. Éléments graphiques vectoriels remarquables en SVG pur :
+   - Cartographie géopolitique stratégique vectorielle : Tracé des frontières, capitales avec halo radar clignotant (<circle class="radar-ping">), flèches d'offensives ou d'expansion militaire animées (stroke-dasharray animée avec marker-end="url(#arrow)"), et zones géopolitiques avec dégradés semi-transparents.
+   - Sceaux héraldiques, aigles ou emblèmes officiels d'époque stylisés avec dégradés métalliques dorés (<linearGradient id="gold-grad">), sceaux de cire cramoisi et couronnes de lauriers.
+   - Silhouettes architecturales et monuments historiques en contre-jour dramatique (façades de parlements, portes monumentales, usines sidérurgiques sous fumée industrielle, tranchées) avec éclairage crépusculaire.
+3. Fiche Dossier d'Archives & Richesse Pédagogique :
+   - Badge d'époque (ex: '1933 - برلين').
+   - Titre percutant de l'étape historique.
+   - Citation historique authentique mise en valeur entre guillemets calligraphiques (« ... »).
+   - Analyse rigoureuse des causes socio-économiques, des mécanismes totalitaires (propagande, terreur, culte du chef, crise de 1929) et des conséquences.
+   - Encart 'إضاءة وثائقية' (Éclairage historique / Le Saviez-vous ?).
+4. Balise de Narration Vocale OBLIGATOIRE pour chaque scène :
+   - Chaque scène DOIT contenir exactement :
+     <div class="narration-script" data-scene="i">النص التاريخي الكامل للسرد باللغة العربية الفصحى مع التشكيل التام (tashkeel) لنطق سليم ومبهر...</div>
+   - Ce texte doit être écrit comme la voix-off d'un grand documentaire historique (ton captivant, solennel et didactique).
+5. Frise chronologique interactive (Timeline Bar) en bas d'écran :
+   - Pastilles cliquables reliant les scènes par repères temporels (dates clés).
+6. Barre de contrôle audio et navigation :
+   - Boutons: ◀ المشهد السابق | المشهد التالي ▶
+   - Bouton audio : '🔊 استمع لهذا المشهد'
+   - Bouton de lecture continue : '⏯️ تشغيل متتابع'
+   - Sélecteur de vitesse : 0.9x | 1x | 1.2x
 """
-    else:
+    elif style == "simulation":
         mode_desc = (
-            "SIMULATION SCIENTIFIQUE INTERACTIVE HTML5 / CANVAS / SVG"
-            if not is_ar
-            else "محاكاة علمية تفاعلية حية (HTML5 Canvas / SVG)"
+            "محاكاة علمية تفاعلية حية (HTML5 Canvas / SVG)"
+            if is_ar
+            else "SIMULATION SCIENTIFIQUE INTERACTIVE HTML5 / CANVAS / SVG"
         )
         specifications = f"""
-Tu dois générer une **{mode_desc}** autonome qui permet à l'élève de manipuler en temps réel les concepts scientifiques de la leçon (ex: atomes avec électrons en orbite qui se lient en molécules lors d'un clic ou d'une hausse de température, circuit électrique avec interrupteur et ampoule, pendule/gravité, cellule et ses organites, théorème de Pythagore interactif avec curseurs, etc.).
+Tu dois générer une **{mode_desc}** autonome permettant à l'élève de manipuler en temps réel les concepts scientifiques de la leçon (ex: atomes avec électrons en orbite, réactions chimiques, circuit électrique, gravité/vitesse, cellule vivante, etc.).
 La simulation doit comporter :
 1. Un espace visuel dynamique (Canvas HTML5 animé avec requestAnimationFrame OU SVG interactif riche).
 2. Un panneau de contrôle interactif avec :
-   - Des curseurs (<input type="range">) pour ajuster les variables (ex: température, tension, vitesse, masse, dimensions).
-   - Des boutons d'action (ex: '▶️ Lancer / Pause', '🔄 Réinitialiser', '🧪 Provoquer la réaction / Ajouter un électron').
-   - Un tableau de bord HUD affichant les valeurs en temps réel (ex: Vitesse, Énergie, Statut, Formule chimique ou mathématique).
-3. Un volet d'explication pédagogique pas-à-pas avec :
-   - Bouton '🔊 Écouter l'explication audio' qui utilise window.speechSynthesis pour expliquer ce qui se passe sous les yeux de l'élève à chaque étape de la simulation !
-   - Langue de synthèse : {'"ar-SA"' if is_ar else ('"en-US"' if is_en else '"fr-FR"')}
-   - Texte clair, motivant et adapté au niveau scolaire.
+   - Des curseurs (<input type="range">) pour ajuster les variables.
+   - Des boutons d'action ('▶️ Lancer / Pause', '🔄 Réinitialiser', '🧪 Expérimenter').
+   - Un tableau de bord HUD affichant les données en temps réel.
+3. Une boîte d'explication pédagogique avec narration vocale :
+   - Balise obligatoire : <div class="narration-script" data-scene="0">الشرح الصوتي العلمي المفصل للظاهرة مع التشكيل التام...</div>
+   - Bouton '🔊 استمع للشرح الصوتي'
+"""
+    else:
+        mode_desc = (
+            "سرد تفاعلي ومسرح تعليمي ناطق"
+            if is_ar
+            else "STORYTELLING & THÉÂTRE PÉDAGOGIQUE INTERACTIF"
+        )
+        specifications = f"""
+Tu dois générer une **{mode_desc}** autonome en 4 scènes illustrant les concepts clés de manière vivante et élégante.
+Pas de dessins simplistes d'enfants. Favoriser une mise en scène théâtrale soignée (parchemins calligraphiés, typographie noble, décors d'époque vectoriels en SVG).
+Chaque scène doit comporter :
+1. Une illustration vectorielle SVG soignée sans personnages caricaturaux.
+2. Un texte pédagogique fluide et captivant.
+3. Balise obligatoire : <div class="narration-script" data-scene="i">النص الكامل للسرد بالتشكيل التام...</div>
+4. Boutons de navigation et lecture vocale (🔊 Écouter / استمع).
 """
 
     lang_instruction = (
-        "TOUT le contenu texte, les dialogues, les boutons et les scripts audio DOIVENT être en ARABE avec TASHKEEL (diacritiques) pour une prononciation parfaite par le moteur TTS, avec dir='rtl' et typographie 'Cairo', sans-serif."
+        "TOUT le contenu texte, les analyses documentaires, les citations, les boutons et les balises .narration-script DOIVENT être en ARABE de haute qualité littéraire avec TASHKEEL (diacritiques) complet sur la narration pour une prononciation audio irréprochable, avec dir='rtl' et typographie 'Cairo', sans-serif."
         if is_ar
         else (
-            "All text content, dialogues, UI buttons, and TTS scripts MUST be in ENGLISH."
+            "All text content, documentary dossiers, quotes, buttons, and .narration-script tags MUST be in ENGLISH."
             if is_en
-            else "TOUT le contenu texte, les dialogues, les boutons de l'interface et les scripts audio DOIVENT être en FRANÇAIS soigné et stimulant."
+            else "TOUT le contenu texte, les analyses, les citations, les boutons et les balises .narration-script DOIVENT être en FRANÇAIS soigné et stimulant."
         )
     )
 
@@ -1682,15 +1949,16 @@ SPÉCIFICATIONS TECHNIQUES IMPÉRATIVES :
 
 RÈGLES D'EXÉCUTION :
 1. {lang_instruction}
-2. Design moderne : thème sombre élégant (fond #0f172a / #1e293b, cartes en verre/glassmorphism, accents néon/vifs #38bdf8, #818cf8, #34d399, responsive pour mobile et écran large).
-3. 100% AUTONOME : tout le CSS dans une balise <style>, tout le JS dans une balise <script>. AUCUNE dépendance externe CDN obligatoire (CSS et JavaScript vanilla purs).
-4. Le code doit être PRÊT À L'EMPLOI et s'exécuter directement dans un iframe Streamlit (st.components.v1.html).
-5. Ne renvoie AUCUN commentaire, AUCUN blabla avant ou après. Renvoie UNIQUEMENT le document HTML complet commençant par <!DOCTYPE html> et finissant par </html>.
+2. Design moderne : thème sombre prestigieux (fond #0a0f1d / #111827, cartes en verre fumé avec liserés dorés subtils, responsive pour mobile et écran large).
+3. 100% AUTONOME : tout le CSS dans une balise <style>, tout le JS dans une balise <script>. AUCUNE dépendance CDN externe obligatoire.
+4. Le code doit être PRÊT À L'EMPLOI et s'exécuter directement dans un iframe Streamlit.
+5. Ne renvoie AUCUN commentaire, AUCUN texte avant ou après. Renvoie UNIQUEMENT le document HTML complet commençant par <!DOCTYPE html> et finissant par </html>.
 """
 
     system_instruction = (
-        "Tu es un ingénieur pédagogique d'élite et développeur Web créatif spécialisé en simulations Canvas/SVG éducatives "
-        "et bandes dessinées animées avec synthèse vocale (Web Speech API). Tu génères exclusivement du code HTML5 autonome propre et valide."
+        "Tu es un ingénieur pédagogique d'élite, historien et développeur Web créatif de calibre international, "
+        "spécialisé en simulations scientifiques interactives, fresques documentaires historiques muséales et synthèses vocales haute fidélité. "
+        "Tu génères exclusivement du code HTML5 autonome propre, élégant et rigoureusement valide."
     )
 
     # 3. Exécution via OpenRouter (si autorisé pour cet utilisateur) ou Gemini
@@ -1700,7 +1968,7 @@ RÈGLES D'EXÉCUTION :
     raw_html = ""
     if openrouter_key:
         try:
-            logger.info("Génération de la simulation/BD animée via OpenRouter...")
+            logger.info("Génération de l'expérience interactive via OpenRouter...")
             messages = [
                 {"role": "system", "content": system_instruction},
                 {"role": "user", "content": prompt},
@@ -1709,13 +1977,12 @@ RÈGLES D'EXÉCUTION :
                 messages=messages,
                 api_key=openrouter_key,
                 temperature=0.3,
-                max_tokens=6000,
+                max_tokens=8192,
             )
         except Exception as e_or:
-            logger.warning(f"Échec OpenRouter pour simulation ({e_or}), essai via Gemini/LLM local...")
+            logger.warning(f"Échec OpenRouter pour expérience interactive ({e_or}), essai via Gemini/LLM local...")
 
     if not raw_html:
-        # Repli via call_llm (Gemini ou clé utilisateur)
         raw_html = call_llm(
             prompt=prompt,
             system_instruction=system_instruction,
@@ -1724,4 +1991,7 @@ RÈGLES D'EXÉCUTION :
         )
 
     clean_html = strip_html_code_blocks(raw_html)
-    return clean_html
+    # 4. Injection du moteur TTS serveur avec audio MP3 pré-généré
+    final_html = extract_and_inject_server_tts(clean_html, language=language)
+    return final_html
+
