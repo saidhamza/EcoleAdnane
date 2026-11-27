@@ -515,6 +515,26 @@ body {{
         except Exception as e_pil_pdf:
             logger.error(f"Échec compilation PDF Pillow: {e_pil_pdf}")
 
+    # Sauvegarde persistante dans storage/ (sécurité anti-perte, archivage et sauvegardes ZIP)
+    if pdf_file_path.exists():
+        try:
+            from services.downloader import get_user_storage_dir, STORAGE_DIR, LEGACY_COURSES_DIR
+            storage_stories_dir = STORAGE_DIR / "stories"
+            storage_stories_dir.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(pdf_file_path, storage_stories_dir / pdf_file_path.name)
+
+            # Copie dans le dossier de cours de l'élève pour visibilité et sauvegarde personnelle
+            if user_id is not None:
+                u_dir = get_user_storage_dir(user_id)
+                u_dir.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(pdf_file_path, u_dir / pdf_file_path.name)
+            else:
+                LEGACY_COURSES_DIR.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(pdf_file_path, LEGACY_COURSES_DIR / pdf_file_path.name)
+            logger.info(f"PDF histoire copié dans le stockage persistant ({storage_stories_dir})")
+        except Exception as e_pers:
+            logger.warning(f"Impossible de dupliquer le PDF histoire vers storage: {e_pers}")
+
     interactive_html = build_interactive_story_reader_html(
         scenario=scenario,
         scene_data=scene_data,

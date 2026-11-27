@@ -166,11 +166,47 @@ def export_student_backup(user_id: int) -> bytes:
         zf.writestr("data.json", json.dumps(data_payload, indent=2, ensure_ascii=False))
 
         # Fichiers PDF et cartes mentales originaux de l'élève
+        written_arcs = set()
         if user_storage_dir.exists():
             for pdf_file in user_storage_dir.glob("*.pdf"):
-                zf.write(pdf_file, arcname=f"cours/{pdf_file.name}")
+                arc = f"cours/{pdf_file.name}"
+                zf.write(pdf_file, arcname=arc)
+                written_arcs.add(arc)
             for map_file in user_storage_dir.glob("*.mindmap.md"):
-                zf.write(map_file, arcname=f"cours/{map_file.name}")
+                arc = f"cours/{map_file.name}"
+                zf.write(map_file, arcname=arc)
+                written_arcs.add(arc)
+
+        # Fichiers PDF générés (Guides visuels & Histoires illustrées) liés aux cours de l'élève
+        static_root = Path(__file__).parent.parent / "static"
+        for c in courses:
+            cid = c.get("id")
+            if not cid:
+                continue
+            # Guide Visuel Explicatif
+            for cand in [
+                static_root / "guides" / f"guide_course_{cid}.pdf",
+                STORAGE_DIR / "guides" / f"guide_course_{cid}.pdf",
+                user_storage_dir / f"guide_course_{cid}.pdf",
+            ]:
+                if cand.exists():
+                    arc = f"guides/guide_course_{cid}.pdf"
+                    if arc not in written_arcs:
+                        zf.write(cand, arcname=arc)
+                        written_arcs.add(arc)
+                    break
+            # Album Histoire Illustré
+            for cand in [
+                static_root / "stories" / f"story_course_{cid}.pdf",
+                STORAGE_DIR / "stories" / f"story_course_{cid}.pdf",
+                user_storage_dir / f"story_course_{cid}.pdf",
+            ]:
+                if cand.exists():
+                    arc = f"stories/story_course_{cid}.pdf"
+                    if arc not in written_arcs:
+                        zf.write(cand, arcname=arc)
+                        written_arcs.add(arc)
+                    break
 
     buf.seek(0)
     return buf.getvalue()
@@ -219,6 +255,7 @@ def restore_student_backup(file_bytes: bytes, target_user_id: int) -> Dict[str, 
                         return {"success": False, "error": "Tentative de traversée de répertoire détectée."}
 
                 # 1. Extraire les PDFs et cartes mentales de manière sécurisée
+                static_root = Path(__file__).parent.parent / "static"
                 for member in zf.infolist():
                     name_lower = member.filename.lower()
                     if name_lower.endswith(".pdf") or name_lower.endswith(".mindmap.md"):
@@ -230,6 +267,21 @@ def restore_student_backup(file_bytes: bytes, target_user_id: int) -> Dict[str, 
                                     shutil.copyfileobj(src, dst)
                                 if name_lower.endswith(".pdf"):
                                     extracted_pdfs += 1
+                                    # Synchroniser automatiquement les guides et histoires générés dans static/ et storage/
+                                    if safe_name.startswith("guide_course_"):
+                                        g_dir = static_root / "guides"
+                                        g_dir.mkdir(parents=True, exist_ok=True)
+                                        shutil.copy2(dest_file, g_dir / safe_name)
+                                        st_g = STORAGE_DIR / "guides"
+                                        st_g.mkdir(parents=True, exist_ok=True)
+                                        shutil.copy2(dest_file, st_g / safe_name)
+                                    elif safe_name.startswith("story_course_"):
+                                        s_dir = static_root / "stories"
+                                        s_dir.mkdir(parents=True, exist_ok=True)
+                                        shutil.copy2(dest_file, s_dir / safe_name)
+                                        st_s = STORAGE_DIR / "stories"
+                                        st_s.mkdir(parents=True, exist_ok=True)
+                                        shutil.copy2(dest_file, st_s / safe_name)
 
                 # 2a. Archive moderne v2.0 avec data.json
                 if "data.json" in zf.namelist():
@@ -509,7 +561,28 @@ def export_global_backup() -> bytes:
                 if f.is_file() and (f.suffix.lower() == ".pdf" or f.name.endswith(".mindmap.md")):
                     zf.write(f, arcname=f"cours/{f.name}")
 
-        # 4. Manifeste système
+        # 4. Dossiers des guides et histoires générés (static/guides et static/stories)
+        static_dir = Path(__file__).parent.parent / "static"
+        for sub in ["guides", "stories", "simulations"]:
+            sub_dir = static_dir / sub
+            if sub_dir.exists():
+                for root, _, files in os.walk(sub_dir):
+                    for f in files:
+                        full_p = Path(root) / f
+                        rel_p = full_p.relative_to(static_dir)
+                        zf.write(full_p, arcname=f"static/{rel_p}")
+
+        # 5. Dossiers guides/stories dans storage/ s'ils existent
+        for sub in ["guides", "stories"]:
+            st_sub = STORAGE_DIR / sub
+            if st_sub.exists():
+                for root, _, files in os.walk(st_sub):
+                    for f in files:
+                        full_p = Path(root) / f
+                        rel_p = full_p.relative_to(STORAGE_DIR)
+                        zf.write(full_p, arcname=str(rel_p))
+
+        # 6. Manifeste système
         stats = get_backup_summary()
         manifest = {
             "app": "Ecole Adnane",
@@ -577,19 +650,52 @@ def restore_global_backup(file_bytes: bytes) -> Dict[str, Any]:
             with open(db_path, "wb") as f:
                 f.write(db_content)
 
-            # Restaurer les fichiers utilisateurs
+            # Restaurer les fichiers utilisateurs, guides et histoires
             extracted_files = 0
+            static_dir = Path(__file__).parent.parent / "static"
             for member in zf.infolist():
                 if member.filename in (db_entry, "manifest.json") or member.is_dir():
                     continue
 
-                # Vérification anti-traversal
+                # Gestion des fichiers dans static/
+                if member.filename.startswith("static/"):
+                    rel_p = member.filename[len("static/"):]
+                    dest_file = static_dir / rel_p
+                    if is_safe_extract_path(static_dir, dest_file):
+                        dest_file.parent.mkdir(parents=True, exist_ok=True)
+                        with zf.open(member) as src, open(dest_file, "wb") as dst:
+                            shutil.copyfileobj(src, dst)
+                        extracted_files += 1
+                        # Si c'est un PDF, le dupliquer aussi dans storage/
+                        if dest_file.suffix.lower() == ".pdf":
+                            if "guides" in member.filename:
+                                s_dest = STORAGE_DIR / "guides" / dest_file.name
+                                s_dest.parent.mkdir(parents=True, exist_ok=True)
+                                shutil.copy2(dest_file, s_dest)
+                            elif "stories" in member.filename:
+                                s_dest = STORAGE_DIR / "stories" / dest_file.name
+                                s_dest.parent.mkdir(parents=True, exist_ok=True)
+                                shutil.copy2(dest_file, s_dest)
+                    continue
+
+                # Vérification anti-traversal storage
                 dest_file = STORAGE_DIR / member.filename
                 if is_safe_extract_path(STORAGE_DIR, dest_file):
                     dest_file.parent.mkdir(parents=True, exist_ok=True)
                     with zf.open(member) as src, open(dest_file, "wb") as dst:
                         shutil.copyfileobj(src, dst)
                     extracted_files += 1
+
+                    # Si un PDF guide ou histoire est dans storage/, le synchroniser vers static/
+                    if dest_file.suffix.lower() == ".pdf":
+                        if "guides" in member.filename:
+                            g_dest = static_dir / "guides" / dest_file.name
+                            g_dest.parent.mkdir(parents=True, exist_ok=True)
+                            shutil.copy2(dest_file, g_dest)
+                        elif "stories" in member.filename:
+                            s_dest = static_dir / "stories" / dest_file.name
+                            s_dest.parent.mkdir(parents=True, exist_ok=True)
+                            shutil.copy2(dest_file, s_dest)
 
         init_db(db_path)
 

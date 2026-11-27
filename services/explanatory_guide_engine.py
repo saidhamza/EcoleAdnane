@@ -783,6 +783,26 @@ html[dir="rtl"] .keypoints-card {{
         except Exception as e_pil_pdf:
             logger.error(f"Échec compilation PDF Pillow: {e_pil_pdf}")
 
+    # Sauvegarde persistante dans storage/ (sécurité anti-perte, archivage et sauvegardes ZIP)
+    if pdf_file_path.exists():
+        try:
+            from services.downloader import get_user_storage_dir, STORAGE_DIR, LEGACY_COURSES_DIR
+            storage_guides_dir = STORAGE_DIR / "guides"
+            storage_guides_dir.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(pdf_file_path, storage_guides_dir / pdf_file_path.name)
+
+            # Copie dans le dossier de cours de l'élève pour visibilité et sauvegarde personnelle
+            if user_id is not None:
+                u_dir = get_user_storage_dir(user_id)
+                u_dir.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(pdf_file_path, u_dir / pdf_file_path.name)
+            else:
+                LEGACY_COURSES_DIR.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(pdf_file_path, LEGACY_COURSES_DIR / pdf_file_path.name)
+            logger.info(f"PDF guide explicatif copié dans le stockage persistant ({storage_guides_dir})")
+        except Exception as e_pers:
+            logger.warning(f"Impossible de dupliquer le PDF guide vers storage: {e_pers}")
+
     # 4. Construction de la visionneuse interactive HTML plein écran (Slideshow moderne)
     interactive_html = build_interactive_guide_reader_html(
         guide_deck=guide_deck,

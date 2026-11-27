@@ -48,12 +48,22 @@ class TestExplanatoryGuideEngine(unittest.TestCase):
 
     def tearDown(self):
         shutil.rmtree(self.temp_dir, ignore_errors=True)
-        # Cleanup generated test guide files
+        # Cleanup generated test guide files in static and storage
         base_dir = Path(__file__).parent.parent / "static" / "guides"
         for ext in ["pdf", "html"]:
             f = base_dir / f"guide_course_{self.course_id}.{ext}"
             if f.exists():
                 f.unlink(missing_ok=True)
+        try:
+            from services.downloader import STORAGE_DIR, get_user_storage_dir
+            st_g = STORAGE_DIR / "guides" / f"guide_course_{self.course_id}.pdf"
+            if st_g.exists():
+                st_g.unlink(missing_ok=True)
+            u_g = get_user_storage_dir(self.user["id"]) / f"guide_course_{self.course_id}.pdf"
+            if u_g.exists():
+                u_g.unlink(missing_ok=True)
+        except Exception:
+            pass
 
     def test_detect_subject_theme(self):
         """Vérifie la détection thématique des matières (couleurs, icônes, badges)."""
@@ -144,7 +154,7 @@ class TestExplanatoryGuideEngine(unittest.TestCase):
         self.assertTrue(pdf_url.endswith(f"guide_course_{self.course_id}.pdf"))
         self.assertTrue(html_url.endswith(f"guide_course_{self.course_id}.html"))
 
-        # Vérification sur disque
+        # Vérification sur disque (static/guides)
         base_dir = Path(__file__).parent.parent / "static" / "guides"
         html_file = base_dir / f"guide_course_{self.course_id}.html"
         pdf_file = base_dir / f"guide_course_{self.course_id}.pdf"
@@ -154,6 +164,34 @@ class TestExplanatoryGuideEngine(unittest.TestCase):
         self.assertGreater(html_file.stat().st_size, 500, "Le fichier HTML doit avoir un contenu substantiel.")
         self.assertGreater(pdf_file.stat().st_size, 500, "Le fichier PDF doit avoir un contenu substantiel.")
 
+        # Vérification sauvegarde persistante dans storage/ (sécurité anti-perte)
+        from services.downloader import STORAGE_DIR, get_user_storage_dir
+        storage_pdf = STORAGE_DIR / "guides" / f"guide_course_{self.course_id}.pdf"
+        user_pdf = get_user_storage_dir(self.user["id"]) / f"guide_course_{self.course_id}.pdf"
+        self.assertTrue(storage_pdf.exists(), "Le PDF doit être dupliqué dans storage/guides.")
+        self.assertTrue(user_pdf.exists(), "Le PDF doit être dupliqué dans le dossier de cours de l'élève.")
+
+        # Vérification intégration dans la sauvegarde élève (ZIP)
+        from services.backup_manager import export_student_backup, export_global_backup
+        import zipfile, io
+        student_zip = export_student_backup(self.user["id"])
+        with zipfile.ZipFile(io.BytesIO(student_zip)) as z:
+            names = z.namelist()
+            self.assertTrue(
+                any(f"guide_course_{self.course_id}.pdf" in n for n in names),
+                f"Le PDF généré doit être inclus dans l'archive de sauvegarde de l'élève (contenu: {names})",
+            )
+
+        # Vérification intégration dans la sauvegarde globale (ZIP)
+        global_zip = export_global_backup()
+        with zipfile.ZipFile(io.BytesIO(global_zip)) as z:
+            names = z.namelist()
+            self.assertTrue(
+                any(f"guide_course_{self.course_id}.pdf" in n for n in names),
+                f"Le PDF généré doit être inclus dans l'archive globale (contenu: {names})",
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
+
