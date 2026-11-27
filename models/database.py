@@ -2510,6 +2510,15 @@ def save_course_animation(course_id: int, animation_html: str) -> None:
     finally:
         conn.close()
 
+    # Garantir la présence du fichier statique sur le disque pour accès direct
+    try:
+        static_dir = Path(__file__).parent.parent / "static" / "simulations"
+        static_dir.mkdir(parents=True, exist_ok=True)
+        file_path = static_dir / f"course_{course_id}.html"
+        file_path.write_text(animation_html, encoding="utf-8")
+    except Exception as e_write:
+        logger.debug(f"Erreur écriture fichier statique animation: {e_write}")
+
 
 def get_student_concept_mastery(user_id: int, course_id: int) -> List[Dict[str, Any]]:
     """Récupère les notions et leur statut d'assimilation pour un élève sur un cours (avec auto-réparation et purge des labels génériques)."""

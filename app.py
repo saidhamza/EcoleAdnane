@@ -2844,30 +2844,45 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
             can_generate = bool(user_api_key or (is_user_openrouter_allowed(active_user_id) and get_openrouter_api_key()))
 
             if anim_html and anim_html.strip():
-                col_top_act1, col_top_act2, col_top_act3 = st.columns([2, 1, 1])
-                with col_top_act1:
-                    st.caption(
-                        "✨ " + ("💡 Cliquez sur le bouton **⛶ Plein écran** (en haut de l'animation) pour une immersion complète." if not is_ar
-                                else "💡 اضغط على زر **⛶ ملء الشاشة** (أعلى العرض) لتجربة غامرة ومريحة في نافذة كاملة.")
+                # Garantir l'existence du fichier statique autonome
+                static_sim_dir = Path(__file__).parent / "static" / "simulations"
+                static_sim_dir.mkdir(parents=True, exist_ok=True)
+                sim_file_path = static_sim_dir / f"course_{course_id}.html"
+                try:
+                    sim_file_path.write_text(anim_html, encoding="utf-8")
+                except Exception as e_w:
+                    logger.debug(f"Impossible d'écrire le fichier statique {sim_file_path}: {e_w}")
+
+                static_url = f"/static/simulations/course_{course_id}.html"
+
+                st.write("")
+                col_btn_main, col_btn_sub1, col_btn_sub2 = st.columns([2.5, 1, 1])
+                with col_btn_main:
+                    open_tab_label = "🚀 Ouvrir la présentation dans un nouvel onglet" if not is_ar else "🚀 فتح العرض في نافذة جديدة"
+                    st.link_button(
+                        label=open_tab_label,
+                        url=static_url,
+                        type="primary",
+                        use_container_width=True,
                     )
-                with col_top_act2:
+                with col_btn_sub1:
                     dl_label_sim = "📥 Télécharger (HTML)" if not is_ar else "📥 تحميل (HTML)"
                     st.download_button(
                         label=dl_label_sim,
                         data=anim_html,
-                        file_name=f"simulation_cours_{course_id}.html",
+                        file_name=f"presentation_cours_{course_id}.html",
                         mime="text/html",
                         key=f"dl_sim_btn_{course_id}",
                         use_container_width=True,
                     )
-                with col_top_act3:
+                with col_btn_sub2:
                     with st.popover("🔄 Régénérer..." if not is_ar else "🔄 إعادة التوليد..."):
                         style_choice = st.selectbox(
                             "Style :" if not is_ar else "النمط :",
                             options=["auto", "notebooklm", "simulation"],
                             format_func=lambda x: {
-                                "auto": "🤖 Automatique (Présentation Colorée pour Histoire, Simulation pour Sciences)" if not is_ar else "🤖 تلقائي (عرض ملون مبسط للتاريخ ومحاكاة للعلوم)",
-                                "notebooklm": "🎨 Diaporama Coloré & Pédagogique (Style NotebookLM)" if not is_ar else "🎨 عرض شرائح ملون وتفاعلي مبسط (أسلوب NotebookLM)",
+                                "auto": "🤖 Automatique (Diaporama Coloré pour Histoire, Simulation pour Sciences)" if not is_ar else "🤖 تلقائي (عرض ملون مبسط للتاريخ ومحاكاة للعلوم)",
+                                "notebooklm": "🎨 Diaporama Coloré & Pédagogique (Slide Deck interactif)" if not is_ar else "🎨 عرض شرائح ملون وتفاعلي مبسط",
                                 "simulation": "🧪 Simulation Scientifique Interactive" if not is_ar else "🧪 محاكاة علمية تفاعلية",
                             }[x],
                             key=f"regen_style_sel_{course_id}",
@@ -2892,12 +2907,13 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                                 except Exception as e_gen:
                                     st.error(f"Erreur de génération : {e_gen}")
 
-                st.components.v1.html(anim_html, height=840, scrolling=True)
+                with st.expander("👁️ Aperçu intégré sur cette page" if not is_ar else "👁️ معاينة العرض داخل الصفحة", expanded=False):
+                    st.components.v1.html(anim_html, height=840, scrolling=True)
             else:
                 st.info(
-                    "💡 **Donnez vie à ce cours !** Générez une présentation studio façon **Google NotebookLM** (Slide Deck percutant, Audio Overview avec visualiseur d'ondes sonores, dialogue d'experts et flashcards) ou une simulation scientifique interactive."
+                    "💡 **Donnez vie à ce cours !** Générez une présentation colorée et pédagogique (Slide Deck percutant, Audio explicatif avec visualiseur d'ondes sonores, dialogue d'experts et flashcards) ou une simulation scientifique interactive."
                     if not is_ar else
-                    "💡 **اجعل هذا الدرس ينبض بالحياة!** أنشئ عرضاً تقديمياً تفاعلياً متطوراً بنمط **Google NotebookLM** (شرائح تفاعلية ذكية، حوار صوتي تحليلي بين خبيرين مع تموجات صوتية وبطاقات مراجعة) أو محاكاة علمية تفاعلية."
+                    "💡 **اجعل هذا الدرس ينبض بالحياة!** أنشئ عرضاً تقديمياً تفاعلياً ملوناً ومبسطاً (شرائح تفاعلية ذكية، حوار صوتي تحليلي مع تموجات صوتية وبطاقات مراجعة) أو محاكاة علمية تفاعلية."
                 )
 
                 col_gen1, col_gen2 = st.columns([2, 1])
@@ -2906,12 +2922,12 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                         "Format de présentation souhaité :" if not is_ar else "نمط العرض المطلوب :",
                         options=["auto", "notebooklm", "simulation"],
                         format_func=lambda x: {
-                            "auto": "🤖 Automatique (Studio NotebookLM pour Histoire/Lettres, Simulation pour Sciences)",
-                            "notebooklm": "🎙️ Présentation Studio NotebookLM (Slide Deck, Audio Overview & Flashcards)",
+                            "auto": "🤖 Automatique (Diaporama Coloré pour Histoire/Lettres, Simulation pour Sciences)",
+                            "notebooklm": "🎙️ Diaporama Coloré & Pédagogique (Slide Deck, Audio & Flashcards)",
                             "simulation": "🧪 Simulation Scientifique Interactive (Sciences, Physique, SVT, Maths)",
                         }[x] if not is_ar else {
-                            "auto": "🤖 تلقائي (استوديو NotebookLM للتاريخ/الأدب، ومحاكاة للعلوم)",
-                            "notebooklm": "🎙️ استوديو NotebookLM (عرض تفاعلي، حوار صوتي وبطاقات مراجعة)",
+                            "auto": "🤖 تلقائي (عرض ملون مبسط للتاريخ/الأدب، ومحاكاة للعلوم)",
+                            "notebooklm": "🎙️ عرض ملون وتفاعلي (شرائح ذكية، حوار صوتي وبطاقات مراجعة)",
                             "simulation": "🧪 محاكاة علمية تفاعلية (فيزياء، كيمياء، علوم، رياضيات)",
                         }[x],
                         key=f"init_style_sel_{course_id}",

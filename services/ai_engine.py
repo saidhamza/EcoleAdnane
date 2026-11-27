@@ -1589,132 +1589,151 @@ def extract_and_inject_server_tts(html_code: str, language: str = "fr") -> str:
     et injecte les balises <audio> ainsi qu'un contrôleur audio universel avant </body>.
     Assure une lecture vocale 100% fiable sur toutes les plateformes (Linux, Android, Windows, Mac)
     sans dépendre de voix de synthèse vocale locales manquantes dans le navigateur.
+    Nettoie également les badges non désirés et sécurise les balises <script> non fermées.
     """
     if not html_code or not html_code.strip():
         return html_code
 
-    scene_audios: List[Tuple[str, str, str]] = []  # (scene_id, audio_data_uri, text)
+    # 0. Supprimer les badges et mentions non désirés
+    badge_rep = "📖 عرض تفاعلي ملون" if language == "ar" else "📖 Présentation Interactive"
+    html_code = re.sub(r'🎨\s*NOTEBOOKLM\s*SLIDE\s*DECK', badge_rep, html_code, flags=re.IGNORECASE)
+    html_code = re.sub(r'\bNOTEBOOKLM\s*SLIDE\s*DECK\b', badge_rep, html_code, flags=re.IGNORECASE)
+    html_code = re.sub(r'\bNOTEBOOKLM\b', 'استوديو تفاعلي' if language == 'ar' else 'Studio Interactif', html_code, flags=re.IGNORECASE)
 
-    has_bs4 = False
-    try:
-        from bs4 import BeautifulSoup
-        soup = BeautifulSoup(html_code, "html.parser")
-        has_bs4 = True
-    except Exception as e_bs4:
-        logger.debug(f"BeautifulSoup indisponible, utilisation du parseur regex ({e_bs4})")
+    # 0.1 Récupérer les flux audio existants si un coffre (#server-tts-vault) était déjà injecté
+    existing_audios: List[Tuple[str, str, str]] = []
+    vault_match = re.search(r'<div\s+id=["\']server-tts-vault["\'][^>]*>(.*?)</div>', html_code, re.DOTALL | re.IGNORECASE)
+    if vault_match:
+        for a_m in re.finditer(r'<audio\s+id=["\']server_audio_([^"\']+)["\'][^>]*data-scene=["\']([^"\']+)["\'][^>]*data-text=["\']([^"\']*)["\'][^>]*src=["\']([^"\']+)["\']', vault_match.group(1), re.IGNORECASE):
+            existing_audios.append((a_m.group(2), a_m.group(4), a_m.group(3)))
+        html_code = re.sub(r'<div\s+id=["\']server-tts-vault["\'][^>]*>.*?</div>', '', html_code, flags=re.DOTALL | re.IGNORECASE)
+        html_code = re.sub(r'<script\s+id=["\']server-tts-engine["\'][^>]*>.*?</script>', '', html_code, flags=re.DOTALL | re.IGNORECASE)
 
-    try:
-        from services.voice_manager import clean_text_for_speech, get_server_tts_audio_base64
-    except ImportError as e_vm:
-        logger.warning(f"Impossible d'importer voice_manager pour le TTS serveur ({e_vm})")
-        return html_code
+    # 0.2 Nettoyage préventif des balises <script> tronquées ou non fermées par le LLM
+    last_script_open = html_code.rfind("<script")
+    last_script_close = html_code.rfind("</script>")
+    if last_script_open != -1 and last_script_open > last_script_close:
+        logger.warning("Balise <script> tronquée ou non fermée par le LLM. Nettoyage sécurisé du fragment incomplet.")
+        html_code = html_code[:last_script_open].rstrip()
 
-    if has_bs4:
-        # 1. Recherche des textes de narration par scène via BeautifulSoup
-        narration_items = soup.select(".narration-script, [data-narration]")
-        if narration_items:
-            for idx, el in enumerate(narration_items):
-                scene_id = el.get("data-scene") or el.get("data-index") or str(idx)
-                raw_text = el.get("data-narration") or el.get_text(separator=" ", strip=True)
-                cleaned = clean_text_for_speech(raw_text)
-                if cleaned:
-                    audio_uri = get_server_tts_audio_base64(cleaned, language=language)
-                    if audio_uri:
-                        scene_audios.append((str(scene_id), audio_uri, cleaned))
-        else:
-            scenes = soup.select(".scene, .slide, .panel, .comic-panel, .comic-panel-container, .comic-content, .story-card, .fresco-scene, [data-scene]")
-            for idx, sc in enumerate(scenes):
-                scene_id = sc.get("data-scene") or sc.get("data-index") or str(idx)
-                text_el = sc.select_one(".narration-script, .narration, .caption, .comic-caption, .speech-bubble, .bubble, .dialogue, .description, p")
-                if text_el:
-                    raw_text = text_el.get_text(separator=" ", strip=True)
-                else:
-                    # NotebookLM Slide structure
-                    title_el = sc.select_one(".slide-title, h1, h2, h3")
-                    stats_els = sc.select(".stat")
-                    takeaways_els = sc.select(".takeaway")
-                    quote_el = sc.select_one(".quote, blockquote")
-                    parts = []
-                    if title_el:
-                        parts.append(title_el.get_text(separator=" ", strip=True))
-                    for st in stats_els:
-                        parts.append(st.get_text(separator=" ", strip=True))
-                    for tk in takeaways_els:
-                        parts.append(tk.get_text(separator=" ", strip=True))
-                    if quote_el:
-                        parts.append(quote_el.get_text(separator=" ", strip=True))
-                    raw_text = ". ".join(parts) if parts else sc.get_text(separator=" ", strip=True)
+    scene_audios: List[Tuple[str, str, str]] = list(existing_audios)
 
-                cleaned = clean_text_for_speech(raw_text)
-                if cleaned:
-                    audio_uri = get_server_tts_audio_base64(cleaned, language=language)
-                    if audio_uri:
-                        scene_audios.append((str(scene_id), audio_uri, cleaned))
+    if not scene_audios:
+        has_bs4 = False
+        try:
+            from bs4 import BeautifulSoup
+            soup = BeautifulSoup(html_code, "html.parser")
+            has_bs4 = True
+        except Exception as e_bs4:
+            logger.debug(f"BeautifulSoup indisponible, utilisation du parseur regex ({e_bs4})")
 
-        # Check for NotebookLM transcript dialogue to create the main podcast overview track
-        transcript_entries = soup.select(".transcript-entry")
-        if transcript_entries:
-            dialogue_parts = [te.get_text(separator=" ", strip=True) for te in transcript_entries]
-            full_podcast_txt = ". ".join(dialogue_parts)
-            cleaned_pod = clean_text_for_speech(full_podcast_txt)
-            if cleaned_pod:
-                pod_audio = get_server_tts_audio_base64(cleaned_pod, language=language)
-                if pod_audio:
-                    scene_audios.insert(0, ("podcast", pod_audio, cleaned_pod))
+        try:
+            from services.voice_manager import clean_text_for_speech, get_server_tts_audio_base64
+        except ImportError as e_vm:
+            logger.warning(f"Impossible d'importer voice_manager pour le TTS serveur ({e_vm})")
+            return html_code
 
-        if not scene_audios:
-            explanation_el = soup.select_one("#explanation, .explanation, .pedagogy-text, .info-box, .comic-caption")
-            if explanation_el:
-                cleaned = clean_text_for_speech(explanation_el.get_text(separator=" ", strip=True))
-                if cleaned:
-                    audio_uri = get_server_tts_audio_base64(cleaned, language=language)
-                    if audio_uri:
-                        scene_audios.append(("0", audio_uri, cleaned))
-    else:
-        # Fallback regex pur sans dépendance externe
-        pattern_narr = r"<([a-zA-Z0-9]+)[^>]*class=[\"'][^\"']*narration-script[^\"']*[\"'][^>]*>(.*?)</\1>"
-        for m in re.finditer(pattern_narr, html_code, re.DOTALL | re.IGNORECASE):
-            tag_content = m.group(0)
-            inner_text = m.group(2)
-            scene_match = re.search(r"data-scene=[\"']([^\"']+)[\"']", tag_content, re.IGNORECASE) or \
-                          re.search(r"data-index=[\"']([^\"']+)[\"']", tag_content, re.IGNORECASE)
-            scene_id = scene_match.group(1) if scene_match else str(len(scene_audios))
-            clean_inner = clean_text_for_speech(inner_text)
-            if clean_inner:
-                audio_uri = get_server_tts_audio_base64(clean_inner, language=language)
-                if audio_uri:
-                    scene_audios.append((str(scene_id), audio_uri, clean_inner))
-
-        if not scene_audios:
-            sc_pattern = r"<([a-zA-Z0-9]+)[^>]*class=[\"'][^\"']*(?:scene|slide|card|panel|comic|fresco)[^\"']*[\"'][^>]*>(.*?)</\1>"
-            for sc in re.finditer(sc_pattern, html_code, re.DOTALL | re.IGNORECASE):
-                sc_tag = sc.group(0)
-                sc_body = sc.group(2)
-                scene_match = re.search(r"data-scene=[\"']([^\"']+)[\"']", sc_tag, re.IGNORECASE) or \
-                              re.search(r"data-index=[\"']([^\"']+)[\"']", sc_tag, re.IGNORECASE)
-                scene_id = scene_match.group(1) if scene_match else str(len(scene_audios))
-                cap = re.search(r"<([a-zA-Z0-9]+)[^>]*class=[\"'][^\"']*(?:caption|comic-caption|narration|speech-bubble|bubble|dialog|desc)[^\"']*[\"'][^>]*>(.*?)</\1>", sc_body, re.DOTALL | re.IGNORECASE)
-                raw_cap = cap.group(2) if cap else None
-                if not raw_cap:
-                    p = re.search(r"<p[^>]*>(.*?)</p>", sc_body, re.DOTALL | re.IGNORECASE)
-                    raw_cap = p.group(1) if p else None
-                if not raw_cap:
-                    raw_cap = re.sub(r"<[^>]+>", " ", sc_body)
-                if raw_cap:
-                    clean_cap = clean_text_for_speech(raw_cap)
-                    if clean_cap:
-                        audio_uri = get_server_tts_audio_base64(clean_cap, language=language)
+        if has_bs4:
+            # 1. Recherche des textes de narration par scène via BeautifulSoup
+            narration_items = soup.select(".narration-script, [data-narration]")
+            if narration_items:
+                for idx, el in enumerate(narration_items):
+                    scene_id = el.get("data-scene") or el.get("data-index") or str(idx)
+                    raw_text = el.get("data-narration") or el.get_text(separator=" ", strip=True)
+                    cleaned = clean_text_for_speech(raw_text)
+                    if cleaned:
+                        audio_uri = get_server_tts_audio_base64(cleaned, language=language)
                         if audio_uri:
-                            scene_audios.append((str(scene_id), audio_uri, clean_cap))
+                            scene_audios.append((str(scene_id), audio_uri, cleaned))
+            else:
+                scenes = soup.select(".scene, .slide, .panel, .comic-panel, .comic-panel-container, .comic-content, .story-card, .fresco-scene, [data-scene]")
+                for idx, sc in enumerate(scenes):
+                    scene_id = sc.get("data-scene") or sc.get("data-index") or str(idx)
+                    text_el = sc.select_one(".narration-script, .narration, .caption, .comic-caption, .speech-bubble, .bubble, .dialogue, .description, p")
+                    if text_el:
+                        raw_text = text_el.get_text(separator=" ", strip=True)
+                    else:
+                        title_el = sc.select_one(".slide-title, h1, h2, h3")
+                        stats_els = sc.select(".stat")
+                        takeaways_els = sc.select(".takeaway")
+                        quote_el = sc.select_one(".quote, blockquote")
+                        parts = []
+                        if title_el:
+                            parts.append(title_el.get_text(separator=" ", strip=True))
+                        for st in stats_els:
+                            parts.append(st.get_text(separator=" ", strip=True))
+                        for tk in takeaways_els:
+                            parts.append(tk.get_text(separator=" ", strip=True))
+                        if quote_el:
+                            parts.append(quote_el.get_text(separator=" ", strip=True))
+                        raw_text = ". ".join(parts) if parts else sc.get_text(separator=" ", strip=True)
+
+                    cleaned = clean_text_for_speech(raw_text)
+                    if cleaned:
+                        audio_uri = get_server_tts_audio_base64(cleaned, language=language)
+                        if audio_uri:
+                            scene_audios.append((str(scene_id), audio_uri, cleaned))
+
+            # Dialogue de podcast pour la piste d'aperçu général
+            transcript_entries = soup.select(".transcript-entry")
+            if transcript_entries:
+                dialogue_parts = [te.get_text(separator=" ", strip=True) for te in transcript_entries]
+                full_podcast_txt = ". ".join(dialogue_parts)
+                cleaned_pod = clean_text_for_speech(full_podcast_txt)
+                if cleaned_pod:
+                    pod_audio = get_server_tts_audio_base64(cleaned_pod, language=language)
+                    if pod_audio:
+                        scene_audios.insert(0, ("podcast", pod_audio, cleaned_pod))
+
+            if not scene_audios:
+                explanation_el = soup.select_one("#explanation, .explanation, .pedagogy-text, .info-box, .comic-caption")
+                if explanation_el:
+                    cleaned = clean_text_for_speech(explanation_el.get_text(separator=" ", strip=True))
+                    if cleaned:
+                        audio_uri = get_server_tts_audio_base64(cleaned, language=language)
+                        if audio_uri:
+                            scene_audios.append(("0", audio_uri, cleaned))
+        else:
+            pattern_narr = r"<([a-zA-Z0-9]+)[^>]*class=[\"'][^\"']*narration-script[^\"']*[\"'][^>]*>(.*?)</\1>"
+            for m in re.finditer(pattern_narr, html_code, re.DOTALL | re.IGNORECASE):
+                tag_content = m.group(0)
+                inner_text = m.group(2)
+                scene_match = re.search(r"data-scene=[\"']([^\"']+)[\"']", tag_content, re.IGNORECASE) or \
+                              re.search(r"data-index=[\"']([^\"']+)[\"']", tag_content, re.IGNORECASE)
+                scene_id = scene_match.group(1) if scene_match else str(len(scene_audios))
+                clean_inner = clean_text_for_speech(inner_text)
+                if clean_inner:
+                    audio_uri = get_server_tts_audio_base64(clean_inner, language=language)
+                    if audio_uri:
+                        scene_audios.append((str(scene_id), audio_uri, clean_inner))
+
+            if not scene_audios:
+                sc_pattern = r"<([a-zA-Z0-9]+)[^>]*class=[\"'][^\"']*(?:scene|slide|card|panel|comic|fresco)[^\"']*[\"'][^>]*>(.*?)</\1>"
+                for sc in re.finditer(sc_pattern, html_code, re.DOTALL | re.IGNORECASE):
+                    sc_tag = sc.group(0)
+                    sc_body = sc.group(2)
+                    scene_match = re.search(r"data-scene=[\"']([^\"']+)[\"']", sc_tag, re.IGNORECASE) or \
+                                  re.search(r"data-index=[\"']([^\"']+)[\"']", sc_tag, re.IGNORECASE)
+                    scene_id = scene_match.group(1) if scene_match else str(len(scene_audios))
+                    cap = re.search(r"<([a-zA-Z0-9]+)[^>]*class=[\"'][^\"']*(?:caption|comic-caption|narration|speech-bubble|bubble|dialog|desc)[^\"']*[\"'][^>]*>(.*?)</\1>", sc_body, re.DOTALL | re.IGNORECASE)
+                    raw_cap = cap.group(2) if cap else None
+                    if not raw_cap:
+                        p = re.search(r"<p[^>]*>(.*?)</p>", sc_body, re.DOTALL | re.IGNORECASE)
+                        raw_cap = p.group(1) if p else None
+                    if not raw_cap:
+                        raw_cap = re.sub(r"<[^>]+>", " ", sc_body)
+                    if raw_cap:
+                        clean_cap = clean_text_for_speech(raw_cap)
+                        if clean_cap:
+                            audio_uri = get_server_tts_audio_base64(clean_cap, language=language)
+                            if audio_uri:
+                                scene_audios.append((str(scene_id), audio_uri, clean_cap))
 
     # Assurer une piste podcast si des scènes existent
     if scene_audios and not any(s[0] == "podcast" for s in scene_audios):
         scene_audios.insert(0, ("podcast", scene_audios[0][1], scene_audios[0][2]))
 
-    if not scene_audios:
-        return html_code
-
-    # 2. Construction des balises <audio> et du contrôleur JavaScript
+    # Construction du coffre <audio>
     audio_tags_html = ['<div id="server-tts-vault" style="display:none;" aria-hidden="true">']
     for s_id, a_uri, txt in scene_audios:
         escaped_txt = txt[:120].replace('"', '&quot;')
@@ -1726,6 +1745,7 @@ def extract_and_inject_server_tts(html_code: str, language: str = "fr") -> str:
     controller_script = """
 <script id="server-tts-engine">
 (function() {
+  // 1. Initialisation des pistes audio serveur
   var serverAudios = {};
   var audioList = Array.from(document.querySelectorAll('audio.scene-server-audio'));
   audioList.forEach(function(aud) {
@@ -1739,12 +1759,11 @@ def extract_and_inject_server_tts(html_code: str, language: str = "fr") -> str:
 
   window._serverAudios = serverAudios;
   window._activeAudio = null;
+  window._audioPlaybackRate = 1.0;
 
   function getActiveSceneIndex() {
     if (typeof window.currentSlide !== 'undefined') return window.currentSlide;
     if (typeof window.currentScene !== 'undefined') return window.currentScene;
-    if (typeof window.currentSceneIndex !== 'undefined') return window.currentSceneIndex;
-    if (typeof window.activeSceneIndex !== 'undefined') return window.activeSceneIndex;
     var el = document.querySelector('.scene.active, .slide.active, .fresco-scene.active, .card.active, [data-active="true"]');
     if (el) {
       var ds = el.getAttribute('data-scene') || el.getAttribute('data-index');
@@ -1756,53 +1775,149 @@ def extract_and_inject_server_tts(html_code: str, language: str = "fr") -> str:
     return 0;
   }
 
-  window.playSceneAudio = function(sceneIdx, onEnded) {
-    window.stopSceneAudio();
-    var aud = serverAudios[sceneIdx] || document.getElementById('server_audio_' + sceneIdx);
+  // 2. Navigation des Onglets (Slide Deck / Podcast / Flashcards)
+  window.openTab = function(evt, tabId) {
+    if (evt && evt.preventDefault) evt.preventDefault();
+    var tabNames = ['slide-deck-tab', 'podcast-tab', 'flashcards-tab'];
+    var targetId = (typeof tabId === 'number' && tabNames[tabId]) ? tabNames[tabId] : String(tabId);
+
+    var allContents = document.querySelectorAll('.tab-content, .tab-pane, .tab-panel');
+    allContents.forEach(function(content) {
+      content.style.display = 'none';
+      content.classList.remove('active');
+    });
+
+    var targetEl = document.getElementById(targetId) || document.querySelector('.' + targetId);
+    if (!targetEl) {
+      if (targetId.includes('slide') || targetId === '0') {
+        targetEl = document.querySelector('.slide-deck, #slide-deck-tab, #tab1');
+      } else if (targetId.includes('pod') || targetId.includes('transcript') || targetId === '1') {
+        targetEl = document.querySelector('.podcast-container, .transcript, #podcast-tab, #tab2');
+      } else if (targetId.includes('flash') || targetId === '2') {
+        targetEl = document.querySelector('.flashcards-container, .flashcards, #flashcards-tab, #tab3');
+      }
+    }
+    if (targetEl) {
+      targetEl.style.display = 'block';
+      targetEl.classList.add('active');
+    }
+
+    var allTabBtns = document.querySelectorAll('.tab-button, .tab, button[data-tab]');
+    allTabBtns.forEach(function(btn) {
+      btn.classList.remove('active');
+    });
+    if (evt && evt.currentTarget) {
+      evt.currentTarget.classList.add('active');
+    } else {
+      allTabBtns.forEach(function(btn) {
+        var oc = btn.getAttribute('onclick') || '';
+        if (oc.indexOf(targetId) !== -1 ||
+           (targetId.includes('slide') && oc.includes('slide-deck')) ||
+           (targetId.includes('pod') && oc.includes('podcast')) ||
+           (targetId.includes('flash') && oc.includes('flashcard'))) {
+          btn.classList.add('active');
+        }
+      });
+    }
+  };
+  window.showTab = window.openTab;
+
+  // 3. Navigation des Diapositives (Slide Deck)
+  var currentSlideIdx = 0;
+  function getSlides() {
+    return Array.from(document.querySelectorAll('.slide-deck .slide, .slide, .presentation-slide'));
+  }
+
+  window.showSlide = function(n) {
+    var slides = getSlides();
+    if (!slides.length) return;
+    if (n >= slides.length) n = slides.length - 1;
+    if (n < 0) n = 0;
+    currentSlideIdx = n;
+    window.currentSlide = n;
+
+    slides.forEach(function(s, idx) {
+      if (idx === n) {
+        s.classList.add('active');
+        s.style.display = 'block';
+      } else {
+        s.classList.remove('active');
+        s.style.display = 'none';
+      }
+    });
+
+    var dots = document.querySelectorAll('.pagination-dot, .dot, #slide-pagination span, #slide-pagination button');
+    dots.forEach(function(d, idx) {
+      if (idx === n) d.classList.add('active');
+      else d.classList.remove('active');
+    });
+
+    var prevBtn = document.getElementById('prev-slide-btn') || document.querySelector('.btn-prev, .prev-btn');
+    var nextBtn = document.getElementById('next-slide-btn') || document.querySelector('.btn-next, .next-btn');
+    if (prevBtn) prevBtn.disabled = (n === 0);
+    if (nextBtn) nextBtn.disabled = (n === slides.length - 1);
+
+    var counterEl = document.querySelector('.slide-counter, .current-slide-num');
+    if (counterEl) counterEl.textContent = (n + 1) + ' / ' + slides.length;
+  };
+
+  window.changeSlide = function(step) {
+    window.showSlide(currentSlideIdx + step);
+  };
+
+  function initPagination() {
+    var slides = getSlides();
+    var paginationContainer = document.getElementById('slide-pagination') || document.querySelector('.pagination');
+    if (paginationContainer && paginationContainer.children.length === 0 && slides.length > 0) {
+      slides.forEach(function(_, idx) {
+        var dot = document.createElement('button');
+        dot.type = 'button';
+        dot.className = 'pagination-dot' + (idx === 0 ? ' active' : '');
+        dot.setAttribute('aria-label', 'Diapositive ' + (idx + 1));
+        dot.onclick = function() { window.showSlide(idx); };
+        dot.style.cssText = 'width:12px; height:12px; border-radius:50%; border:none; margin:0 4px; cursor:pointer; background:' + (idx === 0 ? '#2563eb' : '#cbd5e1') + '; transition:all 0.2s;';
+        paginationContainer.appendChild(dot);
+      });
+    }
+  }
+
+  // 4. Lecture vocale par diapositive
+  window.playSlideNarration = function(slideNum) {
+    var idx = parseInt(slideNum, 10);
+    if (isNaN(idx)) idx = currentSlideIdx;
+    var aud = serverAudios[idx] || serverAudios[idx - 1] || serverAudios[String(idx)] || serverAudios[String(idx - 1)];
     if (!aud && audioList.length > 0) {
-      var n = parseInt(sceneIdx, 10);
-      if (!isNaN(n) && audioList[n]) aud = audioList[n];
+      if (audioList[idx]) aud = audioList[idx];
+      else if (idx > 0 && audioList[idx - 1]) aud = audioList[idx - 1];
       else aud = audioList[0];
     }
+
+    if (window._activeAudio && !window._activeAudio.paused && window._activeAudio === aud) {
+      window.stopSceneAudio();
+      return;
+    }
+
+    window.stopSceneAudio();
     if (aud) {
       aud.currentTime = 0;
       aud.playbackRate = window._audioPlaybackRate || 1.0;
       window._activeAudio = aud;
+      aud.play().catch(function(e) { console.warn("Audio play error:", e); });
+
+      var listenBtns = document.querySelectorAll('button[onclick*="playSlideNarration(' + slideNum + ')"], .narration-btn');
+      listenBtns.forEach(function(b) { b.classList.add('is-speaking'); });
+
       aud.onended = function() {
+        listenBtns.forEach(function(b) { b.classList.remove('is-speaking'); });
         window._activeAudio = null;
-        document.querySelectorAll('.is-speaking').forEach(function(b) { b.classList.remove('is-speaking'); });
-        if (typeof onEnded === 'function') onEnded();
       };
-      var p = aud.play();
-      if (p && typeof p.catch === 'function') {
-        p.catch(function(err) {
-          console.warn("Server audio playback caught:", err);
-          if (typeof onEnded === 'function') onEnded();
-        });
-      }
-      return aud;
-    }
-    if (typeof onEnded === 'function') setTimeout(onEnded, 300);
-    return null;
-  };
-
-  window.stopSceneAudio = function() {
-    if (window._activeAudio) {
-      try { window._activeAudio.pause(); } catch(e) {}
-      window._activeAudio = null;
-    }
-    audioList.forEach(function(a) {
-      try { a.pause(); } catch(e) {}
-    });
-    document.querySelectorAll('.is-speaking').forEach(function(b) { b.classList.remove('is-speaking'); });
-    var playBtn = document.querySelector('.audio-controls button, #play-pause');
-    if (playBtn) playBtn.textContent = '▶️';
-    if (window.speechSynthesis) {
-      try { window.speechSynthesis.cancel(); } catch(e) {}
     }
   };
+  window.playSceneAudio = function(sceneIdx, onEnded) {
+    return window.playSlideNarration(sceneIdx);
+  };
 
-  // Contrôleur de Podcast Audio Overview (Play / Pause, scrubber, visualiseur)
+  // 5. Contrôleur de Podcast Explicatif (Play / Pause, scrubber, visualiseur)
   window.togglePodcastAudio = function() {
     var playBtn = document.querySelector('.audio-controls button, #play-pause');
     var aud = serverAudios['podcast'] || serverAudios[getActiveSceneIndex()] || audioList[0];
@@ -1831,9 +1946,41 @@ def extract_and_inject_server_tts(html_code: str, language: str = "fr") -> str:
   };
   window.playPause = window.togglePodcastAudio;
 
-  // Visualiseur Canvas Waveform dynamique
+  window.stopSceneAudio = function() {
+    if (window._activeAudio) {
+      try { window._activeAudio.pause(); } catch(e) {}
+      window._activeAudio = null;
+    }
+    audioList.forEach(function(a) {
+      try { a.pause(); } catch(e) {}
+    });
+    document.querySelectorAll('.is-speaking').forEach(function(b) { b.classList.remove('is-speaking'); });
+    var playBtn = document.querySelector('.audio-controls button, #play-pause');
+    if (playBtn) playBtn.textContent = '▶️';
+  };
+
+  window.skip = function(seconds) {
+    if (window._activeAudio) {
+      window._activeAudio.currentTime = Math.max(0, Math.min(window._activeAudio.duration || 9999, window._activeAudio.currentTime + seconds));
+    }
+  };
+  window.skipAudio = window.skip;
+
+  window.changePlaybackSpeed = function(rate) {
+    var r = parseFloat(rate) || 1.0;
+    window._audioPlaybackRate = r;
+    if (window._activeAudio) window._activeAudio.playbackRate = r;
+  };
+
+  // 6. Flashcards interactives
+  window.flipCard = function(card) {
+    if (!card) return;
+    card.classList.toggle('flipped');
+  };
+
+  // 7. Visualiseur Canvas Waveform dynamique
   function initWaveform() {
-    var player = document.querySelector('.audio-player');
+    var player = document.querySelector('.audio-player, .podcast-player');
     if (!player) return;
     var canvas = document.getElementById('waveform-canvas');
     if (!canvas) {
@@ -1841,7 +1988,7 @@ def extract_and_inject_server_tts(html_code: str, language: str = "fr") -> str:
       canvas.id = 'waveform-canvas';
       canvas.width = 600;
       canvas.height = 36;
-      canvas.style.cssText = 'width:100%; height:36px; border-radius:8px; margin-bottom:12px; background:rgba(0,0,0,0.3); display:block;';
+      canvas.style.cssText = 'width:100%; height:36px; border-radius:8px; margin-bottom:12px; background:rgba(0,0,0,0.05); display:block;';
       var controls = player.querySelector('.audio-controls') || player.firstElementChild;
       if (controls) player.insertBefore(canvas, controls);
       else player.appendChild(canvas);
@@ -1855,8 +2002,8 @@ def extract_and_inject_server_tts(html_code: str, language: str = "fr") -> str:
       for (var i = 0; i < bars; i++) {
         var h = isPlaying ? (Math.sin(Date.now() / 140 + i * 0.45) * 0.5 + 0.5) * (canvas.height - 6) + 4 : 4;
         var grad = ctx.createLinearGradient(0, canvas.height - h, 0, canvas.height);
-        grad.addColorStop(0, '#38bdf8');
-        grad.addColorStop(1, '#818cf8');
+        grad.addColorStop(0, '#2563eb');
+        grad.addColorStop(1, '#7c3aed');
         ctx.fillStyle = grad;
         ctx.fillRect(i * barW + 2, (canvas.height - h) / 2, barW - 4, h);
       }
@@ -1865,144 +2012,7 @@ def extract_and_inject_server_tts(html_code: str, language: str = "fr") -> str:
     drawWave();
   }
 
-  // Scrubber & Boutons +/-10s & Vitesse
-  function wireAudioControls() {
-    var progressEl = document.querySelector('#progress');
-    if (progressEl) {
-      progressEl.max = 100;
-      progressEl.oninput = function() {
-        if (window._activeAudio && window._activeAudio.duration) {
-          window._activeAudio.currentTime = (parseFloat(progressEl.value) / 100) * window._activeAudio.duration;
-        }
-      };
-    }
-    window.skip = function(seconds) {
-      if (window._activeAudio) {
-        window._activeAudio.currentTime = Math.max(0, Math.min(window._activeAudio.duration || 9999, window._activeAudio.currentTime + seconds));
-      }
-    };
-    var speedSelect = document.querySelector('#speed');
-    if (speedSelect) {
-      speedSelect.onchange = function() {
-        var r = parseFloat(speedSelect.value) || 1.0;
-        window._audioPlaybackRate = r;
-        if (window._activeAudio) window._activeAudio.playbackRate = r;
-      };
-    }
-  }
-
-  // Correction navigation Onglets NotebookLM (Slide Deck, Transcript, Flashcards)
-  var origShowTab = window.showTab;
-  window.showTab = function(arg) {
-    if (typeof origShowTab === 'function') {
-      try { origShowTab(arg); } catch(e){}
-    }
-    var slideDeck = document.querySelector('.slide-deck');
-    var transcript = document.querySelector('.transcript, .live-transcript');
-    var flashcards = document.querySelector('.flashcards, .study-flashcards');
-    var isTab0 = (arg === 0 || arg === 'slide-deck');
-    var isTab1 = (arg === 1 || arg === 'live-transcript');
-    var isTab2 = (arg === 2 || arg === 'study-flashcards');
-    var tabs = document.querySelectorAll('.tab');
-    tabs.forEach(function(t, i) {
-      if ((i === arg) || (arg === 0 && i === 0) || (arg === 1 && i === 1) || (arg === 2 && i === 2)) {
-        t.classList.add('active');
-      } else {
-        t.classList.remove('active');
-      }
-    });
-    if (slideDeck) slideDeck.style.display = isTab0 ? 'block' : 'none';
-    if (transcript) transcript.style.display = isTab1 ? 'block' : 'none';
-    if (flashcards) flashcards.style.display = isTab2 ? 'flex' : 'none';
-  };
-
-  // Flipcard flip interactif
-  window.flipCard = function(card) {
-    if (!card) return;
-    card.classList.toggle('flipped');
-    card.classList.toggle('active');
-  };
-
-  // Interception universelle de window.speechSynthesis
-  if (typeof window.speechSynthesis !== 'undefined' && audioList.length > 0) {
-    var origSpeak = window.speechSynthesis.speak.bind(window.speechSynthesis);
-    var origCancel = window.speechSynthesis.cancel.bind(window.speechSynthesis);
-
-    window.speechSynthesis.speak = function(utterance) {
-      var curIdx = getActiveSceneIndex();
-      var aud = serverAudios[curIdx] || document.getElementById('server_audio_' + curIdx);
-      if (aud) {
-        window.stopSceneAudio();
-        if (typeof utterance.onstart === 'function') {
-          try { utterance.onstart(); } catch(e) {}
-        }
-        aud.currentTime = 0;
-        aud.playbackRate = utterance.rate || window._audioPlaybackRate || 1.0;
-        window._activeAudio = aud;
-        aud.onended = function() {
-          window._activeAudio = null;
-          if (typeof utterance.onend === 'function') {
-            try { utterance.onend(); } catch(e) {}
-          }
-        };
-        aud.onerror = function() {
-          try { origSpeak(utterance); } catch(e) {}
-        };
-        var p = aud.play();
-        if (p && typeof p.catch === 'function') {
-          p.catch(function() {
-            try { origSpeak(utterance); } catch(e) {}
-          });
-        }
-      } else {
-        try { origSpeak(utterance); } catch(e) {}
-      }
-    };
-
-    window.speechSynthesis.cancel = function() {
-      window.stopSceneAudio();
-      try { origCancel(); } catch(e) {}
-    };
-  }
-
-  // Initialisation au chargement
-  if (document.readyState === 'complete' || document.readyState === 'interactive') {
-    initWaveform();
-    wireAudioControls();
-  } else {
-    window.addEventListener('DOMContentLoaded', function() {
-      initWaveform();
-      wireAudioControls();
-    });
-  }
-
-  // Écouteur global pour les boutons audio
-  document.addEventListener('click', function(e) {
-    var btn = e.target.closest('button, .btn, .control-btn');
-    if (!btn) return;
-    var txt = (btn.textContent || '').trim();
-    var isAudioBtn = btn.classList.contains('tts-btn') ||
-                     btn.classList.contains('btn-listen') ||
-                     btn.classList.contains('audio-btn') ||
-                     btn.id === 'btn-listen' ||
-                     btn.id === 'btnListen' ||
-                     txt.includes('🔊') || txt.includes('Écouter') || txt.includes('استمع') || txt.includes('استماع');
-
-    if (isAudioBtn && !txt.includes('متتابع') && !txt.includes('enchaînée') && !txt.includes('Auto')) {
-      if (window._activeAudio && !window._activeAudio.paused) {
-        window.stopSceneAudio();
-        btn.classList.remove('is-speaking');
-      } else {
-        var idx = getActiveSceneIndex();
-        btn.classList.add('is-speaking');
-        window.playSceneAudio(idx, function() {
-          btn.classList.remove('is-speaking');
-        });
-      }
-    }
-  });
-
-  // Gestion universelle du Plein Écran (Fullscreen / Nouvel onglet autonome)
+  // 8. Gestion universelle du Plein Écran / Nouvel onglet autonome
   window.toggleFullscreenOrNewTab = function() {
     try {
       var elem = document.documentElement;
@@ -2063,10 +2073,73 @@ def extract_and_inject_server_tts(html_code: str, language: str = "fr") -> str:
     document.body.appendChild(fsBtn);
   }
 
+  // 9. Attacher automatiquement tous les écouteurs du DOM
+  function wireDomEvents() {
+    var prevBtn = document.getElementById('prev-slide-btn') || document.querySelector('.btn-prev, .prev-btn');
+    if (prevBtn) prevBtn.onclick = function() { window.changeSlide(-1); };
+    var nextBtn = document.getElementById('next-slide-btn') || document.querySelector('.btn-next, .next-btn');
+    if (nextBtn) nextBtn.onclick = function() { window.changeSlide(1); };
+
+    document.querySelectorAll('.flashcard, .card-flip, [onclick*="classList.toggle"]').forEach(function(card) {
+      card.onclick = function() { card.classList.toggle('flipped'); };
+    });
+
+    var progressEl = document.querySelector('#progress, .audio-progress');
+    if (progressEl) {
+      progressEl.max = 100;
+      progressEl.oninput = function() {
+        if (window._activeAudio && window._activeAudio.duration) {
+          window._activeAudio.currentTime = (parseFloat(progressEl.value) / 100) * window._activeAudio.duration;
+        }
+      };
+    }
+
+    var speedSelect = document.querySelector('#speed, .audio-speed');
+    if (speedSelect) {
+      speedSelect.onchange = function() {
+        window.changePlaybackSpeed(speedSelect.value);
+      };
+    }
+
+    document.querySelectorAll('button[onclick*="skip"]').forEach(function(btn) {
+      var oc = btn.getAttribute('onclick') || '';
+      if (oc.includes('-')) {
+        btn.onclick = function() { window.skipAudio(-10); };
+      } else {
+        btn.onclick = function() { window.skipAudio(10); };
+      }
+    });
+
+    document.addEventListener('keydown', function(e) {
+      if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
+      if (e.key === 'ArrowRight') {
+        var isRTL = document.documentElement.getAttribute('dir') === 'rtl';
+        window.changeSlide(isRTL ? -1 : 1);
+      } else if (e.key === 'ArrowLeft') {
+        var isRTL = document.documentElement.getAttribute('dir') === 'rtl';
+        window.changeSlide(isRTL ? 1 : -1);
+      } else if (e.key === ' ' && !e.repeat) {
+        e.preventDefault();
+        window.playPause();
+      }
+    });
+
+    window.showSlide(0);
+  }
+
+  // 10. Initialisation au chargement
   if (document.readyState === 'complete' || document.readyState === 'interactive') {
+    initPagination();
+    initWaveform();
     setupFloatingFullscreenBtn();
+    wireDomEvents();
   } else {
-    window.addEventListener('DOMContentLoaded', setupFloatingFullscreenBtn);
+    window.addEventListener('DOMContentLoaded', function() {
+      initPagination();
+      initWaveform();
+      setupFloatingFullscreenBtn();
+      wireDomEvents();
+    });
   }
 })();
 </script>
@@ -2082,6 +2155,7 @@ def extract_and_inject_server_tts(html_code: str, language: str = "fr") -> str:
     if trimmed.rfind("<") > trimmed.rfind(">"):
         closed_prefix = '">\n</div>\n</div>'
     return html_code + f"{closed_prefix}\n{injection}\n</body>\n</html>"
+
 
 
 
@@ -2128,12 +2202,12 @@ def generate_course_animation_simulation(
 
     if style == "notebooklm":
         mode_desc = (
-            "عرض تقديمي تعليمي ملون ومبسط بأسلوب شرائح NotebookLM (Slide Deck تفاعلي، حوار صوتي شارح، وبطاقات تحدي ممتعة)"
+            "عرض تقديمي تعليمي ملون ومبسط (شرائح تفاعلية، حوار صوتي شارح، وبطاقات تحدي ممتعة)"
             if is_ar
-            else "PRÉSENTATION COLORÉE ET PÉDAGOGIQUE STYLE NOTEBOOKLM SLIDE DECK (DIAPORAMA INTERACTIF, PODCAST EXPLICATIF ET FLASHCARDS)"
+            else "PRÉSENTATION COLORÉE ET PÉDAGOGIQUE (DIAPORAMA INTERACTIF, PODCAST EXPLICATIF ET FLASHCARDS)"
         )
         specifications = f"""
-Tu dois concevoir un **{mode_desc}** au design moderne, dynamique et hautement coloré, spécialement conçu pour expliquer simplement et visuellement la leçon à un élève de collège (3AC / 14 ans) selon l'esprit des meilleures présentations visuelles de **NotebookLM** et **Gamma**.
+Tu dois concevoir un **{mode_desc}** au design moderne, dynamique et hautement coloré, spécialement conçu pour expliquer simplement et visuellement la leçon à un élève de collège (3AC / 14 ans) selon l'esprit des meilleures présentations visuelles pédagogiques modernes.
 
 🎨 DIRECTION ARTISTIQUE & PALETTE DE COULEURS VIVES :
 - Fond lumineux et doux : fond gris-bleu très pâle (#f8fafc à #f1f5f9), cartes blanches aérées avec ombres portées douces (box-shadow: 0 10px 25px -5px rgba(0,0,0,0.06), border-radius: 20px, border: 1px solid #e2e8f0).
@@ -2146,10 +2220,10 @@ Tu dois concevoir un **{mode_desc}** au design moderne, dynamique et hautement c
 - Badges pilules colorés vibrants, typographie moderne et très lisible (Cairo / Google Sans).
 - AUCUN dessin d'enfant maladroit, AUCUN bonhomme simpliste en SVG ! L'interface doit être superbe, claire, aérée, colorée et stimulante.
 
-L'APPLICATION INTERACTIVE NOTEBOOKLM DOIT COMPORTER :
+L'APPLICATION INTERACTIVE DOIT COMPORTER :
 
 1. En-tête Coloré & Badges (Presentation Header) :
-   - Badges pilules colorés : '🎨 NOTEBOOKLM SLIDE DECK' | '{subject}' | '#3AC'.
+   - Badges pilules colorés : '📖 عرض تفاعلي' | '{subject}' | '#3AC'.
    - Titre du cours en typographie forte et claire.
    - Bouton Plein Écran en haut : '⛶ ملء الشاشة' (appelle window.toggleFullscreenOrNewTab()).
 
@@ -2207,12 +2281,12 @@ La simulation doit comporter :
 """
     else:
         mode_desc = (
-            "PRESENTATION NOTEBOOKLM SLIDE DECK"
+            "PRESENTATION INTERACTIVE SLIDE DECK"
             if not is_ar
-            else "عرض شرائح تعليمي NotebookLM"
+            else "عرض شرائح تعليمي تفاعلي"
         )
         specifications = f"""
-Tu dois concevoir un deck de présentation coloré et pédagogique inspiré de NotebookLM :
+Tu dois concevoir un deck de présentation coloré et pédagogique :
 1. Slide deck percutant avec grands titres, blocs colorés et chiffres clés.
 2. Lecteur de podcast audio avec égaliseur.
 3. Balise obligatoire : <div class="narration-script" data-scene="i">النص الكامل للسرد بالتشكيل التام...</div>
@@ -2256,7 +2330,7 @@ RÈGLES D'EXÉCUTION :
 
     system_instruction = (
         "Tu es un directeur de création pédagogique, designer d'expériences d'apprentissage visuelles et développeur Web créatif d'élite, "
-        "spécialisé dans les présentations diaporama colorées, stimulantes et ultra-claires inspirées des Slide Decks NotebookLM et Gamma pour collégiens, "
+        "spécialisé dans les présentations diaporama colorées, stimulantes et ultra-claires pour collégiens, "
         "avec simulations interactives Canvas/SVG et synthèses vocales arabes haute fidélité. "
         "Tu génères exclusivement du code HTML5 autonome propre, moderne, coloré, hautement pédagogique et rigoureusement complet jusqu'à </html>."
     )
