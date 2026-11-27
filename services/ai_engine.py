@@ -2124,55 +2124,63 @@ def generate_course_animation_simulation(
 
     if style == "notebooklm":
         mode_desc = (
-            "استوديو NOTEBOOKLM التفاعلي المتطور: عرض تقديمي بالشرائح، حوار صوتي عميق، وبطاقات دراسية"
+            "عرض تقديمي تعليمي ملون ومبسط بأسلوب شرائح NotebookLM (Slide Deck تفاعلي، حوار صوتي شارح، وبطاقات تحدي ممتعة)"
             if is_ar
-            else "GOOGLE NOTEBOOKLM STUDY STUDIO: INTERACTIVE SLIDE DECK, AUDIO OVERVIEW & FLASHCARDS"
+            else "PRÉSENTATION COLORÉE ET PÉDAGOGIQUE STYLE NOTEBOOKLM SLIDE DECK (DIAPORAMA INTERACTIF, PODCAST EXPLICATIF ET FLASHCARDS)"
         )
         specifications = f"""
-Tu dois concevoir un **{mode_desc}** au design ultra-raffiné inspiré fidèlement de l'expérience officielle **Google NotebookLM (Audio Overview & Study Guide)**.
+Tu dois concevoir un **{mode_desc}** au design moderne, dynamique et hautement coloré, spécialement conçu pour expliquer simplement et visuellement la leçon à un élève de collège (3AC / 14 ans) selon l'esprit des meilleures présentations visuelles de **NotebookLM** et **Gamma**.
 
-🎨 ESTHÉTIQUE & DIRECTION ARTISTIQUE NOTEBOOKLM :
-- Thème sombre épuré et prestigieux (#0b0f19 / #111827), cartes en verre fumé dépoli avec bordures subtiles (rgba(255,255,255,0.08)), typographie moderne épurée (Cairo / Google Sans).
-- AUCUN dessin d'enfant, AUCUN bonhomme simpliste en SVG ! L'interface doit ressembler au produit officiel de Google : moderne, minimaliste, élégante, universitaire et percutante.
+🎨 DIRECTION ARTISTIQUE & PALETTE DE COULEURS VIVES :
+- Fond lumineux et doux : fond gris-bleu très pâle (#f8fafc à #f1f5f9), cartes blanches aérées avec ombres portées douces (box-shadow: 0 10px 25px -5px rgba(0,0,0,0.06), border-radius: 20px, border: 1px solid #e2e8f0).
+- Code couleur thématique VIF et PÉDAGOGIQUE pour structurer visuellement l'apprentissage de l'élève :
+  * 🔵 Bleu Indigo / Cyan (#2563eb / #0ea5e9) : Contexte, définitions, repères clés.
+  * 🟠 Orange Corail / Ambre (#f97316 / #d97706) : Crises, alertes, causes directes (ex: 1929, chômage).
+  * 🟣 Violet / Pourpre (#7c3aed / #9333ea) : Personnages, biographies, idéologies.
+  * 🔴 Rouge Écarlate (#dc2626 / #ef4444) : Dictature, guerre, conséquences graves.
+  * 🟢 Vert Émeraude / Menthe (#059669 / #10b981) : Synthèses, bilans positifs, points essentiels à retenir.
+- Badges pilules colorés vibrants, typographie moderne et très lisible (Cairo / Google Sans).
+- AUCUN dessin d'enfant maladroit, AUCUN bonhomme simpliste en SVG ! L'interface doit être superbe, claire, aérée, colorée et stimulante.
 
 L'APPLICATION INTERACTIVE NOTEBOOKLM DOIT COMPORTER :
 
-1. En-tête Studio & Badges (Studio Header) :
-   - Badges 'pilules' : '🎙️ NOTEBOOKLM • DEEP DIVE AUDIO' | '{subject}' | '#3AC'.
-   - Titre du cours en typographie forte et nette.
+1. En-tête Coloré & Badges (Presentation Header) :
+   - Badges pilules colorés : '🎨 NOTEBOOKLM SLIDE DECK' | '{subject}' | '#3AC'.
+   - Titre du cours en typographie forte et claire.
    - Bouton Plein Écran en haut : '⛶ ملء الشاشة' (appelle window.toggleFullscreenOrNewTab()).
 
-2. Lecteur Audio Overview Studio (Podcast des deux Hôtes avec Spectre Sonore) :
-   - Carte de podcast avec les deux avatars d'experts animateurs (ex: 'د. سارة' و 'أ. طارق' مع وسم 'مباشر').
-   - Visualiseur d'ondes sonores dynamique (<canvas id="waveform-canvas"> ou barres d'égaliseur animées) qui s'anime avec fluidité quand la voix parle !
-   - Contrôles audio : Bouton Lecture/Pause (▶️/⏸️), barre de progression temporelle (scrubber), boutons -10s / +10s, sélecteur de vitesse (0.8x, 1x, 1.25x, 1.5x).
+2. Lecteur Audio Explicatif pour l'Élève (Audio Overview Player avec Spectre Coloré) :
+   - Carte de podcast conviviale avec deux avatars d'enseignants sympathiques ('د. سارة' و 'أ. طارق' مع وسم 'شرح صوتي مبسط').
+   - Visualiseur d'ondes sonores dynamique (<canvas id="waveform-canvas">) avec dégradé vif (bleu/violet) qui ondule quand la voix parle !
+   - Contrôles audio : Bouton Lecture/Pause (▶️/⏸️), barre de progression (scrubber), sauts -10s / +10s, sélecteur de vitesse (0.8x, 1x, 1.25x).
 
-3. Système d'Onglets Studio (Studio Navigation) :
-   - Onglet 1 : 📊 عرض الشرائح (Slide Deck)
-   - Onglet 2 : 🎙️ الحوار المباشر (Live Transcript)
-   - Onglet 3 : 🧠 بطاقات المراجعة (Study Flashcards)
+3. Système d'Onglets Studio Colorés :
+   - Onglet 1 : 📊 عرض الشرائح الملون (Slide Deck)
+   - Onglet 2 : 🎙️ الحوار التوضيحي المباشر (Podcast Élève)
+   - Onglet 3 : 🧠 بطاقات التحدي والمراجعة (Study Flashcards)
 
-4. Contenu de l'Onglet 1 - Diapositives Interactives (Slide Deck - 4 à 5 diapositives majeures) :
-   Chaque diapositive doit être structurée comme une slide de présentation de haut niveau :
-   - Numéro et tag de la diapositive (ex: '01 / 05 • سياق الأزمة').
-   - Grand Titre Éditorial Perctutant (Big Idea).
-   - 2 Chiffres Clés Claquants (Big Stat Callouts) avec grands nombres dorés/cyan et libellé explicatif (ex: '1929' - انهيار وول ستريت | '6 ملايين' - عاطل عن العمل).
-   - 2 à 3 Cartes Synthétiques d'Analyse (Key Takeaways) avec icônes modernes (🎯 السبب، ⚙️ الآلية، 💥 النتيجة).
-   - Encart 'مقتطف المصدر الأصلي' (Grounded Source Quote) mettant en valeur une citation authentique du cours.
+4. Contenu de l'Onglet 1 - Diapositives Pédagogiques Colorées (Slide Deck - 4 à 5 diapositives majeures) :
+   Chaque diapositive doit expliquer simplement une idée forte à l'élève :
+   - Numéro et tag coloré (ex: '01 / 05 • سياق الأزمة').
+   - Grand Titre Clair et vulgarisé (sans jargon compliqué).
+   - 2 Grands Chiffres Clés Illustrés (Big Stat Highlights) avec grands nombres colorés et pastille d'explication simplifiée en 1 phrase claire (ex: '1929' - انهيار بورصة وول ستريت وبداية الأزمة | '6 ملايين' - عاطل عن العمل بألمانيا).
+   - Cartes d'Analyse Colorées 'Causes ➡️ Mécanisme ➡️ Résultat' avec icônes colorées (🎯 السبب، ⚙️ كيف حدث ذلك؟، 💥 النتيجة).
+   - Encadré '💡 هل تعلم؟ / بسّطها لي' (Le savais-tu ? / En clair) : une analogie ou explication percutante en 2 phrases qui fait tilt chez l'élève.
+   - Encadré '📌 في دقيقة واحدة: ما يجب أن تتذكره' (L'essentiel pour l'examen) avec bordure verte et fond menthe doux.
    - Contrôles de navigation : ◀ الشريحة السابقة | الشريحة التالية ▶ + pastilles numérotées cliquables.
-   - Bouton d'écoute de la diapositive : '🔊 استمع لهذه الشريحة'.
+   - Bouton d'écoute de la diapositive : '🔊 استمع لشرح هذه الشريحة'.
 
-5. Contenu de l'Onglet 2 - الحوار المباشر (Live Transcript) :
-   - Retranscription du dialogue naturel et captivant entre les deux hôtes analysant le cours avec intelligence.
-   - Chaque prise de parole indique le nom de l'hôte avec pastille colorée (ex: [د. سارة]: ... | [أ. طارق]: ...).
+5. Contenu de l'Onglet 2 - الحوار التوضيحي المباشر (Podcast Élève) :
+   - Dialogue vivant, bienveillant et vulgarisé entre Dr. Sara et Pr. Tariq qui expliquent le cours à un élève en répondant aux questions courantes qu'un collégien se pose.
+   - Pastilles colorées pour chaque prise de parole.
 
-6. Contenu de l'Onglet 3 - بطاقات المراجعة (Study Flashcards) :
-   - 4 cartes mémo interactives recto/verso sur les notions fondamentales du cours (cliquer pour retourner ou afficher la réponse).
+6. Contenu de l'Onglet 3 - بطاقات التحدي والمراجعة (Study Flashcards) :
+   - 4 à 5 fiches mémo colorées recto/verso interactives (Question claire au recto, clic pour retourner, réponse claire et concise au verso).
 
 7. Balises de Narration Vocale OBLIGATOIRES pour chaque diapositive :
-   - Chaque diapositive/scène DOIT comporter :
-     <div class="narration-script" data-scene="i">النص الكامل للسرد والحوار الصوتي لهذه الشريحة باللغة العربية الفصحى مع التشكيل التام (tashkeel)...</div>
-   - Ce texte doit être riche, fluide et parfaitement vocalisé pour la synthèse vocale serveur.
+   - Chaque diapositive DOIT comporter :
+     <div class="narration-script" data-scene="i">النص الكامل للشرح الصوتي المبسط والواضح لهذه الشريحة باللغة العربية الفصحى مع التشكيل التام (tashkeel)...</div>
+   - Ce texte doit être riche, fluide, chaleureux et parfaitement vocalisé pour la synthèse vocale serveur.
 """
     elif style == "simulation":
         mode_desc = (
@@ -2195,27 +2203,25 @@ La simulation doit comporter :
 """
     else:
         mode_desc = (
-            "PRESENTATION NOTEBOOKLM"
+            "PRESENTATION NOTEBOOKLM SLIDE DECK"
             if not is_ar
-            else "عرض استوديو NotebookLM"
+            else "عرض شرائح تعليمي NotebookLM"
         )
         specifications = f"""
-Tu dois concevoir un deck de présentation de niveau studio NotebookLM :
-1. Slide deck percutant avec grands titres et chiffres clés.
+Tu dois concevoir un deck de présentation coloré et pédagogique inspiré de NotebookLM :
+1. Slide deck percutant avec grands titres, blocs colorés et chiffres clés.
 2. Lecteur de podcast audio avec égaliseur.
 3. Balise obligatoire : <div class="narration-script" data-scene="i">النص الكامل للسرد بالتشكيل التام...</div>
 4. Bouton plein écran '⛶ ملء الشاشة' (window.toggleFullscreenOrNewTab()).
 """
 
-
-
     lang_instruction = (
-        "TOUT le contenu texte, les analyses documentaires, les citations, les boutons et les balises .narration-script DOIVENT être en ARABE de haute qualité littéraire avec TASHKEEL (diacritiques) complet sur la narration pour une prononciation audio irréprochable, avec dir='rtl' et typographie 'Cairo', sans-serif."
+        "TOUT le contenu texte, les explications simples, les citations, les boutons et les balises .narration-script DOIVENT être en ARABE de haute qualité littéraire avec TASHKEEL (diacritiques) complet sur la narration pour une prononciation audio irréprochable, avec dir='rtl' et typographie 'Cairo', sans-serif."
         if is_ar
         else (
-            "All text content, documentary dossiers, quotes, buttons, and .narration-script tags MUST be in ENGLISH."
+            "All text content, explanations, quotes, buttons, and .narration-script tags MUST be in ENGLISH."
             if is_en
-            else "TOUT le contenu texte, les analyses, les citations, les boutons et les balises .narration-script DOIVENT être en FRANÇAIS soigné et stimulant."
+            else "TOUT le contenu texte, les explications simples, les citations, les boutons et les balises .narration-script DOIVENT être en FRANÇAIS soigné, clair et stimulant pour l'élève."
         )
     )
 
@@ -2235,7 +2241,7 @@ SPÉCIFICATIONS TECHNIQUES IMPÉRATIVES :
 
 RÈGLES D'EXÉCUTION :
 1. {lang_instruction}
-2. Design moderne : thème sombre prestigieux (#0a0f1d / #111827, cartes Studio en verre fumé dépoli avec liserés subtils, responsive pour mobile et écran large).
+2. Design moderne, lumineux et coloré : fond reposant doux (#f8fafc / #f1f5f9), grandes cartes blanches aérées avec ombres portées soignées et coins arrondis (border-radius: 18px), typographie très lisible, et code couleur vif (bleu, orange, violet, vert, rouge) pour rendre chaque notion visuelle et facile à assimiler pour l'élève.
 3. 100% AUTONOME : tout le CSS dans une balise <style>, tout le JS dans une balise <script>. AUCUNE dépendance CDN externe obligatoire.
 4. Le code doit être PRÊT À L'EMPLOI et s'exécuter directement dans un iframe Streamlit avec support du mode plein écran (window.toggleFullscreenOrNewTab()).
 5. SVG épuré et optimisé : Les illustrations vectorielles SVG doivent être propres, structurées et concises (formes géométriques bien agencées, <rect>, <circle>, <polygon>, <path> optimisés). INTERDICTION FORMELLE de boucles répétitives infinies de coordonnées SVG.
@@ -2243,9 +2249,10 @@ RÈGLES D'EXÉCUTION :
 """
 
     system_instruction = (
-        "Tu es un directeur de création pédagogique, designer d'interfaces d'apprentissage et développeur Web créatif d'élite, "
-        "spécialisé dans les présentations interactives de haut niveau inspirées de Google NotebookLM Studio, les simulations scientifiques Canvas/SVG et les synthèses vocales haute fidélité. "
-        "Tu génères exclusivement du code HTML5 autonome propre, captivant et rigoureusement complet jusqu'à </html>."
+        "Tu es un directeur de création pédagogique, designer d'expériences d'apprentissage visuelles et développeur Web créatif d'élite, "
+        "spécialisé dans les présentations diaporama colorées, stimulantes et ultra-claires inspirées des Slide Decks NotebookLM et Gamma pour collégiens, "
+        "avec simulations interactives Canvas/SVG et synthèses vocales arabes haute fidélité. "
+        "Tu génères exclusivement du code HTML5 autonome propre, moderne, coloré, hautement pédagogique et rigoureusement complet jusqu'à </html>."
     )
 
 

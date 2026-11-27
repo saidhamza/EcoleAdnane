@@ -2866,9 +2866,9 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                             "Style :" if not is_ar else "النمط :",
                             options=["auto", "notebooklm", "simulation"],
                             format_func=lambda x: {
-                                "auto": "🤖 Automatique (Studio NotebookLM pour Histoire, Simulation pour Sciences)" if not is_ar else "🤖 تلقائي (استوديو NotebookLM للتاريخ ومحاكاة للعلوم)",
-                                "notebooklm": "🎙️ Présentation Studio NotebookLM (Slide Deck & Audio)" if not is_ar else "🎙️ استوديو NotebookLM (عرض تفاعلي وحوار صوتي)",
-                                "simulation": "🧪 Simulation Scientifique" if not is_ar else "🧪 محاكاة علمية تفاعلية",
+                                "auto": "🤖 Automatique (Présentation Colorée pour Histoire, Simulation pour Sciences)" if not is_ar else "🤖 تلقائي (عرض ملون مبسط للتاريخ ومحاكاة للعلوم)",
+                                "notebooklm": "🎨 Diaporama Coloré & Pédagogique (Style NotebookLM)" if not is_ar else "🎨 عرض شرائح ملون وتفاعلي مبسط (أسلوب NotebookLM)",
+                                "simulation": "🧪 Simulation Scientifique Interactive" if not is_ar else "🧪 محاكاة علمية تفاعلية",
                             }[x],
                             key=f"regen_style_sel_{course_id}",
                         )
