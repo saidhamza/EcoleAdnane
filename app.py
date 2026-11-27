@@ -1905,6 +1905,26 @@ div[data-testid="stAlert"] p, div[data-testid="stAlert"] span {{ color: var(--ea
 [data-testid="stSidebar"] div[data-baseweb="select"] > div {{ background-color: var(--ea-input-bg) !important; }}
 {dark_extra}
 
+/* ---- THEME FIDELITY 2: pills, segmented controls, selectboxes (Streamlit 1.65 test ids) ---- */
+button[data-testid="stBaseButton-pills"], button[data-testid="stBaseButton-segmented_control"] {{
+    background: var(--ea-surface) !important; color: var(--ea-text-muted) !important;
+    border: 1px solid var(--ea-border) !important; box-shadow: none !important;
+}}
+button[data-testid="stBaseButton-pills"] *, button[data-testid="stBaseButton-segmented_control"] * {{ color: var(--ea-text-muted) !important; }}
+button[data-testid="stBaseButton-pills"]:hover, button[data-testid="stBaseButton-segmented_control"]:hover {{
+    background: var(--ea-surface-hover) !important; border-color: var(--ea-border-hover) !important;
+}}
+button[data-testid="stBaseButton-pillsActive"], button[data-testid="stBaseButton-segmented_controlActive"] {{
+    background: var(--ea-primary) !important; color: var(--ea-on-primary) !important;
+    border: 1px solid var(--ea-primary) !important; box-shadow: none !important; font-weight: 700 !important;
+}}
+button[data-testid="stBaseButton-pillsActive"] *, button[data-testid="stBaseButton-segmented_controlActive"] * {{ color: var(--ea-on-primary) !important; }}
+div[data-testid="stSegmentedControl"], [data-testid="stButtonGroup"] {{ background: transparent !important; border: none !important; box-shadow: none !important; }}
+
+[data-testid="stSelectbox"] div[data-baseweb="select"] div {{ background-color: transparent !important; }}
+[data-testid="stSelectbox"] div[data-baseweb="select"] > div {{ background-color: var(--ea-input-bg) !important; border: 1px solid var(--ea-input-border) !important; }}
+[data-testid="stSelectbox"] div[data-baseweb="select"] div, [data-testid="stSelectbox"] div[data-baseweb="select"] span {{ color: var(--ea-text) !important; }}
+
 /* ---- COMPACT + TYPOGRAPHY LAYER ---- */
 html {{ font-size: 14.5px; }}
 .stApp, [data-testid="stMarkdownContainer"] p, [data-testid="stMarkdownContainer"] li {{ font-size: 1rem; line-height: 1.55; }}
