@@ -444,10 +444,10 @@ def get_custom_css(theme: str = "dark") -> str:
     --ea-surface-hover: #1c2737;
     --ea-surface-card: #151d2a;
     --ea-border: rgba(200, 196, 180, 0.12);
-    --ea-border-hover: rgba(190, 154, 80, 0.55);
-    --ea-primary: #b89650;
-    --ea-primary-hover: #c6a45c;
-    --ea-primary-glow: rgba(184, 150, 80, 0.2);
+    --ea-border-hover: rgba(91, 141, 239, 0.55);
+    --ea-primary: #4f7fd9;
+    --ea-primary-hover: #6290e6;
+    --ea-primary-glow: rgba(79, 127, 217, 0.25);
     --ea-text: #cfcbbf;
     --ea-text-muted: #98978c;
     --ea-text-dim: #75756c;
@@ -463,9 +463,9 @@ def get_custom_css(theme: str = "dark") -> str:
     --ea-hero-bg: #151d2a;
     --ea-hero-title: #dcd6c4;
     --ea-hero-desc: #98978c;
-    --ea-hero-badge-bg: rgba(184, 150, 80, 0.12);
-    --ea-hero-badge-color: #cdb06a;
-    --ea-hero-badge-border: rgba(184, 150, 80, 0.3);
+    --ea-hero-badge-bg: rgba(79, 127, 217, 0.14);
+    --ea-hero-badge-color: #93b8f7;
+    --ea-hero-badge-border: rgba(79, 127, 217, 0.35);
     --ea-btn-sec-bg: #182130;
     --ea-btn-sec-border: rgba(200, 196, 180, 0.18);
     --ea-btn-sec-color: #cfcbbf;
@@ -475,14 +475,14 @@ def get_custom_css(theme: str = "dark") -> str:
     --ea-expl-bg: rgba(74, 140, 105, 0.10);
     --ea-expl-color: #b9d6c6;
     --ea-quiz-bg: #151d2a;
-    --ea-quiz-badge: #cdb06a;
+    --ea-quiz-badge: #93b8f7;
     --ea-emerald: #4a946e;
-    --ea-amber: #b89650;
+    --ea-amber: #6d96e0;
     --ea-rose: #c45c66;
     --ea-indigo: #6f86b8;
     --ea-purple: #8e7bb0;
     --ea-cyan: #5aa0b0;
-    --ea-on-primary: #10161f;
+    --ea-on-primary: #f1f5f9;
         """
     else:
         palette_vars = """
