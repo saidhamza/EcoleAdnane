@@ -1329,6 +1329,80 @@ div[data-testid="stAlert"] {{
     border-width: 1px !important;
     box-shadow: var(--ea-card-shadow) !important;
 }}
+
+/* Google Sign-in Button with same-tab navigation */
+.ea-google-signin-btn {{
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 12px !important;
+    width: 100% !important;
+    padding: 13px 20px !important;
+    background: #ffffff !important;
+    color: #1e293b !important;
+    border-radius: 12px !important;
+    text-decoration: none !important;
+    font-weight: 700 !important;
+    font-size: 1rem !important;
+    border: 1px solid rgba(226, 232, 240, 0.9) !important;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08), 0 1px 3px rgba(0, 0, 0, 0.05) !important;
+    transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1) !important;
+    cursor: pointer !important;
+    box-sizing: border-box !important;
+}}
+
+.ea-google-signin-btn:hover {{
+    background: #f8fafc !important;
+    transform: translateY(-2px) !important;
+    box-shadow: 0 8px 24px rgba(37, 99, 235, 0.18), 0 2px 6px rgba(0,0,0,0.08) !important;
+    border-color: #3b82f6 !important;
+    color: #0f172a !important;
+    text-decoration: none !important;
+}}
+
+.ea-google-signin-btn:active {{
+    transform: translateY(0) !important;
+}}
+
+/* Modern Card Container for st.container(border=True) */
+div[data-testid="stVerticalBlockBorderWrapper"] {{
+    border-radius: 18px !important;
+    border: 1px solid var(--ea-border) !important;
+    background: var(--ea-surface) !important;
+    box-shadow: var(--ea-card-shadow) !important;
+    transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}}
+
+div[data-testid="stVerticalBlockBorderWrapper"]:hover {{
+    border-color: var(--ea-border-hover) !important;
+    box-shadow: 0 12px 28px -6px rgba(0, 0, 0, 0.25), 0 0 0 1px var(--ea-primary-glow) !important;
+}}
+
+/* Modern Segmented Control Pills */
+div[data-testid="stSegmentedControl"] {{
+    background: var(--ea-surface) !important;
+    border: 1px solid var(--ea-border) !important;
+    border-radius: 9999px !important;
+    padding: 4px !important;
+    box-shadow: var(--ea-card-shadow) !important;
+}}
+
+div[data-testid="stSegmentedControl"] button {{
+    border-radius: 9999px !important;
+    font-weight: 600 !important;
+    font-size: 0.9rem !important;
+    padding: 8px 18px !important;
+    color: var(--ea-text-muted) !important;
+    transition: all 0.2s ease !important;
+}}
+
+div[data-testid="stSegmentedControl"] button[aria-checked="true"],
+div[data-testid="stSegmentedControl"] button[data-checked="true"] {{
+    background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%) !important;
+    color: #ffffff !important;
+    box-shadow: 0 2px 8px rgba(37, 99, 235, 0.35) !important;
+    font-weight: 700 !important;
+}}
 </style>
 """
 
@@ -1809,134 +1883,146 @@ if not st.session_state.get("is_authenticated"):
             st.session_state["ea_theme"] = t_val
             st.rerun()
 
-    col_login_c1, col_login_c2, col_login_c3 = st.columns([1, 2, 1])
+    col_login_c1, col_login_c2, col_login_c3 = st.columns([1, 2.2, 1])
     with col_login_c2:
-        st.write("")
-        st.write("")
-        st.markdown("<h1 style='text-align:center;'>🎓 Ecole Adnane</h1>", unsafe_allow_html=True)
-        st.markdown(
-            "<p style='text-align:center; color:var(--text-color, #94a3b8); font-size:1.15rem;'>"
-            "Plateforme d'Apprentissage & Révision Scolaire (Maroc)"
-            "</p>",
-            unsafe_allow_html=True,
-        )
-
-        st.divider()
-
-        creds_info = get_oauth_credentials()
-        available_uris = creds_info.get("available_redirect_uris", [])
-        default_redirect = creds_info.get("redirect_uri") or "http://localhost"
-
-        # CAS 1 : PREMIER DÉMARRAGE = INITIALISATION ADMINISTRATEUR (total_users == 0)
-        if total_users == 0:
-            st.info(
-                "📢 **Initialisation du système : Veuillez vous connecter avec le compte Google Administrateur**\n\n"
-                "Le tout premier compte Google qui se connecte recevra **automatiquement et définitivement le rôle Administrateur** de la plateforme.",
-                icon="👑",
+        with st.container(border=True):
+            brand_html = (
+                '<div style="text-align: center; padding: 12px 10px 8px 10px;">'
+                '<div style="width: 58px; height: 58px; border-radius: 16px; background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); display: inline-flex; align-items: center; justify-content: center; font-size: 2rem; box-shadow: 0 8px 20px rgba(37,99,235,0.35); margin-bottom: 12px;">🎓</div>'
+                '<h2 style="font-size: 1.8rem; font-weight: 800; margin-bottom: 4px; letter-spacing: -0.02em;">Ecole Adnane</h2>'
+                '<p style="color: var(--ea-text-muted); font-size: 0.95rem; margin-bottom: 16px;">Plateforme d\'Apprentissage & Révision Scolaire (Maroc)</p>'
+                '<div style="display: flex; justify-content: center; flex-wrap: wrap; gap: 6px; margin-bottom: 16px;">'
+                '<span class="ea-hero-badge-pill" style="font-size: 0.72rem;">🤖 Tuteur IA Sanad</span>'
+                '<span class="ea-hero-badge-pill" style="font-size: 0.72rem;">📚 Guides Visuels HD</span>'
+                '<span class="ea-hero-badge-pill" style="font-size: 0.72rem;">🎧 Audio Neural</span>'
+                '<span class="ea-hero-badge-pill" style="font-size: 0.72rem;">🏆 Trophées</span>'
+                '</div>'
+                '</div>'
             )
+            render_html(brand_html)
 
-            # Construire les options avec les variantes de slash final
-            options = []
-            for u in available_uris:
-                if u not in options:
-                    options.append(u)
-                if u.startswith("https://"):
-                    alt = u[:-1] if u.endswith("/") else u + "/"
-                    if alt not in options:
-                        options.append(alt)
-            if default_redirect not in options:
-                options.append(default_redirect)
+            creds_info = get_oauth_credentials()
+            available_uris = creds_info.get("available_redirect_uris", [])
+            default_redirect = creds_info.get("redirect_uri") or "http://localhost"
 
-            if len(options) > 1:
-                try:
-                    def_idx = options.index(default_redirect)
-                except ValueError:
-                    def_idx = 0
-                target_redirect = st.selectbox(
-                    "🎯 URI de redirection Google :",
-                    options=options,
-                    index=def_idx,
-                    help="Sélectionnez l'adresse exacte déclarée dans votre console Google Cloud."
+            # CAS 1 : PREMIER DÉMARRAGE = INITIALISATION ADMINISTRATEUR (total_users == 0)
+            if total_users == 0:
+                st.info(
+                    "📢 **Initialisation du système : Veuillez vous connecter avec le compte Google Administrateur**\n\n"
+                    "Le tout premier compte Google qui se connecte recevra **automatiquement et définitivement le rôle Administrateur** de la plateforme.",
+                    icon="👑",
                 )
+
+                # Construire les options avec les variantes de slash final
+                options = []
+                for u in available_uris:
+                    if u not in options:
+                        options.append(u)
+                    if u.startswith("https://"):
+                        alt = u[:-1] if u.endswith("/") else u + "/"
+                        if alt not in options:
+                            options.append(alt)
+                if default_redirect not in options:
+                    options.append(default_redirect)
+
+                if len(options) > 1:
+                    try:
+                        def_idx = options.index(default_redirect)
+                    except ValueError:
+                        def_idx = 0
+                    target_redirect = st.selectbox(
+                        "🎯 URI de redirection Google :",
+                        options=options,
+                        index=def_idx,
+                        help="Sélectionnez l'adresse exacte déclarée dans votre console Google Cloud."
+                    )
+                else:
+                    target_redirect = default_redirect
+
+                auth_url = get_google_auth_url(redirect_uri=target_redirect)
+
+                if auth_url:
+                    admin_btn_html = (
+                        f'<div style="margin: 14px 0 10px 0;">'
+                        f'<a href="{auth_url}" target="_top" class="ea-google-signin-btn" onclick="if(window.top){{window.top.location.href=\'{auth_url}\'; return false;}}">'
+                        f'<svg width="22" height="22" viewBox="0 0 24 24" style="flex-shrink:0;">'
+                        f'<path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>'
+                        f'<path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>'
+                        f'<path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>'
+                        f'<path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>'
+                        f'</svg>'
+                        f'<span>Se connecter en tant qu\'Administrateur</span>'
+                        f'</a>'
+                        f'<div style="text-align: center; color: var(--ea-text-dim); font-size: 0.78rem; margin-top: 8px;">🔒 Connexion officielle sécurisée Google OAuth</div>'
+                        f'</div>'
+                    )
+                    render_html(admin_btn_html)
+                    if target_redirect.startswith("https://"):
+                        st.caption(f"✨ Redirection configurée : `{target_redirect}`")
+                else:
+                    st.warning("⚠️ Les identifiants Google OAuth ne sont pas encore configurés.")
+
+                # Option de téléversement direct du fichier credentials.json
+                with st.expander("📂 Téléverser un fichier credentials.json (Configuration Initiale)", expanded=(not is_oauth_configured())):
+                    st.markdown(
+                        "Déposez votre fichier `client_secret_xxxx.json` téléchargé depuis Google Cloud. "
+                        "L'application extraira automatiquement le client_id, le client_secret et vos adresses de redirection :"
+                    )
+                    uploaded_json = st.file_uploader(
+                        "Fichier credentials.json :",
+                        type=["json"],
+                        key="oauth_credentials_uploader",
+                        help="Prend en charge les formats 'web' et 'installed'."
+                    )
+                    if uploaded_json is not None:
+                        try:
+                            cred_details = save_uploaded_oauth_credentials(uploaded_json.getvalue())
+                            st.success(f"✅ Fichier Google OAuth ({cred_details['type']}) enregistré avec succès !")
+                            st.rerun()
+                        except Exception as upload_err:
+                            st.error(f"❌ {upload_err}")
+
+                # Option de finalisation manuelle
+                with st.expander("🔗 Finaliser manuellement la connexion (si redirection locale bloquée)", expanded=False):
+                    pasted_code_url = st.text_input(
+                        "Collez l'URL complète ou le code ici :",
+                        placeholder="Ex: http://localhost/?code=4/0A... ou 4/0A...",
+                        key="pasted_code_input"
+                    )
+                    if st.button("✅ Valider et se connecter", type="primary", use_container_width=True, key="btn_validate_pasted_code"):
+                        if pasted_code_url:
+                            clean_code = extract_auth_code(pasted_code_url)
+                            try:
+                                authenticated_user = exchange_code_for_user(clean_code, redirect_uri=target_redirect)
+                                set_session_user(authenticated_user)
+                                st.success(f"🎉 Bienvenue, {authenticated_user['name']} !")
+                                st.rerun()
+                            except Exception as err:
+                                st.error(f"❌ Erreur lors de la validation du code : {err}")
+
+            # CAS 2 : CONNEXION DES ÉLÈVES (total_users > 0) -> INTERFACE 100% SIMPLE
             else:
                 target_redirect = default_redirect
+                auth_url = get_google_auth_url(redirect_uri=target_redirect)
 
-            auth_url = get_google_auth_url(redirect_uri=target_redirect)
-
-            if auth_url:
-                st.link_button(
-                    "🔑 Se connecter en tant qu'Administrateur",
-                    url=auth_url,
-                    type="primary",
-                    use_container_width=True,
-                )
-                if target_redirect.startswith("https://"):
-                    st.success(f"✨ Redirection configurée : `{target_redirect}`")
-            else:
-                st.warning("⚠️ Les identifiants Google OAuth ne sont pas encore configurés.")
-
-            # Option de téléversement direct du fichier credentials.json
-            with st.expander("📂 Téléverser un fichier credentials.json (Configuration Initiale)", expanded=(not is_oauth_configured())):
-                st.markdown(
-                    "Déposez votre fichier `client_secret_xxxx.json` téléchargé depuis Google Cloud. "
-                    "L'application extraira automatiquement le client_id, le client_secret et vos adresses de redirection :"
-                )
-                uploaded_json = st.file_uploader(
-                    "Fichier credentials.json :",
-                    type=["json"],
-                    key="oauth_credentials_uploader",
-                    help="Prend en charge les formats 'web' et 'installed'."
-                )
-                if uploaded_json is not None:
-                    try:
-                        cred_details = save_uploaded_oauth_credentials(uploaded_json.getvalue())
-                        st.success(f"✅ Fichier Google OAuth ({cred_details['type']}) enregistré avec succès !")
-                        st.rerun()
-                    except Exception as upload_err:
-                        st.error(f"❌ {upload_err}")
-
-            # Option de finalisation manuelle
-            with st.expander("🔗 Finaliser manuellement la connexion (si redirection locale bloquée)", expanded=False):
-                pasted_code_url = st.text_input(
-                    "Collez l'URL complète ou le code ici :",
-                    placeholder="Ex: http://localhost/?code=4/0A... ou 4/0A...",
-                    key="pasted_code_input"
-                )
-                if st.button("✅ Valider et se connecter", type="primary", use_container_width=True, key="btn_validate_pasted_code"):
-                    if pasted_code_url:
-                        clean_code = extract_auth_code(pasted_code_url)
-                        try:
-                            authenticated_user = exchange_code_for_user(clean_code, redirect_uri=target_redirect)
-                            set_session_user(authenticated_user)
-                            st.success(f"🎉 Bienvenue, {authenticated_user['name']} !")
-                            st.rerun()
-                        except Exception as err:
-                            st.error(f"❌ Erreur lors de la validation du code : {err}")
-
-        # CAS 2 : CONNEXION DES ÉLÈVES (total_users > 0) -> INTERFACE 100% SIMPLE
-        else:
-            st.markdown(
-                "<div style='text-align:center; margin-bottom: 25px;'>"
-                "<h3 style='margin-bottom:8px;'>🎒 Espace Élève</h3>"
-                "<p style='color:#64748b; font-size:1.05rem;'>"
-                "Connectez-vous avec votre compte Google pour accéder à vos cours, vos fiches de révision et vos entraînements avec l'IA Sanad."
-                "</p>"
-                "</div>",
-                unsafe_allow_html=True,
-            )
-
-            target_redirect = default_redirect
-            auth_url = get_google_auth_url(redirect_uri=target_redirect)
-
-            if auth_url:
-                st.link_button(
-                    "🔑 Se connecter avec Google",
-                    url=auth_url,
-                    type="primary",
-                    use_container_width=True,
-                )
-            else:
-                st.warning("⚠️ Le portail de connexion Google est en attente d'initialisation par l'administrateur.")
+                if auth_url:
+                    student_btn_html = (
+                        f'<div style="margin: 14px 0 10px 0;">'
+                        f'<a href="{auth_url}" target="_top" class="ea-google-signin-btn" onclick="if(window.top){{window.top.location.href=\'{auth_url}\'; return false;}}">'
+                        f'<svg width="22" height="22" viewBox="0 0 24 24" style="flex-shrink:0;">'
+                        f'<path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>'
+                        f'<path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>'
+                        f'<path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>'
+                        f'<path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>'
+                        f'</svg>'
+                        f'<span>Continuer avec Google</span>'
+                        f'</a>'
+                        f'<div style="text-align: center; color: var(--ea-text-dim); font-size: 0.78rem; margin-top: 10px;">🔒 Connexion officielle sécurisée Google OAuth</div>'
+                        f'</div>'
+                    )
+                    render_html(student_btn_html)
+                else:
+                    st.warning("⚠️ Le portail de connexion Google est en attente d'initialisation par l'administrateur.")
 
         st.write("")
 
@@ -2972,13 +3058,129 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
             return
 
         course_options = {c["id"]: f"{'🇲🇦 [AR]' if c['language'] == 'ar' else ('🇬🇧 [EN]' if c['language'] == 'en' else '🇫🇷 [FR]')} {c['subject']} — {c['title']}" for c in courses_list}
-        selected_course_id = st.selectbox(
-            f"📚 Sélectionnez le cours à réviser ({len(courses_list)} disponible{'s' if len(courses_list) > 1 else ''}) :",
-            options=list(course_options.keys()),
-            format_func=lambda x: course_options[x],
-            key="student_selected_course_id",
-        )
 
+        # S'assurer qu'un cours actif valide existe
+        saved_course_id = st.session_state.get("student_selected_course_id")
+        if saved_course_id not in course_options:
+            saved_course_id = list(course_options.keys())[0]
+            st.session_state["student_selected_course_id"] = saved_course_id
+
+        # Mode d'affichage : Catalogue visuel (Grille) vs Espace d'étude immersif (Workspace)
+        if "revision_view_mode" not in st.session_state:
+            st.session_state["revision_view_mode"] = "grid"
+
+        seg_col1, seg_col2 = st.columns([2, 1])
+        with seg_col1:
+            view_mode_choice = st.segmented_control(
+                "Mode d'affichage",
+                options=["🗂️ Catalogue des Cours", "📖 Espace d'Étude Immergé"],
+                default="🗂️ Catalogue des Cours" if st.session_state.get("revision_view_mode") != "workspace" else "📖 Espace d'Étude Immergé",
+                label_visibility="collapsed",
+                key="revision_view_segmented",
+            )
+            if view_mode_choice == "📖 Espace d'Étude Immergé":
+                st.session_state["revision_view_mode"] = "workspace"
+            else:
+                st.session_state["revision_view_mode"] = "grid"
+
+        with seg_col2:
+            st.caption(f"📚 **{len(courses_list)} cours** disponibles")
+
+        st.write("")
+
+        # -------------------------------------------------------------
+        # VUE 1 : CATALOGUE DE COURS SOUS FORME DE GRILLE MODERNE
+        # -------------------------------------------------------------
+        if st.session_state.get("revision_view_mode") == "grid":
+            num_cols = 3
+            for i in range(0, len(courses_list), num_cols):
+                row_courses = courses_list[i : i + num_cols]
+                cols = st.columns(num_cols)
+                for col, c in zip(cols, row_courses):
+                    with col:
+                        with st.container(border=True):
+                            b_cls = get_subject_badge_class(c["subject"])
+                            lang_flag = "🇲🇦 AR" if c["language"] == "ar" else ("🇬🇧 EN" if c["language"] == "en" else "🇫🇷 FR")
+                            c_title = html.escape(c["title"])
+                            c_subj = html.escape(c["subject"])
+
+                            st.markdown(
+                                f'<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">'
+                                f'<span class="badge-subject {b_cls}">{c_subj}</span>'
+                                f'<span class="badge-lang">{lang_flag}</span>'
+                                f'</div>'
+                                f'<div style="font-size:1.05rem; font-weight:800; line-height:1.35; margin-bottom:8px; min-height:48px; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;">'
+                                f'{c_title}'
+                                f'</div>',
+                                unsafe_allow_html=True,
+                            )
+
+                            concepts = [k for k in (c.get("key_concepts") or []) if not is_generic_concept(k)][:3]
+                            if concepts:
+                                chips_html = " ".join([f'<span class="concept-tag" style="font-size:0.72rem; padding:2px 7px;">#{html.escape(k)}</span>' for k in concepts])
+                                st.markdown(f'<div style="margin-bottom:10px; display:flex; flex-wrap:wrap; gap:4px; min-height:22px;">{chips_html}</div>', unsafe_allow_html=True)
+                            else:
+                                st.markdown('<div style="min-height:22px; margin-bottom:10px;"></div>', unsafe_allow_html=True)
+
+                            # Badges des formats disponibles
+                            has_guide = (Path(__file__).parent / "static" / "guides" / f"guide_course_{c['id']}.pdf").exists() or (Path(__file__).parent / "static" / "stories" / f"story_course_{c['id']}.pdf").exists()
+                            ft_html = '<div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:14px; font-size:0.75rem; color:#94a3b8;">'
+                            ft_html += '<span style="background:rgba(255,255,255,0.06); padding:2px 6px; border-radius:4px;">📄 PDF</span>'
+                            ft_html += '<span style="background:rgba(255,255,255,0.06); padding:2px 6px; border-radius:4px;">⚡ Fiche</span>'
+                            if has_guide:
+                                ft_html += '<span style="background:rgba(59,130,246,0.15); color:#60a5fa; padding:2px 6px; border-radius:4px; font-weight:600;">📚 Guide HD</span>'
+                            ft_html += '<span style="background:rgba(16,185,129,0.15); color:#34d399; padding:2px 6px; border-radius:4px;">📝 Quiz</span>'
+                            ft_html += '</div>'
+                            st.markdown(ft_html, unsafe_allow_html=True)
+
+                            if st.button("🚀 Étudier ce cours", key=f"btn_open_card_{c['id']}", type="primary", use_container_width=True):
+                                st.session_state["student_selected_course_id"] = c["id"]
+                                st.session_state["revision_view_mode"] = "workspace"
+                                st.rerun()
+            return
+
+        # -------------------------------------------------------------
+        # VUE 2 : ESPACE D'ÉTUDE IMMERSIF (WORKSPACE DÉDIÉ)
+        # -------------------------------------------------------------
+        active_course_id = st.session_state.get("student_selected_course_id")
+        if active_course_id not in course_options:
+            active_course_id = list(course_options.keys())[0]
+            st.session_state["student_selected_course_id"] = active_course_id
+
+        c_ids = list(course_options.keys())
+        c_idx = c_ids.index(active_course_id) if active_course_id in c_ids else 0
+
+        bar_col1, bar_col2, bar_col3 = st.columns([1.5, 2.5, 1.2])
+        with bar_col1:
+            if st.button("⬅️ Retour au Catalogue", key="ws_btn_back_catalog", use_container_width=True):
+                st.session_state["revision_view_mode"] = "grid"
+                st.rerun()
+
+        with bar_col2:
+            new_selected_id = st.selectbox(
+                "Changer de cours :",
+                options=c_ids,
+                index=c_idx,
+                format_func=lambda x: course_options[x],
+                label_visibility="collapsed",
+                key="ws_fast_course_select",
+            )
+            if new_selected_id != active_course_id:
+                st.session_state["student_selected_course_id"] = new_selected_id
+                st.rerun()
+
+        with bar_col3:
+            p_col, n_col = st.columns(2)
+            with p_col:
+                if st.button("◀️ Préc.", disabled=(c_idx == 0), key="ws_prev_course_btn", help="Cours précédent", use_container_width=True):
+                    st.session_state["student_selected_course_id"] = c_ids[c_idx - 1]
+                    st.rerun()
+            with n_col:
+                if st.button("Suiv. ▶️", disabled=(c_idx >= len(c_ids) - 1), key="ws_next_course_btn", help="Cours suivant", use_container_width=True):
+                    st.session_state["student_selected_course_id"] = c_ids[c_idx + 1]
+                    st.rerun()
+
+        selected_course_id = active_course_id
         current_course = get_course_by_id(selected_course_id, user_id=active_user_id)
         if not current_course:
             st.error("Cours introuvable ou accès non autorisé.")
