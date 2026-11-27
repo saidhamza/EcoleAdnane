@@ -2484,22 +2484,56 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                 file_hash=current_course.get("file_hash"),
                 user_id=current_course.get("user_id"),
             )
-            if not file_path or not os.path.exists(file_path):
-                file_path = ensure_course_pdf_on_disk(current_course)
 
-            if file_path and os.path.exists(file_path):
+            is_valid_pdf = bool(file_path and os.path.exists(file_path) and file_path.lower().endswith(".pdf"))
+
+            if is_valid_pdf:
+                static_pdf_dir = Path(__file__).parent / "static" / "pdf"
+                static_pdf_dir.mkdir(parents=True, exist_ok=True)
+                public_pdf = static_pdf_dir / f"course_{current_course['id']}.pdf"
+                if not public_pdf.exists() or public_pdf.stat().st_size != os.path.getsize(file_path):
+                    try:
+                        shutil.copy2(file_path, public_pdf)
+                    except Exception as e_cp:
+                        logger.warning(f"Impossible de synchroniser static/pdf : {e_cp}")
+
+                direct_url = f"/static/pdf/course_{current_course['id']}.pdf"
+
                 with open(file_path, "rb") as f:
                     pdf_data = f.read()
 
-                dl_label = "📥 تحميل ملف PDF الأصلي" if is_ar else ("📥 Download Original PDF" if is_en else "📥 Télécharger le PDF original")
-                st.download_button(
-                    label=dl_label,
-                    data=pdf_data,
-                    file_name=current_course.get("file_name", "cours.pdf"),
-                    mime="application/pdf",
+                col_dl_link, col_dl_btn = st.columns([1.5, 1])
+                with col_dl_link:
+                    dl_main_label = "📥 Télécharger le PDF original (Lien direct)" if not is_ar else "📥 تحميل ملف PDF الأصلي (رابط مباشر)"
+                    st.link_button(
+                        label=dl_main_label,
+                        url=direct_url,
+                        type="primary",
+                        use_container_width=True,
+                    )
+                with col_dl_btn:
+                    dl_alt_label = "💾 Téléchargement alternatif" if not is_ar else "💾 تحميل بديل"
+                    st.download_button(
+                        label=dl_alt_label,
+                        data=pdf_data,
+                        file_name=current_course.get("file_name") or f"cours_{current_course['id']}.pdf",
+                        mime="application/pdf",
+                        key=f"dl_pdf_original_{current_course['id']}",
+                        use_container_width=True,
+                    )
+
+                st.write("")
+                st.markdown(
+                    f'<iframe src="{direct_url}" width="100%" height="750px" style="border: 1px solid #cbd5e1; border-radius: 10px;"></iframe>',
+                    unsafe_allow_html=True,
                 )
             else:
-                st.warning("Fichier PDF non trouvé sur le disque." if not is_en else "PDF file not found on disk.")
+                msg_warn = (
+                    "⚠️ Fichier PDF original non trouvé sur le disque. Veuillez réimporter le document original dans **➕ Ajouter un Cours**."
+                    if not is_ar else
+                    "⚠️ لم يتم العثور على ملف الـ PDF الأصلي في القرص. يمكنك إعادة رفعه في تبويب **➕ إضافة درس**."
+                )
+                st.warning(msg_warn)
 
             st.write("---")
             exp_text_title = "📝 عرض النص المستخرج من الوثيقة" if is_ar else ("📝 View Extracted Text" if is_en else "📝 Voir le texte extrait du document")

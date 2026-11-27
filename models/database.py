@@ -1500,19 +1500,19 @@ def resolve_course_file_path(
     if user_matches:
         return str(user_matches[0])
 
-    # 6. Recherche par hash de fichier
+    # 6. Recherche par hash de fichier (strictement .pdf)
     if file_hash and len(file_hash) >= 8:
         hash_prefix = file_hash[:8]
         if user_id is not None:
-            user_hash_matches = list((storage_root / "users" / str(user_id) / "cours").glob(f"*{hash_prefix}*"))
+            user_hash_matches = [p for p in (storage_root / "users" / str(user_id) / "cours").glob(f"*{hash_prefix}*") if p.suffix.lower() == ".pdf"]
             if user_hash_matches:
                 return str(user_hash_matches[0])
 
-        legacy_hash_matches = list((storage_root / "cours").glob(f"*{hash_prefix}*"))
+        legacy_hash_matches = [p for p in (storage_root / "cours").glob(f"*{hash_prefix}*") if p.suffix.lower() == ".pdf"]
         if legacy_hash_matches:
             return str(legacy_hash_matches[0])
 
-        all_hash_matches = list(storage_root.glob(f"users/*/cours/*{hash_prefix}*"))
+        all_hash_matches = [p for p in storage_root.glob(f"users/*/cours/*{hash_prefix}*") if p.suffix.lower() == ".pdf"]
         if all_hash_matches:
             return str(all_hash_matches[0])
 
