@@ -8,13 +8,17 @@ sauvegardes étanches et intégration Google Classroom.
 import base64
 import html
 import json
+import logging
 import os
 import re
+import shutil
 import sys
 import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+logger = logging.getLogger(__name__)
 
 # Ensure project root is in sys.path regardless of execution directory or Streamlit runner
 import importlib
