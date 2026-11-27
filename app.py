@@ -383,7 +383,7 @@ st.set_page_config(
     page_title="Ecole Adnane - Soutien & Révision Scolaire Maroc",
     page_icon="🎓",
     layout="wide",
-    initial_sidebar_state="collapsed",
+    initial_sidebar_state="expanded",
 )
 
 # Redirection automatique si l'application s'exécute sur Streamlit Cloud vers le serveur dédié officiel
@@ -438,104 +438,104 @@ def get_custom_css(theme: str = "dark") -> str:
 
     if is_dark:
         palette_vars = """
-    --ea-bg: #0e1020;
-    --ea-bg-gradient: radial-gradient(circle at 15% 0%, #1d1b4b 0%, #0e1020 55%);
-    --ea-surface: #171a33;
-    --ea-surface-hover: #23274a;
-    --ea-surface-card: rgba(15, 23, 42, 0.78);
-    --ea-border: rgba(255, 255, 255, 0.08);
-    --ea-border-hover: rgba(124, 131, 255, 0.6);
-    --ea-primary: #7c83ff;
-    --ea-primary-hover: #6366f1;
-    --ea-primary-glow: rgba(124, 131, 255, 0.30);
-    --ea-text: #f8fafc;
-    --ea-text-muted: #94a3b8;
-    --ea-text-dim: #64748b;
-    --ea-card-bg: linear-gradient(145deg, rgba(15, 23, 42, 0.85) 0%, rgba(11, 16, 29, 0.95) 100%);
-    --ea-card-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.4), 0 0 1px 1px rgba(255, 255, 255, 0.05);
-    --ea-input-bg: rgba(15, 23, 42, 0.85);
-    --ea-input-border: rgba(255, 255, 255, 0.1);
-    --ea-tablist-bg: rgba(15, 23, 42, 0.85);
-    --ea-tab-color: #94a3b8;
-    --ea-sidebar-bg: #12142a;
-    --ea-sidebar-text: #f8fafc;
-    --ea-sidebar-border: rgba(255, 255, 255, 0.07);
-    --ea-hero-bg: linear-gradient(145deg, rgba(19, 27, 46, 0.95) 0%, rgba(11, 16, 29, 0.98) 100%);
-    --ea-hero-title: #ffffff;
-    --ea-hero-desc: #94a3b8;
-    --ea-hero-badge-bg: rgba(59, 130, 246, 0.15);
-    --ea-hero-badge-color: #93c5fd;
-    --ea-hero-badge-border: rgba(59, 130, 246, 0.3);
-    --ea-btn-sec-bg: rgba(15, 23, 42, 0.85);
-    --ea-btn-sec-border: rgba(255, 255, 255, 0.1);
-    --ea-btn-sec-color: #f1f5f9;
-    --ea-btn-sec-hover: rgba(30, 41, 59, 0.95);
-    --ea-trap-bg: rgba(245, 158, 11, 0.09);
-    --ea-trap-color: #fef3c7;
-    --ea-expl-bg: rgba(16, 185, 129, 0.09);
-    --ea-expl-color: #dcfce7;
-    --ea-quiz-bg: linear-gradient(145deg, rgba(15, 23, 42, 0.78) 0%, rgba(11, 16, 29, 0.92) 100%);
-    --ea-quiz-badge: #93c5fd;
-    --ea-emerald: #10b981;
-    --ea-amber: #f59e0b;
-    --ea-rose: #f43f5e;
-    --ea-indigo: #6366f1;
-    --ea-purple: #8b5cf6;
-    --ea-cyan: #06b6d4;
+    --ea-bg: #0f1b2d;
+    --ea-bg-gradient: linear-gradient(180deg, #13233a 0%, #0f1b2d 100%);
+    --ea-surface: #16263d;
+    --ea-surface-hover: #1e3250;
+    --ea-surface-card: rgba(22, 38, 61, 0.92);
+    --ea-border: rgba(232, 220, 190, 0.14);
+    --ea-border-hover: rgba(212, 168, 75, 0.65);
+    --ea-primary: #d4a84b;
+    --ea-primary-hover: #e0b95f;
+    --ea-primary-glow: rgba(212, 168, 75, 0.25);
+    --ea-text: #f3ecdc;
+    --ea-text-muted: #b9b4a4;
+    --ea-text-dim: #8c8878;
+    --ea-card-bg: #16263d;
+    --ea-card-shadow: 0 6px 20px -6px rgba(0, 0, 0, 0.45);
+    --ea-input-bg: #1a2c47;
+    --ea-input-border: rgba(232, 220, 190, 0.2);
+    --ea-tablist-bg: #16263d;
+    --ea-tab-color: #b9b4a4;
+    --ea-sidebar-bg: #0b1626;
+    --ea-sidebar-text: #f3ecdc;
+    --ea-sidebar-border: rgba(232, 220, 190, 0.12);
+    --ea-hero-bg: #16263d;
+    --ea-hero-title: #f3ecdc;
+    --ea-hero-desc: #b9b4a4;
+    --ea-hero-badge-bg: rgba(212, 168, 75, 0.14);
+    --ea-hero-badge-color: #e6c274;
+    --ea-hero-badge-border: rgba(212, 168, 75, 0.35);
+    --ea-btn-sec-bg: #1a2c47;
+    --ea-btn-sec-border: rgba(232, 220, 190, 0.2);
+    --ea-btn-sec-color: #f3ecdc;
+    --ea-btn-sec-hover: #243a5c;
+    --ea-trap-bg: rgba(212, 168, 75, 0.10);
+    --ea-trap-color: #f6e7c1;
+    --ea-expl-bg: rgba(74, 148, 110, 0.12);
+    --ea-expl-color: #d6efe2;
+    --ea-quiz-bg: #16263d;
+    --ea-quiz-badge: #e6c274;
+    --ea-emerald: #4a946e;
+    --ea-amber: #d4a84b;
+    --ea-rose: #c45c66;
+    --ea-indigo: #6f86b8;
+    --ea-purple: #8e7bb0;
+    --ea-cyan: #5aa0b0;
         """
     else:
         palette_vars = """
-    --ea-bg: #f6f7ff;
-    --ea-bg-gradient: radial-gradient(circle at 15% 0%, #e8eaff 0%, #f6f7ff 55%);
-    --ea-surface: #ffffff;
-    --ea-surface-hover: #f1f5f9;
-    --ea-surface-card: #ffffff;
-    --ea-border: #e2e8f0;
-    --ea-border-hover: #3b82f6;
-    --ea-primary: #4f46e5;
-    --ea-primary-hover: #4338ca;
-    --ea-primary-glow: rgba(37, 99, 235, 0.15);
-    --ea-text: #0f172a;
-    --ea-text-muted: #64748b;
-    --ea-text-dim: #94a3b8;
-    --ea-card-bg: #ffffff;
-    --ea-card-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 1px 3px rgba(0, 0, 0, 0.05);
+    --ea-bg: #f8f4e9;
+    --ea-bg-gradient: linear-gradient(180deg, #fbf8ef 0%, #f5f0e1 100%);
+    --ea-surface: #fffdf7;
+    --ea-surface-hover: #f3ecda;
+    --ea-surface-card: #fffdf7;
+    --ea-border: #e2d8bf;
+    --ea-border-hover: #1e3a5f;
+    --ea-primary: #1e3a5f;
+    --ea-primary-hover: #162c48;
+    --ea-primary-glow: rgba(30, 58, 95, 0.14);
+    --ea-text: #1f2430;
+    --ea-text-muted: #5b6070;
+    --ea-text-dim: #8a8d98;
+    --ea-card-bg: #fffdf7;
+    --ea-card-shadow: 0 2px 10px rgba(60, 48, 20, 0.07), 0 1px 2px rgba(60, 48, 20, 0.05);
     --ea-input-bg: #ffffff;
-    --ea-input-border: #cbd5e1;
-    --ea-tablist-bg: #edf2f7;
-    --ea-tab-color: #475569;
-    --ea-sidebar-bg: #ffffff;
-    --ea-sidebar-text: #0f172a;
-    --ea-sidebar-border: #e2e8f0;
-    --ea-hero-bg: #ffffff;
-    --ea-hero-title: #0f172a;
-    --ea-hero-desc: #64748b;
-    --ea-hero-badge-bg: rgba(37, 99, 235, 0.08);
-    --ea-hero-badge-color: #2563eb;
-    --ea-hero-badge-border: rgba(37, 99, 235, 0.22);
-    --ea-btn-sec-bg: #ffffff;
-    --ea-btn-sec-border: #cbd5e1;
-    --ea-btn-sec-color: #1e293b;
-    --ea-btn-sec-hover: #f8fafc;
-    --ea-trap-bg: #fffbeb;
-    --ea-trap-color: #78350f;
-    --ea-expl-bg: #f0fdf4;
-    --ea-expl-color: #064e3b;
-    --ea-quiz-bg: #ffffff;
-    --ea-quiz-badge: #2563eb;
-    --ea-emerald: #059669;
-    --ea-amber: #d97706;
-    --ea-rose: #e11d48;
-    --ea-indigo: #4f46e5;
-    --ea-purple: #7c3aed;
-    --ea-cyan: #0891b2;
+    --ea-input-border: #d6cba9;
+    --ea-tablist-bg: #efe8d3;
+    --ea-tab-color: #5b6070;
+    --ea-sidebar-bg: #f1ead7;
+    --ea-sidebar-text: #1f2430;
+    --ea-sidebar-border: #ddd2b4;
+    --ea-hero-bg: #fffdf7;
+    --ea-hero-title: #1e3a5f;
+    --ea-hero-desc: #5b6070;
+    --ea-hero-badge-bg: rgba(30, 58, 95, 0.07);
+    --ea-hero-badge-color: #1e3a5f;
+    --ea-hero-badge-border: rgba(30, 58, 95, 0.22);
+    --ea-btn-sec-bg: #fffdf7;
+    --ea-btn-sec-border: #cfc3a0;
+    --ea-btn-sec-color: #1e3a5f;
+    --ea-btn-sec-hover: #f3ecda;
+    --ea-trap-bg: #fbf1d6;
+    --ea-trap-color: #5c4310;
+    --ea-expl-bg: #e8f2ea;
+    --ea-expl-color: #1f4733;
+    --ea-quiz-bg: #fffdf7;
+    --ea-quiz-badge: #1e3a5f;
+    --ea-emerald: #2f7a54;
+    --ea-amber: #a87a1c;
+    --ea-rose: #a23b48;
+    --ea-indigo: #3b5a94;
+    --ea-purple: #6a4c93;
+    --ea-cyan: #2f7f8f;
         """
 
     return f"""
 <style>
 {font_faces}
 
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Cairo:wght@500;600;700;800;900&family=Amiri:wght@400;700&family=Tajawal:wght@500;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;500;600;700&family=Merriweather:wght@400;700;900&family=Cairo:wght@500;600;700;800;900&family=Amiri:wght@400;700&family=Tajawal:wght@500;700;800&display=swap');
 
 :root {{
 {palette_vars}
@@ -624,7 +624,7 @@ html, body, .stApp {{
     background: var(--ea-bg-gradient) !important;
     background-color: var(--ea-bg) !important;
     color: var(--ea-text) !important;
-    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+    font-family: 'Source Sans 3', system-ui, -apple-system, sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
 }}
@@ -635,12 +635,12 @@ html, body, .stApp {{
 div[role="tablist"] button,
 button, input, select, textarea, label,
 [data-testid="stExpander"], [data-testid="stRadio"] {{
-    font-family: 'Plus Jakarta Sans', 'AdnaneNaskh', 'Cairo', system-ui, sans-serif;
+    font-family: 'Source Sans 3', 'AdnaneNaskh', 'Cairo', system-ui, sans-serif;
 }}
 
 /* Headings with Modern EdTech hierarchy */
 h1, h2, h3, h4, h5, h6 {{
-    font-family: 'Plus Jakarta Sans', 'AdnaneSans', 'Cairo', sans-serif !important;
+    font-family: 'Source Sans 3', 'AdnaneSans', 'Cairo', sans-serif !important;
     letter-spacing: -0.025em !important;
     font-weight: 800 !important;
     color: var(--ea-text) !important;
@@ -935,7 +935,7 @@ h1, h2, h3, h4, h5, h6 {{
     color: var(--ea-text-muted) !important;
     margin: 0 !important;
     line-height: 1.35 !important;
-    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif !important;
+    font-family: 'Source Sans 3', system-ui, -apple-system, sans-serif !important;
     direction: ltr !important;
     text-align: left !important;
     cursor: pointer !important;
@@ -1178,7 +1178,7 @@ div[role="tablist"] button p {{
     color: var(--ea-hero-title);
     letter-spacing: -0.025em;
     margin-bottom: 6px;
-    font-family: 'Cairo', 'Plus Jakarta Sans', sans-serif;
+    font-family: 'Cairo', 'Source Sans 3', sans-serif;
 }}
 
 .ea-hero-desc {{
@@ -1233,7 +1233,7 @@ div[role="tablist"] button p {{
 
 .course-header-box h2 {{
     color: var(--ea-hero-title) !important;
-    font-family: 'Cairo', 'AdnaneSans', 'Plus Jakarta Sans', sans-serif !important;
+    font-family: 'Cairo', 'AdnaneSans', 'Source Sans 3', sans-serif !important;
     font-size: 1.85rem !important;
     font-weight: 800 !important;
     margin-top: 14px !important;
@@ -1583,10 +1583,10 @@ div[data-testid="stSegmentedControl"] button[data-checked="true"] {{
    ERGONOMIC OVERHAUL v2 — student-friendly layer (overrides above)
    ===================================================================== */
 :root {{
-    --ea-grad: linear-gradient(135deg, #6366f1 0%, #8b5cf6 55%, #ec4899 100%);
-    --ea-grad-soft: linear-gradient(135deg, rgba(99,102,241,0.16) 0%, rgba(236,72,153,0.10) 100%);
+    --ea-grad: linear-gradient(135deg, #1e3a5f 0%, #2c4f80 100%);
+    --ea-grad-soft: linear-gradient(135deg, rgba(30,58,95,0.16) 0%, rgba(184,137,43,0.10) 100%);
     --ea-touch: 46px;
-    --ea-focus: 0 0 0 3px rgba(124, 131, 255, 0.45);
+    --ea-focus: 0 0 0 3px rgba(184, 137, 43, 0.5);
 }}
 
 html {{ scroll-behavior: smooth; }}
@@ -1609,10 +1609,10 @@ button[kind="primary"], button[kind="secondary"],
 }}
 button[kind="primary"], [data-testid="stBaseButton-primary"] {{
     background: var(--ea-grad) !important;
-    box-shadow: 0 6px 18px rgba(99, 102, 241, 0.40) !important;
+    box-shadow: 0 6px 18px rgba(30, 58, 95, 0.40) !important;
 }}
 button[kind="primary"]:hover, [data-testid="stBaseButton-primary"]:hover {{
-    box-shadow: 0 10px 26px rgba(139, 92, 246, 0.55) !important;
+    box-shadow: 0 10px 26px rgba(30, 58, 95, 0.55) !important;
     filter: brightness(1.06);
 }}
 button:active {{ transform: scale(0.98) !important; }}
@@ -1631,7 +1631,7 @@ div[data-testid="stSegmentedControl"] button[data-checked="true"],
 div[data-testid="stRadio"] [data-testid="stRadioGroup"][aria-orientation="horizontal"] [data-testid="stRadioOption"][data-selected="true"],
 div[data-testid="stRadio"] [data-testid="stRadioGroup"][aria-orientation="horizontal"] [data-testid="stRadioOption"]:has(input:checked) {{
     background: var(--ea-grad) !important;
-    box-shadow: 0 4px 14px rgba(99, 102, 241, 0.40) !important;
+    box-shadow: 0 4px 14px rgba(30, 58, 95, 0.40) !important;
     color: #fff !important;
 }}
 [data-testid="stSidebar"] [data-testid="stRadioOption"][data-selected="true"],
@@ -1658,7 +1658,7 @@ div[role="tablist"] button {{ min-height: 44px !important; }}
     padding: 28px 32px;
 }}
 .ea-dashboard-hero::before {{ background: var(--ea-grad); height: 5px; }}
-.ea-hero-icon-box {{ background: var(--ea-grad); box-shadow: 0 10px 26px rgba(139, 92, 246, 0.40); animation: eaFloat 4s ease-in-out infinite; }}
+.ea-hero-icon-box {{ background: var(--ea-grad); box-shadow: 0 10px 26px rgba(30, 58, 95, 0.40); animation: eaFloat 4s ease-in-out infinite; }}
 .ea-hero-title {{ font-size: 1.75rem; }}
 .ea-hero-desc {{ font-size: 1rem; }}
 .course-header-box::before {{ background: var(--ea-grad); }}
@@ -1675,7 +1675,7 @@ div[data-testid="stVerticalBlockBorderWrapper"]:hover {{ transform: translateY(-
 
 /* Progress bars: motivating gradient */
 [data-testid="stProgress"] > div > div {{ background-color: var(--ea-border) !important; border-radius: 9999px !important; height: 10px !important; }}
-[data-testid="stProgress"] > div > div > div {{ background: linear-gradient(90deg, #10b981, #06b6d4, #6366f1) !important; border-radius: 9999px !important; }}
+[data-testid="stProgress"] > div > div > div {{ background: linear-gradient(90deg, #1e3a5f, #b8892b) !important; border-radius: 9999px !important; }}
 
 /* Quiz readability */
 .quiz-question-card {{ border-left: 5px solid var(--ea-primary); font-size: 1.05rem; }}
@@ -1714,7 +1714,7 @@ div[data-testid="stRadio"] div[role="radiogroup"]:not([aria-orientation="horizon
 /* ---- "Aujourd'hui" dashboard ---- */
 .ea-today-card {{
     background: var(--ea-grad); color: #fff; border-radius: 24px; padding: 26px 28px 22px; margin-bottom: 10px;
-    box-shadow: 0 16px 40px rgba(99,102,241,0.35); position: relative; overflow: hidden;
+    box-shadow: 0 16px 40px rgba(30,58,95,0.35); position: relative; overflow: hidden;
 }}
 .ea-today-card::after {{ content: '📚'; position: absolute; right: 18px; bottom: -14px; font-size: 7rem; opacity: 0.14; }}
 .ea-today-hello {{ font-size: 0.95rem; font-weight: 600; opacity: 0.9; }}
@@ -1724,7 +1724,7 @@ div[data-testid="stRadio"] div[role="radiogroup"]:not([aria-orientation="horizon
 .ea-today-card .ea-bar {{ background: rgba(255,255,255,0.25); }}
 .ea-today-card .ea-bar span {{ background: #fff; }}
 .ea-bar {{ height: 10px; border-radius: 9999px; background: var(--ea-border); overflow: hidden; }}
-.ea-bar span {{ display: block; height: 100%; border-radius: 9999px; background: linear-gradient(90deg,#10b981,#06b6d4,#6366f1); transition: width .6s ease; }}
+.ea-bar span {{ display: block; height: 100%; border-radius: 9999px; background: linear-gradient(90deg,#1e3a5f,#b8892b); transition: width .6s ease; }}
 .ea-bar.small {{ height: 6px; margin: 4px 0 4px; }}
 .ea-stats-card {{ background: var(--ea-surface); border: 1px solid var(--ea-border); border-radius: 24px; padding: 20px 22px; box-shadow: var(--ea-card-shadow); margin-bottom: 10px; }}
 .ea-stat-row {{ display: flex; gap: 14px; margin-bottom: 14px; }}
@@ -1751,7 +1751,7 @@ div[data-testid="stRadio"] div[role="radiogroup"]:not([aria-orientation="horizon
 [data-testid="stSidebar"] hr {{ margin: 0.4rem 0 !important; }}
 
 .sb-brand {{ display: flex; align-items: center; gap: 9px; margin: 2px 0 10px; }}
-.sb-logo {{ width: 32px; height: 32px; border-radius: 10px; background: var(--ea-grad); display: flex; align-items: center; justify-content: center; font-size: 1.1rem; box-shadow: 0 4px 12px rgba(99,102,241,0.4); }}
+.sb-logo {{ width: 32px; height: 32px; border-radius: 10px; background: var(--ea-grad); display: flex; align-items: center; justify-content: center; font-size: 1.1rem; box-shadow: 0 4px 12px rgba(30,58,95,0.4); }}
 .sb-brand-name {{ font-size: 1.1rem; font-weight: 800; letter-spacing: -0.02em; color: var(--ea-sidebar-text); }}
 .sb-profile {{ display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 14px; background: var(--ea-surface); border: 1px solid var(--ea-border); }}
 .sb-avatar {{ width: 34px; height: 34px; flex-shrink: 0; border-radius: 50%; background: var(--ea-grad); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 800; }}
@@ -1784,41 +1784,81 @@ div[data-testid="stRadio"] div[role="radiogroup"]:not([aria-orientation="horizon
 .ai-status-pill {{ padding: 5px 10px; font-size: 0.74rem; margin-bottom: 6px; border-radius: 12px; }}
 .ai-status-pill.warn {{ background: rgba(245,158,11,0.14); border-color: rgba(245,158,11,0.3); color: var(--ea-amber); }}
 [data-testid="stSidebar"] .stButton button {{ min-height: 38px !important; padding: 0.3rem 0.5rem !important; font-size: 0.85rem !important; }}
-/* ---- Top navigation bar (sidebar removed) ---- */
-[data-testid="stSidebar"], [data-testid="stSidebarCollapsedControl"],
-[data-testid="stExpandSidebarButton"], [data-testid="collapsedControl"] {{ display: none !important; }}
-.block-container {{ padding-top: 1rem !important; }}
+/* ---- ACADEMIC THEME LAYER ---- */
+h1, h2, h3, h4, .ea-hero-title, .ea-today-title, .sb-brand-name, .course-header-box h2 {{
+    font-family: 'Merriweather', 'Cairo', 'AdnaneSans', Georgia, serif !important;
+    letter-spacing: 0 !important;
+    font-weight: 700 !important;
+}}
+h1 {{ font-size: 2rem !important; color: var(--ea-hero-title) !important; border-bottom: 2px solid var(--ea-amber); padding-bottom: 0.4rem !important; }}
+h2, h3 {{ color: var(--ea-hero-title) !important; }}
+html, body, .stApp {{ font-size: 16.5px; }}
 
-.st-key-topbar {{
-    position: sticky; top: 0; z-index: 100; padding: 8px 12px; margin-bottom: 14px;
-    background: var(--ea-surface-card); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
-    border: 1px solid var(--ea-border); border-radius: 18px; box-shadow: var(--ea-card-shadow);
+/* Quiet, formal controls: no glow, no floating, no gradients */
+.ea-hero-icon-box {{ animation: none !important; }}
+div[data-testid="stVerticalBlockBorderWrapper"]:hover {{ transform: none !important; }}
+button[kind="primary"], [data-testid="stBaseButton-primary"] {{
+    background: var(--ea-primary) !important; border-radius: 8px !important; box-shadow: none !important;
+    border: 1px solid var(--ea-primary) !important; letter-spacing: 0.02em !important;
 }}
-.st-key-topbar .sb-brand {{ margin: 0; }}
-.st-key-topbar [data-testid="stRadio"] {{ margin: 0 !important; }}
-.st-key-topbar div[data-testid="stRadio"] [data-testid="stRadioGroup"],
-.st-key-topbar div[data-testid="stRadio"] div[role="radiogroup"] {{
-    background: transparent !important; border: none !important; box-shadow: none !important;
-    padding: 0 !important; gap: 4px !important; flex-wrap: nowrap !important; overflow-x: auto; scrollbar-width: none;
-    justify-content: center;
+button[kind="primary"]:hover, [data-testid="stBaseButton-primary"]:hover {{
+    background: var(--ea-primary-hover) !important; transform: none !important; box-shadow: 0 2px 8px var(--ea-primary-glow) !important; filter: none;
 }}
-.st-key-topbar div[data-testid="stRadio"] [data-testid="stRadioOption"],
-.st-key-topbar div[data-testid="stRadio"] div[role="radiogroup"] > label {{
-    flex: 0 0 auto !important; white-space: nowrap; padding: 8px 14px !important; border-radius: 12px !important;
-    min-height: 40px;
+button[kind="secondary"], [data-testid="stBaseButton-secondary"] {{ border-radius: 8px !important; }}
+div[data-baseweb="select"] > div, div[data-baseweb="input"] > div, div[data-baseweb="textarea"] > div {{ border-radius: 8px !important; }}
+div[role="tablist"] {{ border-radius: 10px !important; box-shadow: none !important; backdrop-filter: none !important; }}
+div[role="tablist"] button {{ border-radius: 8px !important; }}
+div[role="tablist"] button[aria-selected="true"],
+[data-testid="stPills"] button[aria-pressed="true"], [data-testid="stPills"] button[data-checked="true"],
+div[data-testid="stSegmentedControl"] button[aria-checked="true"], div[data-testid="stSegmentedControl"] button[data-checked="true"] {{
+    background: var(--ea-primary) !important; box-shadow: none !important; color: #fff !important; border-color: var(--ea-primary) !important;
 }}
-.st-key-topbar [data-testid="stPopover"] button {{ min-height: 40px !important; border-radius: 12px !important; }}
+[data-testid="stPills"] button, div[data-testid="stSegmentedControl"] {{ border-radius: 8px !important; }}
+[data-testid="stMetric"] {{ border-radius: 10px !important; border-top: 3px solid var(--ea-amber) !important; }}
+[data-testid="stMetricValue"] {{ background: none !important; -webkit-text-fill-color: var(--ea-hero-title) !important; color: var(--ea-hero-title) !important; font-family: 'Merriweather', serif !important; }}
+div[data-testid="stVerticalBlockBorderWrapper"] {{ border-radius: 10px !important; }}
+[data-testid="stExpander"], [data-testid="stChatMessage"], [data-testid="stChatInput"], .quiz-question-card, .trap-card, .explanation-card, .course-header-box, .ea-stats-card {{ border-radius: 10px !important; }}
+.ea-dashboard-hero {{ border-radius: 12px; background: var(--ea-hero-bg); }}
+.ea-dashboard-hero::before, .course-header-box::before {{ background: var(--ea-amber); height: 4px; }}
+.quiz-question-card {{ border-left: 4px solid var(--ea-amber); }}
+.badge-subject, .badge-lang, .ea-card-status {{ border-radius: 6px !important; }}
 
-@media (max-width: 900px) {{
-    .sb-brand-name {{ display: none; }}
-    .st-key-topbar div[data-testid="stRadio"] [data-testid="stRadioOption"] p {{ font-size: 0.8rem !important; }}
-    .st-key-topbar div[data-testid="stRadio"] [data-testid="stRadioOption"] {{ padding: 8px 10px !important; }}
+/* "Aujourd'hui" card: navy panel with gold accent */
+.ea-today-card {{ border-radius: 12px; background: linear-gradient(135deg, #1e3a5f 0%, #26466f 100%); box-shadow: 0 4px 14px rgba(30,58,95,0.25); border-bottom: 4px solid #b8892b; }}
+.ea-today-card::after {{ content: '🎓'; }}
+.ea-today-kicker {{ color: #e6c274; }}
+.ea-stat {{ border-radius: 10px; background: var(--ea-grad-soft); }}
+.ea-stats-card {{ border-radius: 12px; }}
+.ea-bar span {{ background: linear-gradient(90deg, #1e3a5f, #b8892b) !important; }}
+.ea-today-card .ea-bar span {{ background: #e6c274 !important; }}
+.ea-card-stripe {{ height: 4px; border-radius: 2px; }}
+
+/* Slim sidebar = table of contents */
+[data-testid="stSidebar"][aria-expanded="true"] {{ min-width: 210px !important; max-width: 210px !important; width: 210px !important; }}
+[data-testid="stSidebar"] {{ background: var(--ea-sidebar-bg) !important; border-right: 1px solid var(--ea-sidebar-border) !important; }}
+.sb-logo {{ background: var(--ea-primary) !important; box-shadow: none !important; border-radius: 8px !important; }}
+.sb-brand-name {{ font-size: 1rem !important; }}
+[data-testid="stSidebar"] [data-testid="stRadioOption"],
+[data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] label {{
+    min-height: 36px !important; padding: 4px 10px !important; border-radius: 4px !important; border: none !important;
+    border-left: 3px solid transparent !important; background: transparent !important;
 }}
+[data-testid="stSidebar"] [data-testid="stRadioOption"]:hover,
+[data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] label:hover {{ background: rgba(30,58,95,0.07) !important; }}
+[data-testid="stSidebar"] [data-testid="stRadioOption"][data-selected="true"],
+[data-testid="stSidebar"] [data-testid="stRadioOption"]:has(input:checked),
+[data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] label:has(input:checked) {{
+    background: rgba(184,137,43,0.14) !important; border: none !important; border-left: 3px solid var(--ea-amber) !important;
+}}
+[data-testid="stSidebar"] [data-testid="stRadioOption"][data-selected="true"] p,
+[data-testid="stSidebar"] [data-testid="stRadioOption"]:has(input:checked) p {{ color: var(--ea-hero-title) !important; font-weight: 700 !important; }}
+.sb-profile {{ border-radius: 10px; }}
+.sb-avatar {{ background: var(--ea-primary) !important; }}
 </style>
 """
 
 if "ea_theme" not in st.session_state:
-    st.session_state["ea_theme"] = "dark"
+    st.session_state["ea_theme"] = "light"
 current_theme = st.session_state.get("ea_theme", "dark")
 st.markdown(get_custom_css(theme=current_theme), unsafe_allow_html=True)
 
@@ -2654,9 +2694,11 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
     rank_txt = f"{_my_rank['emoji']} {html.escape(str(_my_rank['label']))} · " if _my_rank else ""
     current_theme = st.session_state.get("ea_theme", "dark")
 
-    with st.container(key="topbar"):
-        c_brand, c_nav, c_user = st.columns([1.15, 5.2, 1.0], vertical_alignment="center")
-    space_row = st.container()
+    c_brand = st.sidebar.container()
+    space_row = st.sidebar.container()
+    c_nav = st.sidebar.container()
+    st.sidebar.markdown('<div class="sb-spacer"></div>', unsafe_allow_html=True)
+    c_user = st.sidebar.container()
 
     with c_brand:
         render_html('<div class="sb-brand"><span class="sb-logo">🎓</span><span class="sb-brand-name">Ecole Adnane</span></div>')
@@ -2701,7 +2743,6 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                         "⚙️ Configuration Système & Sauvegardes",
                     ],
                     index=0,
-                    horizontal=True,
                     format_func=nav_label,
                     label_visibility="collapsed",
                     key="topnav_admin",
@@ -2727,7 +2768,6 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                     f"Espace de {active_student_info['name']}",
                     student_menu_items,
                     index=default_menu_idx,
-                    horizontal=True,
                     key=f"admin_student_menu_{active_user_id}",
                     format_func=nav_label,
                     label_visibility="collapsed",
@@ -2738,7 +2778,6 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                 "Mon Espace d'Apprentissage",
                 ["📚 Mes Cours (Révisions)", "➕ Ajouter un Cours", "📊 Mes Progrès", "🏆 Mes Trophées", "⚙️ Paramètres & Sauvegardes"],
                 index=0,
-                horizontal=True,
                 format_func=nav_label,
                 label_visibility="collapsed",
                 key="topnav_student",
@@ -4574,7 +4613,6 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                 "Format visuel :",
                 options=mode_options,
                 format_func=lambda x: mode_labels[x],
-                horizontal=True,
                 label_visibility="collapsed",
                 index=default_idx,
                 key=f"sim_mode_selector_{course_id}",
@@ -5420,7 +5458,6 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
             target_choice = st.radio(
                 "Destinataire(s) du cours :",
                 ["👥 Tous les élèves inscrits", "🎒 Élève spécifique"],
-                horizontal=True,
                 key="admin_add_course_target_choice",
             )
             if target_choice == "👥 Tous les élèves inscrits":
