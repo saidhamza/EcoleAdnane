@@ -225,12 +225,15 @@ RÉPONDS STRICTEMENT SOUS FORME D'UN OBJET JSON VALIDE SANS TEXTE AVANT NI APRÈ
     raw_response = None
     if is_allowed:
         try:
+            messages = [
+                {"role": "system", "content": system_instruction},
+                {"role": "user", "content": prompt},
+            ]
             raw_response = call_openrouter_chat_completion(
-                prompt=prompt,
-                system_instruction=system_instruction,
-                model_name="google/gemini-2.5-flash",
+                messages=messages,
+                model="google/gemini-2.5-flash",
                 temperature=0.4,
-                user_id=user_id,
+                json_mode=True,
             )
         except Exception as e_or:
             logger.warning(f"Échec OpenRouter pour guide explicatif ({e_or}), repli sur le LLM par défaut...")
