@@ -1825,6 +1825,73 @@ def extract_and_inject_server_tts(html_code: str, language: str = "fr") -> str:
       }
     }
   });
+
+  // Gestion universelle du Plein Écran (Fullscreen / Nouvel onglet autonome)
+  window.toggleFullscreenOrNewTab = function() {
+    try {
+      var elem = document.documentElement;
+      if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+        var p = null;
+        if (elem.requestFullscreen) p = elem.requestFullscreen();
+        else if (elem.webkitRequestFullscreen) p = elem.webkitRequestFullscreen();
+        if (p && typeof p.catch === 'function') {
+          p.catch(function() { window.openFullscreenInNewTab(); });
+        }
+      } else {
+        if (document.exitFullscreen) document.exitFullscreen();
+        else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+      }
+    } catch(err) {
+      window.openFullscreenInNewTab();
+    }
+  };
+
+  window.openFullscreenInNewTab = function() {
+    try {
+      var cloneDoc = document.documentElement.cloneNode(true);
+      var oldBtn = cloneDoc.querySelector('#btn-floating-fullscreen');
+      if (oldBtn) oldBtn.remove();
+      var htmlStr = '<!DOCTYPE html>\\n' + cloneDoc.outerHTML;
+      var blob = new Blob([htmlStr], { type: 'text/html;charset=utf-8' });
+      var url = URL.createObjectURL(blob);
+      var win = window.open(url, '_blank');
+      if (!win) {
+        var a = document.createElement('a');
+        a.href = url;
+        a.target = '_blank';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      }
+    } catch(e) {
+      console.error("Erreur ouverture plein écran:", e);
+    }
+  };
+
+  function setupFloatingFullscreenBtn() {
+    if (document.getElementById('btn-floating-fullscreen')) return;
+    var isRTL = document.documentElement.getAttribute('dir') === 'rtl';
+    var fsBtn = document.createElement('button');
+    fsBtn.id = 'btn-floating-fullscreen';
+    fsBtn.type = 'button';
+    fsBtn.innerHTML = '⛶ ' + (isRTL ? 'ملء الشاشة' : 'Plein écran');
+    fsBtn.setAttribute('title', isRTL ? 'عرض بملء الشاشة في نافذة كاملة' : 'Ouvrir en plein écran (Fenêtre complète)');
+    fsBtn.style.cssText = 'position:fixed; top:12px; ' + (isRTL ? 'left:12px;' : 'right:12px;') + ' z-index:999999; background:rgba(15,23,42,0.88); color:#38bdf8; border:1px solid rgba(56,189,248,0.5); padding:7px 14px; border-radius:20px; font-size:13px; font-weight:700; cursor:pointer; backdrop-filter:blur(10px); box-shadow:0 4px 14px rgba(0,0,0,0.4); display:flex; align-items:center; gap:6px; font-family:system-ui,sans-serif; transition:all 0.2s ease;';
+    fsBtn.onmouseover = function() { fsBtn.style.background = '#0284c7'; fsBtn.style.color = '#ffffff'; fsBtn.style.transform = 'scale(1.05)'; };
+    fsBtn.onmouseout = function() { fsBtn.style.background = 'rgba(15,23,42,0.88)'; fsBtn.style.color = '#38bdf8'; fsBtn.style.transform = 'scale(1)'; };
+    fsBtn.onclick = function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      window.toggleFullscreenOrNewTab();
+    };
+    document.body.appendChild(fsBtn);
+  }
+
+  if (document.readyState === 'complete' || document.readyState === 'interactive') {
+    setupFloatingFullscreenBtn();
+  } else {
+    window.addEventListener('DOMContentLoaded', setupFloatingFullscreenBtn);
+  }
 })();
 </script>
 """
@@ -1845,38 +1912,30 @@ def generate_course_animation_simulation(
 ) -> str:
     """
     Génère une expérience interactive immersive haut de gamme pour un cours donné :
-    - Matières Historiques & Humaines (Histoire, Géo, Éducation Civique) -> Fresque Historique & Documentaire Interactif Cinématique
+    - Matières narratives & Histoire (Histoire, Géo, Éducation Civique, Langues) -> Bande Dessinée Animée Interactive (BD)
     - Matières Scientifiques (Physique, Chimie, SVT, Maths) -> Simulation interactive Canvas/SVG
-    - Autres matières -> Storytelling et Théâtre Pédagogique Interactif
-    Intègre un moteur vocal Text-To-Speech (TTS) serveur pré-généré pour une restitution audio 100% fiable.
+    Intègre un moteur vocal Text-To-Speech (TTS) serveur pré-généré pour une restitution audio 100% fiable
+    et un contrôle de Plein Écran universel.
     Utilise OpenRouter (si autorisé par l'admin) ou Google Gemini.
     """
     # 1. Détection intelligente du style
     search_str = f"{(subject or '').lower()} {(course_title or '').lower()}"
 
-    hist_keywords = [
-        "histoire", "géo", "geographie", "géographie", "sociales", "société", "citoyenneté", "civique",
-        "تاريخ", "جغرافيا", "اجتماعيات", "مواطنة", "تاريخي", "نازية", "ديكتاتور", "حرب", "ثورة", "حركات",
-        "فاشية", "ستالين", "هتلر", "موسوليني", "استعمار", "إمبريالية", "رأسمالية", "نهضة",
-    ]
     sci_keywords = [
         "physique", "chimie", "svt", "sciences", "math", "techno", "atome", "circuit",
         "cellule", "molécule", "électron", "réaction", "gravité", "vitesse", "théorème",
         "فيزياء", "كيمياء", "رياضيات", "علوم", "بيولوجيا", "ذرة", "دائرة", "طاقة", "خلية", "تفاعل",
     ]
 
-    is_history = any(k in search_str for k in hist_keywords)
     is_scientific = any(k in search_str for k in sci_keywords)
 
-    if force_style in ("history_epic", "simulation", "narrative", "comic"):
-        style = "history_epic" if force_style in ("history_epic", "comic") and is_history else force_style
+    if force_style in ("comic", "simulation", "history_epic"):
+        style = force_style
     else:
-        if is_history:
-            style = "history_epic"
-        elif is_scientific:
-            style = "simulation"
-        else:
-            style = "narrative"
+        # Par défaut :
+        # - Matières scientifiques -> simulation
+        # - Histoire, Géo, Langues, Littérature -> comic (Bande Dessinée Animée)
+        style = "simulation" if is_scientific else "comic"
 
     is_ar = language == "ar"
     is_en = language == "en"
@@ -1884,42 +1943,37 @@ def generate_course_animation_simulation(
     # 2. Construction des spécifications selon le style
     truncated_text = (course_text or "")[:8000].strip()
 
-    if style == "history_epic":
+    if style == "comic":
         mode_desc = (
-            "FRESQUE HISTORIQUE & DOCUMENTAIRE INTERACTIF CINÉMATIQUE (ملحمة تاريخية ووثائقي تفاعلي سينمائي)"
+            "قصة مصورة تعليمية متحركة وتفاعلية (BANDE DESSINÉE HISTORIQUE / NARRATIVE ANIMÉE)"
             if is_ar
-            else "FRESQUE HISTORIQUE & DOCUMENTAIRE INTERACTIF CINÉMATIQUE"
+            else "BANDE DESSINÉE ANIMÉE INTERACTIVE (COMIC BOOK STORYBOARD)"
         )
         specifications = f"""
-Tu dois concevoir une **{mode_desc}** de niveau muséal et documentaire prestigieux (type Arte / BBC History / National Geographic) en 4 à 5 scènes chronologiques ou thématiques.
+Tu dois concevoir une **{mode_desc}** de très haute qualité artistique et narrative en 4 à 5 planches/cases de bande dessinée animée (Comic Panels).
 
 ⚠️ RÈGLE FONDAMENTALE VISUELLE :
-- INTERDICTION FORMELLE ET STRICTE de dessiner des bonshommes simplistes, des bonshommes allumettes (stick figures), des personnages enfantins ou des caricatures grotesques en SVG.
-- Le style doit être sérieux, cinématique, noble et documentaire.
+- INTERDICTION ABSOLUE ET STRICTE de dessiner des bonshommes allumettes (stick figures), des traits simplistes ou des dessins enfantins.
+- Le style visuel doit être celui d'un roman graphique ou d'une bande dessinée européenne historique de renom (Tintin/Astérix/L'Histoire en BD/Manga historique soigné) : décors immersifs, personnages avec du volume et des silhouettes soignées, costumes d'époque, jeux d'ombres et de lumière.
 
-Chaque scène doit être une double page documentaire prestigieuse comprenant :
-1. Une ambiance visuelle vivante :
-   - Fond sombre luxueux (#0b0f19, #111827) avec canvas interactif d'ambiance (<canvas id="ambient-canvas">) diffusant de légères braises incandescentes ou poussière dorée animée de manière fluide avec requestAnimationFrame.
-2. Éléments graphiques vectoriels remarquables en SVG pur :
-   - Cartographie géopolitique stratégique vectorielle : Tracé des frontières, capitales avec halo radar clignotant (<circle class="radar-ping">), flèches d'offensives ou d'expansion militaire animées (stroke-dasharray animée avec marker-end="url(#arrow)"), et zones géopolitiques avec dégradés semi-transparents.
-   - Sceaux héraldiques, aigles ou emblèmes officiels d'époque stylisés avec dégradés métalliques dorés (<linearGradient id="gold-grad">), sceaux de cire cramoisi et couronnes de lauriers.
-   - Silhouettes architecturales et monuments historiques en contre-jour dramatique (façades de parlements, portes monumentales, usines sidérurgiques sous fumée industrielle, tranchées) avec éclairage crépusculaire.
-3. Fiche Dossier d'Archives & Richesse Pédagogique :
-   - Badge d'époque (ex: '1933 - برلين').
-   - Titre percutant de l'étape historique.
-   - Citation historique authentique mise en valeur entre guillemets calligraphiques (« ... »).
-   - Analyse rigoureuse des causes socio-économiques, des mécanismes totalitaires (propagande, terreur, culte du chef, crise de 1929) et des conséquences.
-   - Encart 'إضاءة وثائقية' (Éclairage historique / Le Saviez-vous ?).
-4. Balise de Narration Vocale OBLIGATOIRE pour chaque scène :
-   - Chaque scène DOIT contenir exactement :
-     <div class="narration-script" data-scene="i">النص التاريخي الكامل للسرد باللغة العربية الفصحى مع التشكيل التام (tashkeel) لنطق سليم ومبهر...</div>
-   - Ce texte doit être écrit comme la voix-off d'un grand documentaire historique (ton captivant, solennel et didactique).
-5. Frise chronologique interactive (Timeline Bar) en bas d'écran :
-   - Pastilles cliquables reliant les scènes par repères temporels (dates clés).
-6. Barre de contrôle audio et navigation :
+Chaque case/scène de BD doit comporter :
+1. Une planche / case de BD majeure encadrée avec style 'Comic Book' moderne :
+   - Un encadrement soigné de case de BD (bordure nette, ombre portée, numéro de case).
+   - Un décor d'époque vectoriel riche en SVG pur (ex: rues d'époque, monuments emblématiques, usines, parlements, cartes stratégiques de front).
+   - Des personnages expressifs dessinés avec style BD (orateurs, dirigeants, ouvriers, citoyens, témoins de l'époque) avec postures vivantes, visages expressifs, costumes d'époque (chapeaux, manteaux, uniformes, ombres portées).
+   - Un cartouche récitatif du narrateur en haut de case (.comic-caption) : ex: « برلين، خريف 1929: أزمة اقتصادية غير مسبوقة تضرب البلاد... »
+   - Des bulles de dialogue / phylactères (.speech-bubble) avec pointeurs orientés vers les personnages pour leurs paroles historiques ou répliques clés.
+   - Des étiquettes ou onomatopées dynamiques de BD stylisées (ex: 'أزمة 1929!', 'صعود الحزب!', '1933!', 'CRASH!').
+2. Balise de Narration Vocale OBLIGATOIRE pour chaque case de BD :
+   - Chaque case DOIT contenir exactement :
+     <div class="narration-script" data-scene="i">النص الكامل للسرد وحوار الشخصيات في هذا المشهد باللغة العربية الفصحى مع التشكيل التام (tashkeel)...</div>
+   - Ce texte doit être rédigé de manière vivante et immersive, combinant la voix du narrateur et les dialogues des personnages.
+3. Barre de navigation et lecture interactive :
+   - Bouton Plein Écran en haut : '⛶ ملء الشاشة' (appelle window.toggleFullscreenOrNewTab())
    - Boutons: ◀ المشهد السابق | المشهد التالي ▶
+   - Pastilles numérotées des cases de BD (1, 2, 3, 4, 5)
    - Bouton audio : '🔊 استمع لهذا المشهد'
-   - Bouton de lecture continue : '⏯️ تشغيل متتابع'
+   - Bouton de lecture continue : '⏯️ قراءة متتابعة للقصة' (enchaîne les cases de BD avec narration vocale synchronisée comme un dessin animé parlant)
    - Sélecteur de vitesse : 0.9x | 1x | 1.2x
 """
     elif style == "simulation":
@@ -1939,22 +1993,23 @@ La simulation doit comporter :
 3. Une boîte d'explication pédagogique avec narration vocale :
    - Balise obligatoire : <div class="narration-script" data-scene="0">الشرح الصوتي العلمي المفصل للظاهرة مع التشكيل التام...</div>
    - Bouton '🔊 استمع للشرح الصوتي'
+4. Bouton Plein Écran : '⛶ ملء الشاشة' (appelle window.toggleFullscreenOrNewTab())
 """
     else:
         mode_desc = (
-            "سرد تفاعلي ومسرح تعليمي ناطق"
-            if is_ar
-            else "STORYTELLING & THÉÂTRE PÉDAGOGIQUE INTERACTIF"
+            "FRESQUE HISTORIQUE & DOCUMENTAIRE INTERACTIF CINÉMATIQUE"
+            if not is_ar
+            else "ملحمة تاريخية ووثائقي تفاعلي سينمائي"
         )
         specifications = f"""
-Tu dois générer une **{mode_desc}** autonome en 4 scènes illustrant les concepts clés de manière vivante et élégante.
-Pas de dessins simplistes d'enfants. Favoriser une mise en scène théâtrale soignée (parchemins calligraphiés, typographie noble, décors d'époque vectoriels en SVG).
-Chaque scène doit comporter :
-1. Une illustration vectorielle SVG soignée sans personnages caricaturaux.
-2. Un texte pédagogique fluide et captivant.
-3. Balise obligatoire : <div class="narration-script" data-scene="i">النص الكامل للسرد بالتشكيل التام...</div>
-4. Boutons de navigation et lecture vocale (🔊 Écouter / استمع).
+Tu dois concevoir une **{mode_desc}** de niveau muséal et documentaire en 4 à 5 scènes :
+1. Cartographie géopolitique vectorielle SVG et sceaux métalliques dorés.
+2. Silhouettes architecturales en contre-jour dramatique.
+3. Fiche Dossier d'Archives & Citation historique.
+4. Balise obligatoire : <div class="narration-script" data-scene="i">النص الكامل للسرد بالتشكيل التام...</div>
+5. Boutons de navigation, audio et bouton plein écran '⛶ ملء الشاشة' (window.toggleFullscreenOrNewTab()).
 """
+
 
     lang_instruction = (
         "TOUT le contenu texte, les analyses documentaires, les citations, les boutons et les balises .narration-script DOIVENT être en ARABE de haute qualité littéraire avec TASHKEEL (diacritiques) complet sur la narration pour une prononciation audio irréprochable, avec dir='rtl' et typographie 'Cairo', sans-serif."

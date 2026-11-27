@@ -2846,7 +2846,10 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
             if anim_html and anim_html.strip():
                 col_top_act1, col_top_act2, col_top_act3 = st.columns([2, 1, 1])
                 with col_top_act1:
-                    st.caption("✨ Cette animation interactive dispose de commandes de lecture et de synthèse vocale (TTS) intégrées." if not is_ar else "✨ تتضمن هذه المحاكاة التفاعلية عناصر تحكم صوتية بالذكاء الاصطناعي (TTS).")
+                    st.caption(
+                        "✨ " + ("💡 Cliquez sur le bouton **⛶ Plein écran** (en haut de l'animation) pour une immersion complète." if not is_ar
+                                else "💡 اضغط على زر **⛶ ملء الشاشة** (أعلى العرض) لتجربة غامرة ومريحة في نافذة كاملة.")
+                    )
                 with col_top_act2:
                     dl_label_sim = "📥 Télécharger (HTML)" if not is_ar else "📥 تحميل (HTML)"
                     st.download_button(
@@ -2863,9 +2866,9 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                             "Style :" if not is_ar else "النمط :",
                             options=["auto", "comic", "simulation"],
                             format_func=lambda x: {
-                                "auto": "Automatique" if not is_ar else "تلقائي",
-                                "comic": "Bande Dessinée Animée (BD)" if not is_ar else "قصة مصورة متحركة",
-                                "simulation": "Simulation Scientifique" if not is_ar else "محاكاة علمية تفاعلية",
+                                "auto": "🤖 Automatique (BD pour Histoire, Simulation pour Sciences)" if not is_ar else "🤖 تلقائي (قصة مصورة للتاريخ ومحاكاة للعلوم)",
+                                "comic": "🎨 Bande Dessinée Animée (BD)" if not is_ar else "🎨 قصة مصورة متحركة (BD)",
+                                "simulation": "🧪 Simulation Scientifique" if not is_ar else "🧪 محاكاة علمية تفاعلية",
                             }[x],
                             key=f"regen_style_sel_{course_id}",
                         )
@@ -2889,7 +2892,7 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                                 except Exception as e_gen:
                                     st.error(f"Erreur de génération : {e_gen}")
 
-                st.components.v1.html(anim_html, height=720, scrolling=True)
+                st.components.v1.html(anim_html, height=840, scrolling=True)
             else:
                 st.info(
                     "💡 **Donnez vie à ce cours !** Générez une bande dessinée animée par scènes ou une simulation scientifique interactive manipulant atomes, circuits, équations ou cartes historiques avec synthèse vocale TTS intégrée."
