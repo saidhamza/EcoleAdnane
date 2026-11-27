@@ -436,96 +436,60 @@ def get_custom_css() -> str:
 <style>
 {font_faces}
 
-@import url('https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=Cairo:wght@500;600;700&family=Tajawal:wght@500;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Cairo:wght@500;600;700;800;900&family=Amiri:wght@400;700&family=Tajawal:wght@500;700;800&display=swap');
 
-body, .stApp,
-[data-testid="stMarkdownContainer"],
+:root {{
+    --ea-bg: #0b0f19;
+    --ea-surface: #131b2e;
+    --ea-surface-hover: #1b2640;
+    --ea-surface-card: rgba(19, 27, 46, 0.75);
+    --ea-border: rgba(255, 255, 255, 0.09);
+    --ea-border-hover: rgba(59, 130, 246, 0.45);
+    --ea-primary: #3b82f6;
+    --ea-primary-hover: #2563eb;
+    --ea-primary-glow: rgba(59, 130, 246, 0.28);
+    --ea-text: #f8fafc;
+    --ea-text-muted: #94a3b8;
+    --ea-text-dim: #64748b;
+    --ea-emerald: #10b981;
+    --ea-amber: #f59e0b;
+    --ea-rose: #f43f5e;
+    --ea-indigo: #6366f1;
+    --ea-purple: #8b5cf6;
+    --ea-cyan: #06b6d4;
+    --ea-radius-sm: 8px;
+    --ea-radius-md: 14px;
+    --ea-radius-lg: 20px;
+    --ea-radius-full: 9999px;
+}}
+
+/* Base Typography & Antialiasing */
+html, body, .stApp {{
+    background-color: var(--ea-bg) !important;
+    color: var(--ea-text) !important;
+    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}}
+
 [data-testid="stMarkdownContainer"] p,
 [data-testid="stMarkdownContainer"] span,
-[data-testid="stMarkdownContainer"] strong,
 [data-testid="stMarkdownContainer"] li,
 div[role="tablist"] button,
 button, input, select, textarea, label,
 [data-testid="stExpander"], [data-testid="stRadio"] {{
-    font-family: 'AdnaneNaskh', 'AdnaneSans', 'Noto Naskh Arabic', 'Noto Sans Arabic', 'Amiri', 'Cairo', 'Tajawal', serif !important;
+    font-family: 'Plus Jakarta Sans', 'AdnaneNaskh', 'Cairo', system-ui, sans-serif;
 }}
 
-h1, h2, h3, h4, h5, h6,
-.rtl-section-title,
-button[kind="primary"],
-button[kind="secondary"],
-div[role="tablist"] button p {{
-    font-family: 'AdnaneSans', 'AdnaneNaskh', 'Noto Sans Arabic', 'Noto Naskh Arabic', 'Cairo', 'Tajawal', serif !important;
-    letter-spacing: normal !important;
+/* Headings with Modern EdTech hierarchy */
+h1, h2, h3, h4, h5, h6 {{
+    font-family: 'Plus Jakarta Sans', 'AdnaneSans', 'Cairo', sans-serif !important;
+    letter-spacing: -0.02em !important;
+    font-weight: 800 !important;
+    color: var(--ea-text) !important;
 }}
 
-.rtl-section-title {{
-    direction: rtl !important;
-    text-align: right !important;
-    font-size: 1.55rem !important;
-    font-weight: 700 !important;
-    color: var(--text-color, #ffffff) !important;
-    margin-top: 14px;
-    margin-bottom: 12px;
-    line-height: 1.6 !important;
-}}
-
-.badge-subject {{
-    display: inline-block;
-    padding: 4px 12px;
-    border-radius: 16px;
-    font-size: 0.85rem;
-    font-weight: 600;
-    margin-right: 6px;
-    color: #ffffff !important;
-}}
-.badge-maths {{ background-color: #2563eb !important; }}
-.badge-pc {{ background-color: #7c3aed !important; }}
-.badge-svt {{ background-color: #059669 !important; }}
-.badge-islamic {{ background-color: #0d9488 !important; }}
-.badge-histgeo {{ background-color: #d97706 !important; }}
-.badge-arabic {{ background-color: #dc2626 !important; }}
-.badge-francais {{ background-color: #4f46e5 !important; }}
-.badge-anglais {{ background-color: #0284c7 !important; }}
-.badge-default {{ background-color: #64748b !important; }}
-
-.badge-lang {{
-    display: inline-block;
-    padding: 3px 10px;
-    border-radius: 12px;
-    font-size: 0.8rem;
-    font-weight: 600;
-    background-color: rgba(128, 128, 128, 0.2) !important;
-    color: var(--text-color, #f1f5f9) !important;
-    border: 1px solid rgba(128, 128, 128, 0.3) !important;
-}}
-
-.course-header-box {{
-    background-color: var(--secondary-background-color, #1a2233) !important;
-    color: var(--text-color, #ffffff) !important;
-    border: 1px solid rgba(128, 128, 128, 0.25) !important;
-    padding: 20px 24px;
-    border-radius: 14px;
-    margin-bottom: 18px;
-    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.15);
-}}
-
-.course-header-box h2 {{
-    color: var(--text-color, #ffffff) !important;
-    font-family: 'AdnaneSans', 'Noto Sans Arabic', serif !important;
-    font-size: 1.7rem !important;
-    font-weight: 700 !important;
-    margin-top: 12px !important;
-    margin-bottom: 6px !important;
-    line-height: 1.6 !important;
-}}
-
-.course-header-subtitle {{
-    font-size: 0.9rem !important;
-    color: var(--text-color, #94a3b8) !important;
-    opacity: 0.85;
-}}
-
+/* Arabic RTL Typography */
 .rtl-box {{
     direction: rtl !important;
     text-align: right !important;
@@ -533,15 +497,15 @@ div[role="tablist"] button p {{
     font-size: 1.25rem !important;
     line-height: 2.2 !important;
     letter-spacing: 0 !important;
-    color: var(--text-color, #f1f5f9) !important;
+    color: var(--ea-text) !important;
 }}
 
 .rtl-box h1, .rtl-box h2, .rtl-box h3, .rtl-box h4 {{
-    font-family: 'AdnaneSans', 'Noto Sans Arabic', serif !important;
+    font-family: 'Cairo', 'AdnaneSans', 'Tajawal', sans-serif !important;
     text-align: right !important;
     direction: rtl !important;
-    font-weight: 700 !important;
-    color: var(--text-color, #ffffff) !important;
+    font-weight: 800 !important;
+    color: #ffffff !important;
     margin-top: 1.3rem !important;
     margin-bottom: 0.6rem !important;
     line-height: 1.6 !important;
@@ -551,70 +515,473 @@ div[role="tablist"] button p {{
     font-family: 'AdnaneNaskh', 'Noto Naskh Arabic', serif !important;
     font-size: 1.22rem !important;
     line-height: 2.2 !important;
-    color: var(--text-color, #f1f5f9) !important;
+    color: #f1f5f9 !important;
 }}
 
 .rtl-box strong {{
-    font-family: 'AdnaneSans', 'Noto Sans Arabic', serif !important;
+    font-family: 'Cairo', 'AdnaneSans', sans-serif !important;
     font-weight: 700 !important;
     color: #38bdf8 !important;
 }}
 
+.rtl-section-title {{
+    direction: rtl !important;
+    text-align: right !important;
+    font-family: 'Cairo', 'AdnaneSans', sans-serif !important;
+    font-size: 1.6rem !important;
+    font-weight: 800 !important;
+    color: #ffffff !important;
+    margin-top: 14px;
+    margin-bottom: 12px;
+    line-height: 1.5 !important;
+}}
+
+/* Modern Glassmorphic Sidebar */
+[data-testid="stSidebar"] {{
+    background-color: #0d1322 !important;
+    border-right: 1px solid var(--ea-border) !important;
+}}
+
+[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] h2 {{
+    color: #ffffff !important;
+    font-size: 1.35rem !important;
+    font-weight: 800 !important;
+    letter-spacing: -0.02em !important;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}}
+
+/* Sidebar Student Profile Card */
+.sidebar-profile-card {{
+    background: linear-gradient(145deg, rgba(21, 30, 50, 0.8) 0%, rgba(13, 19, 34, 0.95) 100%);
+    border: 1px solid var(--ea-border);
+    border-radius: var(--ea-radius-md);
+    padding: 16px;
+    margin-bottom: 16px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+    backdrop-filter: blur(10px);
+}}
+
+.profile-avatar-row {{
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 10px;
+}}
+
+.profile-avatar-circle {{
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.3rem;
+    font-weight: 800;
+    color: #ffffff;
+    box-shadow: 0 2px 10px rgba(59, 130, 246, 0.35);
+}}
+
+.profile-name-text {{
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: #ffffff;
+    line-height: 1.2;
+}}
+
+.profile-email-text {{
+    font-size: 0.78rem;
+    color: var(--ea-text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 175px;
+}}
+
+.profile-badges-row {{
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+    margin-top: 8px;
+}}
+
+.profile-pill-cycle {{
+    background: rgba(59, 130, 246, 0.15);
+    color: #93c5fd;
+    border: 1px solid rgba(59, 130, 246, 0.3);
+    border-radius: 12px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    padding: 2px 10px;
+}}
+
+.profile-pill-rank {{
+    background: rgba(245, 158, 11, 0.15);
+    color: #fde047;
+    border: 1px solid rgba(245, 158, 11, 0.3);
+    border-radius: 12px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    padding: 2px 10px;
+}}
+
+/* Pulsing AI Online Indicator */
+.ai-status-pill {{
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(16, 185, 129, 0.12);
+    border: 1px solid rgba(16, 185, 129, 0.28);
+    border-radius: 20px;
+    padding: 6px 14px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: #6ee7b7;
+    margin-bottom: 12px;
+}}
+
+.ai-pulse-dot {{
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background-color: #10b981;
+    box-shadow: 0 0 0 rgba(16, 185, 129, 0.6);
+    animation: pulseDot 2s infinite;
+}}
+
+@keyframes pulseDot {{
+    0% {{ box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }}
+    70% {{ box-shadow: 0 0 0 7px rgba(16, 185, 129, 0); }}
+    100% {{ box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }}
+}}
+
+/* Segmented Control / Modern Pill Tabs */
+div[role="tablist"] {{
+    background: rgba(19, 27, 46, 0.8) !important;
+    border: 1px solid var(--ea-border) !important;
+    border-radius: 16px !important;
+    padding: 5px !important;
+    gap: 5px !important;
+    margin-bottom: 24px !important;
+    backdrop-filter: blur(12px) !important;
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.2) !important;
+}}
+
+div[role="tablist"] button {{
+    background: transparent !important;
+    color: var(--ea-text-muted) !important;
+    border-radius: 11px !important;
+    padding: 8px 18px !important;
+    font-size: 0.92rem !important;
+    font-weight: 600 !important;
+    border: 1px solid transparent !important;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+    margin: 0 !important;
+}}
+
+div[role="tablist"] button:hover {{
+    background: rgba(255, 255, 255, 0.05) !important;
+    color: #ffffff !important;
+}}
+
+div[role="tablist"] button[aria-selected="true"] {{
+    background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%) !important;
+    color: #ffffff !important;
+    border: 1px solid rgba(255, 255, 255, 0.2) !important;
+    box-shadow: 0 4px 14px rgba(37, 99, 235, 0.4) !important;
+    font-weight: 700 !important;
+}}
+
+div[role="tablist"] button p {{
+    font-size: 0.92rem !important;
+    font-weight: inherit !important;
+    margin: 0 !important;
+}}
+
+/* Hero Course Header Box */
+.course-header-box {{
+    background: linear-gradient(145deg, #131b2e 0%, #0d1322 100%) !important;
+    color: #ffffff !important;
+    border: 1px solid var(--ea-border) !important;
+    padding: 22px 26px !important;
+    border-radius: var(--ea-radius-md) !important;
+    margin-bottom: 20px !important;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25) !important;
+    position: relative !important;
+    overflow: hidden !important;
+}}
+
+.course-header-box::before {{
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, #3b82f6 0%, #8b5cf6 50%, #10b981 100%);
+}}
+
+.course-header-box h2 {{
+    color: #ffffff !important;
+    font-family: 'Cairo', 'AdnaneSans', 'Plus Jakarta Sans', sans-serif !important;
+    font-size: 1.85rem !important;
+    font-weight: 800 !important;
+    margin-top: 14px !important;
+    margin-bottom: 6px !important;
+    line-height: 1.5 !important;
+    letter-spacing: -0.01em !important;
+}}
+
+.course-header-subtitle {{
+    font-size: 0.88rem !important;
+    color: var(--ea-text-muted) !important;
+    font-weight: 500 !important;
+}}
+
+/* Subject Badges with Harmonious Glow */
+.badge-subject {{
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 14px;
+    border-radius: var(--ea-radius-full);
+    font-size: 0.85rem;
+    font-weight: 700;
+    margin-right: 6px;
+    color: #ffffff !important;
+    letter-spacing: 0.3px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}}
+.badge-maths {{ background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%) !important; }}
+.badge-pc {{ background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%) !important; }}
+.badge-svt {{ background: linear-gradient(135deg, #059669 0%, #047857 100%) !important; }}
+.badge-islamic {{ background: linear-gradient(135deg, #0d9488 0%, #0f766e 100%) !important; }}
+.badge-histgeo {{ background: linear-gradient(135deg, #d97706 0%, #b45309 100%) !important; }}
+.badge-arabic {{ background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%) !important; }}
+.badge-francais {{ background: linear-gradient(135deg, #4f46e5 0%, #4338ca 100%) !important; }}
+.badge-anglais {{ background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%) !important; }}
+.badge-default {{ background: linear-gradient(135deg, #64748b 0%, #475569 100%) !important; }}
+
+.badge-lang {{
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 12px;
+    border-radius: var(--ea-radius-full);
+    font-size: 0.82rem;
+    font-weight: 700;
+    background-color: rgba(255, 255, 255, 0.08) !important;
+    color: #e2e8f0 !important;
+    border: 1px solid var(--ea-border) !important;
+}}
+
+/* Concept Chips */
+.concept-tag {{
+    display: inline-block;
+    background: rgba(56, 189, 248, 0.12);
+    color: #38bdf8;
+    border: 1px solid rgba(56, 189, 248, 0.28);
+    padding: 3px 12px;
+    border-radius: 12px;
+    font-size: 0.84rem;
+    font-weight: 600;
+    margin: 3px 4px;
+    transition: all 0.2s ease;
+}}
+.concept-tag:hover {{
+    background: rgba(56, 189, 248, 0.2);
+    border-color: rgba(56, 189, 248, 0.45);
+    transform: translateY(-1px);
+}}
+
+/* Cards: Trap and Explanation */
 .trap-card {{
-    background-color: rgba(245, 158, 11, 0.12) !important;
-    border-left: 5px solid #f59e0b !important;
-    color: var(--text-color, #fef3c7) !important;
-    padding: 14px 18px;
-    border-radius: 8px;
-    margin: 12px 0;
+    background-color: rgba(245, 158, 11, 0.09) !important;
+    border-left: 4px solid var(--ea-amber) !important;
+    color: #fef3c7 !important;
+    padding: 16px 20px;
+    border-radius: var(--ea-radius-sm);
+    margin: 14px 0;
+    box-shadow: 0 4px 12px rgba(245, 158, 11, 0.08);
 }}
 
 .trap-card-rtl {{
-    background-color: rgba(245, 158, 11, 0.12) !important;
-    border-right: 5px solid #f59e0b !important;
-    color: var(--text-color, #fef3c7) !important;
-    padding: 14px 18px;
-    border-radius: 8px;
-    margin: 12px 0;
+    background-color: rgba(245, 158, 11, 0.09) !important;
+    border-right: 4px solid var(--ea-amber) !important;
+    color: #fef3c7 !important;
+    padding: 16px 20px;
+    border-radius: var(--ea-radius-sm);
+    margin: 14px 0;
     direction: rtl !important;
     text-align: right !important;
     font-family: 'AdnaneNaskh', 'Noto Naskh Arabic', serif !important;
     font-size: 1.18rem !important;
     line-height: 2.1 !important;
+    box-shadow: 0 4px 12px rgba(245, 158, 11, 0.08);
 }}
 
 .explanation-card {{
-    background-color: rgba(34, 197, 94, 0.12) !important;
-    border-left: 5px solid #22c55e !important;
-    color: var(--text-color, #dcfce7) !important;
-    padding: 14px 18px;
-    border-radius: 8px;
-    margin: 12px 0;
+    background-color: rgba(16, 185, 129, 0.09) !important;
+    border-left: 4px solid var(--ea-emerald) !important;
+    color: #dcfce7 !important;
+    padding: 16px 20px;
+    border-radius: var(--ea-radius-sm);
+    margin: 14px 0;
+    box-shadow: 0 4px 12px rgba(16, 185, 129, 0.08);
 }}
 
 .explanation-card-rtl {{
-    background-color: rgba(34, 197, 94, 0.12) !important;
-    border-right: 5px solid #22c55e !important;
-    color: var(--text-color, #dcfce7) !important;
-    padding: 14px 18px;
-    border-radius: 8px;
-    margin: 12px 0;
+    background-color: rgba(16, 185, 129, 0.09) !important;
+    border-right: 4px solid var(--ea-emerald) !important;
+    color: #dcfce7 !important;
+    padding: 16px 20px;
+    border-radius: var(--ea-radius-sm);
+    margin: 14px 0;
     direction: rtl !important;
     text-align: right !important;
     font-family: 'AdnaneNaskh', 'Noto Naskh Arabic', serif !important;
     font-size: 1.18rem !important;
     line-height: 2.1 !important;
+    box-shadow: 0 4px 12px rgba(16, 185, 129, 0.08);
 }}
 
-.concept-tag {{
-    display: inline-block;
-    background-color: rgba(56, 189, 248, 0.15);
-    color: var(--text-color, #38bdf8);
-    border: 1px solid rgba(56, 189, 248, 0.3);
-    padding: 2px 10px;
-    border-radius: 12px;
-    font-size: 0.85rem;
-    margin: 3px 4px;
+/* Modern Buttons Override */
+button[kind="primary"], [data-testid="stBaseButton-primary"] {{
+    background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%) !important;
+    border: 1px solid rgba(255, 255, 255, 0.15) !important;
+    border-radius: 12px !important;
+    font-weight: 700 !important;
+    color: #ffffff !important;
+    box-shadow: 0 4px 14px rgba(37, 99, 235, 0.35) !important;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+    letter-spacing: 0.2px !important;
+}}
+
+button[kind="primary"]:hover, [data-testid="stBaseButton-primary"]:hover {{
+    transform: translateY(-1px) !important;
+    box-shadow: 0 6px 20px rgba(37, 99, 235, 0.5) !important;
+}}
+
+button[kind="secondary"], [data-testid="stBaseButton-secondary"] {{
+    background: rgba(19, 27, 46, 0.85) !important;
+    border: 1px solid var(--ea-border) !important;
+    border-radius: 12px !important;
+    color: #f1f5f9 !important;
+    font-weight: 600 !important;
+    transition: all 0.2s ease !important;
+}}
+
+button[kind="secondary"]:hover, [data-testid="stBaseButton-secondary"]:hover {{
+    background: rgba(28, 39, 66, 0.95) !important;
+    border-color: var(--ea-border-hover) !important;
+    color: #ffffff !important;
+    transform: translateY(-1px) !important;
+}}
+
+/* Modern Metrics Styling */
+[data-testid="stMetric"] {{
+    background: linear-gradient(145deg, rgba(19, 27, 46, 0.85) 0%, rgba(13, 19, 34, 0.95) 100%) !important;
+    border: 1px solid var(--ea-border) !important;
+    border-radius: var(--ea-radius-md) !important;
+    padding: 16px 20px !important;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18) !important;
+    transition: all 0.2s ease !important;
+}}
+
+[data-testid="stMetric"]:hover {{
+    border-color: var(--ea-border-hover) !important;
+    transform: translateY(-2px) !important;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25) !important;
+}}
+
+[data-testid="stMetricLabel"] {{
+    color: var(--ea-text-muted) !important;
+    font-size: 0.85rem !important;
+    font-weight: 600 !important;
+    letter-spacing: 0.3px !important;
+}}
+
+[data-testid="stMetricValue"] {{
+    color: #ffffff !important;
+    font-weight: 800 !important;
+    font-size: 1.85rem !important;
+}}
+
+/* Expanders */
+[data-testid="stExpander"] {{
+    background: rgba(19, 27, 46, 0.6) !important;
+    border: 1px solid var(--ea-border) !important;
+    border-radius: var(--ea-radius-md) !important;
+    margin-bottom: 12px !important;
+}}
+
+[data-testid="stExpander"] summary {{
+    font-weight: 700 !important;
+    color: #f1f5f9 !important;
+}}
+
+/* Inputs, Selectboxes & Textareas */
+div[data-baseweb="select"] > div,
+div[data-baseweb="input"] > div,
+div[data-baseweb="textarea"] > div {{
+    background-color: rgba(15, 23, 42, 0.85) !important;
+    border: 1px solid var(--ea-border) !important;
+    border-radius: 12px !important;
+    color: #ffffff !important;
+    transition: all 0.2s ease !important;
+}}
+
+div[data-baseweb="select"]:hover > div,
+div[data-baseweb="input"]:hover > div {{
+    border-color: var(--ea-border-hover) !important;
+}}
+
+/* Chat Messages Styling */
+[data-testid="stChatMessage"] {{
+    background: rgba(19, 27, 46, 0.65) !important;
+    border: 1px solid var(--ea-border) !important;
+    border-radius: 16px !important;
+    padding: 16px 20px !important;
+    margin-bottom: 14px !important;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12) !important;
+}}
+
+[data-testid="stChatMessage"][data-test-is-user="true"] {{
+    background: linear-gradient(135deg, rgba(37, 99, 235, 0.15) 0%, rgba(30, 64, 175, 0.2) 100%) !important;
+    border: 1px solid rgba(59, 130, 246, 0.3) !important;
+}}
+
+/* Quiz Question Card */
+.quiz-question-card {{
+    background: linear-gradient(145deg, rgba(19, 27, 46, 0.75) 0%, rgba(13, 19, 34, 0.9) 100%);
+    border: 1px solid var(--ea-border);
+    border-radius: var(--ea-radius-md);
+    padding: 18px 22px;
+    margin-top: 16px;
+    margin-bottom: 8px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.16);
+}}
+
+.quiz-q-badge {{
+    display: inline-flex;
+    align-items: center;
+    background: rgba(59, 130, 246, 0.15);
+    color: #93c5fd;
+    border: 1px solid rgba(59, 130, 246, 0.3);
+    border-radius: 8px;
+    padding: 3px 12px;
+    font-size: 0.82rem;
+    font-weight: 700;
+    margin-bottom: 10px;
+    letter-spacing: 0.3px;
+}}
+
+/* Alert / Status Overrides */
+div[data-testid="stAlert"] {{
+    border-radius: var(--ea-radius-md) !important;
+    border-width: 1px !important;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15) !important;
 }}
 </style>
 """
@@ -1363,17 +1730,48 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
             height=0,
         )
 
-    # Barre Latérale : Profil et Navigation
-    st.sidebar.markdown("## 🎓 **Ecole Adnane**")
+    # Barre Latérale : En-tête & Profil Élève Élégant
+    st.sidebar.markdown(
+        """
+        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 14px;">
+            <div style="width: 36px; height: 36px; border-radius: 10px; background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); display: flex; align-items: center; justify-content: center; font-size: 1.3rem; box-shadow: 0 4px 12px rgba(37,99,235,0.35);">
+                🎓
+            </div>
+            <div>
+                <div style="font-size: 1.25rem; font-weight: 800; color: #ffffff; letter-spacing: -0.02em; line-height: 1.1;">Ecole Adnane</div>
+                <div style="font-size: 0.75rem; color: #94a3b8; font-weight: 500;">Plateforme de Révision</div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
     user_cycle = get_pedagogical_cycle(current_user.get("age"), level=current_user.get("level"))
     role_badge = "👑 Administrateur" if is_admin else user_cycle["badge_text"]
     _my_rank = None if is_admin else get_student_rank(logged_in_user_id)
-    _my_medal = f"{_my_rank['emoji']} " if _my_rank else ""
-    st.sidebar.markdown(f"**{_my_medal}{current_user['name']}**  \n`{current_user['email']}`  \n`{role_badge}`")
-    if _my_rank:
-        st.sidebar.caption(f"Rang {_my_rank['label']} • {_my_rank['badge_count']} trophée(s)")
+    initial_letter = (current_user.get("name") or "A")[0].upper()
 
-    st.sidebar.divider()
+    rank_html = f"<span class='profile-pill-rank'>{_my_rank['emoji']} {_my_rank['label']}</span>" if _my_rank else ""
+    cycle_html = f"<span class='profile-pill-cycle'>{role_badge}</span>"
+    trophies_caption = f"<div style='font-size: 0.75rem; color: #94a3b8; margin-top: 6px;'>🏆 {_my_rank['badge_count']} trophée(s) remportés</div>" if _my_rank else ""
+
+    profile_card_html = f"""
+    <div class="sidebar-profile-card">
+        <div class="profile-avatar-row">
+            <div class="profile-avatar-circle">{initial_letter}</div>
+            <div>
+                <div class="profile-name-text">{current_user['name']}</div>
+                <div class="profile-email-text">{current_user['email']}</div>
+            </div>
+        </div>
+        <div class="profile-badges-row">
+            {cycle_html}
+            {rank_html}
+        </div>
+        {trophies_caption}
+    </div>
+    """
+    st.sidebar.markdown(profile_card_html, unsafe_allow_html=True)
 
     # Configuration de la navigation selon le rôle
     is_global_admin_view = False
@@ -1455,10 +1853,17 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
 
     has_openrouter_access = is_user_openrouter_allowed(active_user_id) and bool(get_openrouter_api_key())
 
-    if user_api_key:
-        st.sidebar.success("🟢 IA active (Clé Gemini)", icon="✅")
-    elif has_openrouter_access:
-        st.sidebar.success("🟢 IA active (Clé OpenRouter École)", icon="🌐")
+    if user_api_key or has_openrouter_access:
+        ai_provider_name = "Clé Gemini" if user_api_key else "OpenRouter École"
+        st.sidebar.markdown(
+            f"""
+            <div class="ai-status-pill">
+                <span class="ai-pulse-dot"></span>
+                <span>Tuteur IA connecté ({ai_provider_name})</span>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
     else:
         st.sidebar.warning("⚠️ Clé IA non configurée", icon="🔑")
         if not is_admin:
@@ -3097,26 +3502,26 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
 
                     st.markdown(
                         f"""
-                        <div style="background: linear-gradient(135deg, rgba(37, 99, 235, 0.08) 0%, rgba(14, 165, 233, 0.08) 100%); border: 2px solid {theme['primary']}; border-radius: 16px; padding: 22px; margin-bottom: 20px;">
+                        <div style="background: linear-gradient(135deg, rgba(37, 99, 235, 0.12) 0%, rgba(14, 165, 233, 0.12) 100%); border: 1.5px solid {theme['primary']}; border-radius: 16px; padding: 22px; margin-bottom: 20px; box-shadow: 0 4px 18px rgba(0,0,0,0.25);">
                             <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
                                 <span style="font-size: 32px;">{theme['icon']}</span>
                                 <div>
-                                    <h3 style="margin: 0; color: #1e3a8a; font-size: 19px;">{hero_title}</h3>
-                                    <p style="margin: 3px 0 0 0; color: #64748b; font-size: 13.5px;">{hero_subtitle}</p>
+                                    <h3 style="margin: 0; color: #ffffff; font-size: 19px; font-weight: 800;">{hero_title}</h3>
+                                    <p style="margin: 3px 0 0 0; color: #94a3b8; font-size: 13.5px;">{hero_subtitle}</p>
                                 </div>
                             </div>
-                            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin-top: 14px;">
-                                <div style="background: white; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px;">
-                                    <strong style="color: {theme['primary']};">{p1_title}</strong>
-                                    <p style="font-size: 12.5px; color: #475569; margin: 4px 0 0 0;">{p1_desc}</p>
+                            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-top: 14px;">
+                                <div style="background: rgba(19, 27, 46, 0.85); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 12px; padding: 14px;">
+                                    <strong style="color: {theme['primary']}; font-size: 14px;">{p1_title}</strong>
+                                    <p style="font-size: 12.5px; color: #cbd5e1; margin: 4px 0 0 0; line-height: 1.4;">{p1_desc}</p>
                                 </div>
-                                <div style="background: white; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px;">
-                                    <strong style="color: #059669;">{p2_title}</strong>
-                                    <p style="font-size: 12.5px; color: #475569; margin: 4px 0 0 0;">{p2_desc}</p>
+                                <div style="background: rgba(19, 27, 46, 0.85); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 12px; padding: 14px;">
+                                    <strong style="color: #34d399; font-size: 14px;">{p2_title}</strong>
+                                    <p style="font-size: 12.5px; color: #cbd5e1; margin: 4px 0 0 0; line-height: 1.4;">{p2_desc}</p>
                                 </div>
-                                <div style="background: white; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px;">
-                                    <strong style="color: #d97706;">{p3_title}</strong>
-                                    <p style="font-size: 12.5px; color: #475569; margin: 4px 0 0 0;">{p3_desc}</p>
+                                <div style="background: rgba(19, 27, 46, 0.85); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 12px; padding: 14px;">
+                                    <strong style="color: #fbbf24; font-size: 14px;">{p3_title}</strong>
+                                    <p style="font-size: 12.5px; color: #cbd5e1; margin: 4px 0 0 0; line-height: 1.4;">{p3_desc}</p>
                                 </div>
                             </div>
                         </div>
@@ -3361,12 +3766,25 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                 for idx, q in enumerate(questions):
                     if is_ar:
                         st.markdown(
-                            f"<div class='rtl-box' style='font-size:1.22rem; font-weight:700; margin-top:16px; margin-bottom:8px;'>"
-                            f"السؤال {idx + 1} : {q['question']}</div>",
+                            f"""
+                            <div class='quiz-question-card rtl-box'>
+                                <div><span class='quiz-q-badge'>السؤال {idx + 1} من {len(questions)}</span></div>
+                                <div style='font-size: 1.25rem; font-weight: 800; color: #ffffff; line-height: 1.6;'>{q['question']}</div>
+                            </div>
+                            """,
                             unsafe_allow_html=True,
                         )
                     else:
-                        st.markdown(f"**Question {idx + 1} :** {q['question']}")
+                        q_badge_txt = f"Question {idx + 1} of {len(questions)}" if is_en else f"Question {idx + 1} sur {len(questions)}"
+                        st.markdown(
+                            f"""
+                            <div class='quiz-question-card'>
+                                <div><span class='quiz-q-badge'>{q_badge_txt}</span></div>
+                                <div style='font-size: 1.15rem; font-weight: 700; color: #ffffff; line-height: 1.5;'>{q['question']}</div>
+                            </div>
+                            """,
+                            unsafe_allow_html=True,
+                        )
                     options = q.get("options", [])
                     ans_idx = q.get("answer_index", 0)
                     explanation = q.get("explanation", "")
