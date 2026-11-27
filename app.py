@@ -761,9 +761,19 @@ h1, h2, h3, h4, h5, h6 {{
     100% {{ box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }}
 }}
 
-/* Sidebar Modern Navigation Menu (Turn radio into modern SaaS pill tabs) */
+/* Sidebar Modern Navigation Menu (SaaS Nav list, zero radio appearance) */
+[data-testid="stSidebar"] [data-testid="stRadio"] {{
+    background: transparent !important;
+    border: none !important;
+    padding: 0 !important;
+}}
+
+[data-testid="stSidebar"] [data-testid="stRadio"] > label {{
+    display: none !important;
+}}
+
 [data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"]:not([aria-orientation="horizontal"]) {{
-    gap: 8px !important;
+    gap: 6px !important;
     display: flex !important;
     flex-direction: column !important;
     background: transparent !important;
@@ -774,28 +784,42 @@ h1, h2, h3, h4, h5, h6 {{
 [data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"]:not([aria-orientation="horizontal"]) > label {{
     background: var(--ea-surface) !important;
     border: 1px solid var(--ea-border) !important;
-    border-radius: 14px !important;
-    padding: 12px 16px !important;
+    border-radius: 12px !important;
+    padding: 10px 14px !important;
     margin: 0 !important;
     cursor: pointer !important;
     display: flex !important;
     align-items: center !important;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04) !important;
-    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04) !important;
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
+    user-select: none !important;
 }}
 
-/* Hide the native radio circle button */
-[data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"]:not([aria-orientation="horizontal"]) > label > div:first-child {{
+/* Hide native radio circle button */
+[data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"]:not([aria-orientation="horizontal"]) > label > div:first-child,
+[data-testid="stSidebar"] [data-testid="stRadio"] input[type="radio"] {{
     display: none !important;
+    visibility: hidden !important;
+    width: 0 !important;
+    height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
 }}
 
-/* Label text */
-[data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"]:not([aria-orientation="horizontal"]) > label div[data-testid="stMarkdownContainer"] p {{
-    font-size: 0.95rem !important;
+/* Sidebar Nav item text (always protected from RTL/Arabic overrides) */
+[data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"]:not([aria-orientation="horizontal"]) > label div[data-testid="stMarkdownContainer"] p,
+[data-testid="stSidebar"] [data-testid="stRadio"] label p,
+[data-testid="stSidebar"] [data-testid="stRadio"] label span {{
+    font-size: 0.92rem !important;
     font-weight: 600 !important;
     color: var(--ea-text-muted) !important;
     margin: 0 !important;
-    transition: all 0.2s ease !important;
+    line-height: 1.35 !important;
+    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif !important;
+    direction: ltr !important;
+    text-align: left !important;
+    cursor: pointer !important;
+    user-select: none !important;
 }}
 
 /* Hover state */
@@ -809,17 +833,42 @@ h1, h2, h3, h4, h5, h6 {{
     color: var(--ea-text) !important;
 }}
 
-/* Selected / Active Navigation Item */
+/* Active / Selected Navigation Item */
 [data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"]:not([aria-orientation="horizontal"]) > label:has(input:checked) {{
-    background: linear-gradient(135deg, rgba(59, 130, 246, 0.16) 0%, rgba(139, 92, 246, 0.12) 100%) !important;
+    background: rgba(37, 99, 235, 0.12) !important;
     border: 1.5px solid var(--ea-primary) !important;
-    box-shadow: 0 4px 16px var(--ea-primary-glow) !important;
+    border-left: 4px solid var(--ea-primary) !important;
+    box-shadow: 0 4px 14px var(--ea-primary-glow) !important;
     transform: translateX(4px) !important;
 }}
 
 [data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"]:not([aria-orientation="horizontal"]) > label:has(input:checked) div[data-testid="stMarkdownContainer"] p {{
     color: var(--ea-primary) !important;
-    font-weight: 800 !important;
+    font-weight: 700 !important;
+}}
+
+/* Universal Cursor Pointer & No-Text-Select on all Interactive Elements (Prevents I-beam cursor) */
+[data-testid="stSidebar"] [data-testid="stRadio"] label,
+[data-testid="stSidebar"] [data-testid="stRadio"] label *,
+div[data-testid="stRadio"] label,
+div[data-testid="stRadio"] label *,
+[data-testid="stSegmentedControl"] button,
+[data-testid="stSegmentedControl"] button *,
+[data-testid="stPills"] button,
+[data-testid="stPills"] button *,
+div[role="tablist"] button,
+div[role="tablist"] button *,
+div[data-testid="stExpander"] summary,
+div[data-testid="stExpander"] summary *,
+div[data-testid="stVerticalBlockBorderWrapper"],
+div[data-testid="stVerticalBlockBorderWrapper"] p,
+div[data-testid="stVerticalBlockBorderWrapper"] span,
+.ea-course-card, .ea-course-card *,
+.badge-subject, .badge-lang, .concept-tag,
+.ea-hero-badge-pill,
+button, button * {{
+    cursor: pointer !important;
+    user-select: none !important;
 }}
 
 /* Horizontal Radios (Theme Toggle & Pill Switches) */
@@ -3467,19 +3516,19 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                     text-align: right !important;
                 }
 
-                /* Support RTL pour les boutons radio de quiz */
-                div[data-testid="stRadio"] {
+                /* Support RTL pour les boutons radio de quiz (strictement dans les onglets de cours) */
+                .stTabs div[data-testid="stRadio"] {
                     direction: rtl !important;
                     text-align: right !important;
                 }
-                div[data-testid="stRadio"] > div[role="radiogroup"] {
+                .stTabs div[data-testid="stRadio"] > div[role="radiogroup"] {
                     direction: rtl !important;
                     text-align: right !important;
                     display: flex !important;
                     flex-direction: column !important;
                     align-items: stretch !important;
                 }
-                div[data-testid="stRadio"] label {
+                .stTabs div[data-testid="stRadio"] label {
                     direction: rtl !important;
                     text-align: right !important;
                     display: flex !important;
@@ -3490,27 +3539,29 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                     padding: 8px 12px !important;
                     border-radius: 8px !important;
                     transition: background 0.2s ease !important;
+                    cursor: pointer !important;
                 }
-                div[data-testid="stRadio"] label:hover {
+                .stTabs div[data-testid="stRadio"] label:hover {
                     background: rgba(255, 255, 255, 0.05) !important;
                 }
-                div[data-testid="stRadio"] label > div:first-child {
+                .stTabs div[data-testid="stRadio"] label > div:first-child {
                     margin-right: 0 !important;
                     margin-left: 10px !important;
                     flex-shrink: 0 !important;
                 }
-                div[data-testid="stRadio"] label [data-testid="stMarkdownContainer"] {
+                .stTabs div[data-testid="stRadio"] label [data-testid="stMarkdownContainer"] {
                     direction: rtl !important;
                     text-align: right !important;
                     flex-grow: 1 !important;
                 }
-                div[data-testid="stRadio"] label [data-testid="stMarkdownContainer"] p {
+                .stTabs div[data-testid="stRadio"] label [data-testid="stMarkdownContainer"] p {
                     font-family: 'AdnaneNaskh', 'Noto Naskh Arabic', 'Amiri', serif !important;
-                    font-size: 1.2rem !important;
-                    line-height: 2 !important;
+                    font-size: 1.15rem !important;
+                    line-height: 1.9 !important;
                     direction: rtl !important;
                     text-align: right !important;
                     margin: 0 !important;
+                    cursor: pointer !important;
                 }
 
                 /* Blocs horizontaux et métriques RTL */
@@ -3529,33 +3580,35 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                 }
 
                 /* Alertes Streamlit RTL */
-                div[data-testid="stAlert"] {
+                .stTabs div[data-testid="stAlert"] {
                     direction: rtl !important;
                     text-align: right !important;
                 }
-                div[data-testid="stAlert"] [data-testid="stMarkdownContainer"] {
+                .stTabs div[data-testid="stAlert"] [data-testid="stMarkdownContainer"] {
                     direction: rtl !important;
                     text-align: right !important;
                 }
-                div[data-testid="stAlert"] [data-testid="stMarkdownContainer"] p {
+                .stTabs div[data-testid="stAlert"] [data-testid="stMarkdownContainer"] p {
                     direction: rtl !important;
                     text-align: right !important;
                     font-family: 'AdnaneNaskh', 'Noto Naskh Arabic', serif !important;
-                    font-size: 1.15rem !important;
-                    line-height: 2 !important;
+                    font-size: 1.1rem !important;
+                    line-height: 1.8 !important;
                 }
 
                 /* Expanders RTL */
-                div[data-testid="stExpander"] details summary {
+                .stTabs div[data-testid="stExpander"] details summary {
                     direction: rtl !important;
                     text-align: right !important;
                     font-family: 'AdnaneSans', 'Noto Sans Arabic', sans-serif !important;
+                    cursor: pointer !important;
                 }
-                div[data-testid="stExpander"] details summary p {
+                .stTabs div[data-testid="stExpander"] details summary p {
                     direction: rtl !important;
                     text-align: right !important;
                     font-family: 'AdnaneSans', 'Noto Sans Arabic', sans-serif !important;
                     font-size: 1.05rem !important;
+                    cursor: pointer !important;
                 }
                 </style>
                 """
