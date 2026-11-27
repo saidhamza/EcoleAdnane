@@ -43,10 +43,13 @@ def get_config_value(key: str, default: Optional[str] = None) -> Optional[str]:
 
     env_path = get_env_path()
     if env_path.exists():
-        env_dict = dotenv_values(str(env_path))
-        val = env_dict.get(key)
-        if val:
-            return val
+        try:
+            env_dict = dotenv_values(str(env_path))
+            val = env_dict.get(key)
+            if val:
+                return val
+        except (OSError, PermissionError) as e_env:
+            logger.warning(f"Impossible de lire le fichier d'environnement {env_path} : {e_env}")
 
     db_val = get_setting(key)
     if db_val:
@@ -61,10 +64,13 @@ def save_config_value(key: str, value: str) -> None:
     os.environ[key] = value
     set_setting(key, value)
 
-    env_path = get_env_path()
-    if not env_path.exists():
-        env_path.touch(mode=0o600)
-    set_key(str(env_path), key, value)
+    try:
+        env_path = get_env_path()
+        if not env_path.exists():
+            env_path.touch(mode=0o600)
+        set_key(str(env_path), key, value)
+    except (OSError, PermissionError) as e_env:
+        logger.warning(f"Impossible d'écrire dans le fichier d'environnement {env_path} : {e_env}")
 
 
 def get_gemini_api_key() -> Optional[str]:
