@@ -2163,9 +2163,9 @@ L'APPLICATION INTERACTIVE NOTEBOOKLM DOIT COMPORTER :
    - Onglet 2 : 🎙️ الحوار التوضيحي المباشر (Podcast Élève)
    - Onglet 3 : 🧠 بطاقات التحدي والمراجعة (Study Flashcards)
 
-4. Contenu de l'Onglet 1 - Diapositives Pédagogiques Colorées (Slide Deck - 4 à 5 diapositives majeures) :
+4. Contenu de l'Onglet 1 - Diapositives Pédagogiques Colorées (Slide Deck - 3 à 4 diapositives majeures percutantes) :
    Chaque diapositive doit expliquer simplement une idée forte à l'élève :
-   - Numéro et tag coloré (ex: '01 / 05 • سياق الأزمة').
+   - Numéro et tag coloré (ex: '01 / 04 • سياق الأزمة').
    - Grand Titre Clair et vulgarisé (sans jargon compliqué).
    - 2 Grands Chiffres Clés Illustrés (Big Stat Highlights) avec grands nombres colorés et pastille d'explication simplifiée en 1 phrase claire (ex: '1929' - انهيار بورصة وول ستريت وبداية الأزمة | '6 ملايين' - عاطل عن العمل بألمانيا).
    - Cartes d'Analyse Colorées 'Causes ➡️ Mécanisme ➡️ Résultat' avec icônes colorées (🎯 السبب، ⚙️ كيف حدث ذلك؟، 💥 النتيجة).
@@ -2278,7 +2278,7 @@ RÈGLES D'EXÉCUTION :
                 messages=messages,
                 api_key=openrouter_key,
                 temperature=0.3,
-                max_tokens=8192,
+                max_tokens=16000,
             )
         except Exception as e_or:
             logger.warning(f"Échec OpenRouter pour expérience interactive ({e_or}), essai via Gemini/LLM local...")
