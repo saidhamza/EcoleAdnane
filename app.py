@@ -2031,6 +2031,36 @@ ul[data-baseweb="menu"] li:hover,
     background: var(--ea-surface-hover) !important;
 }}
 
+/* ---- THEME FIDELITY 5: course tabs text & scroll arrows ---- */
+div[role="tablist"] button[role="tab"],
+div[role="tablist"] button[role="tab"] * {{
+    color: var(--ea-text-muted) !important;
+    -webkit-text-fill-color: var(--ea-text-muted) !important;
+}}
+div[role="tablist"] button[role="tab"]:hover,
+div[role="tablist"] button[role="tab"]:hover * {{
+    color: var(--ea-text) !important;
+    -webkit-text-fill-color: var(--ea-text) !important;
+}}
+div[role="tablist"] button[role="tab"][aria-selected="true"],
+div[role="tablist"] button[role="tab"][aria-selected="true"] * {{
+    background: var(--ea-primary) !important;
+    color: var(--ea-on-primary) !important;
+    -webkit-text-fill-color: var(--ea-on-primary) !important;
+}}
+div[role="tablist"] button:not([role="tab"]),
+[data-testid="stTabs"] button:not([role="tab"]) {{
+    background: var(--ea-surface-hover) !important;
+    background-color: var(--ea-surface-hover) !important;
+    color: var(--ea-text) !important;
+    border-color: var(--ea-border) !important;
+}}
+div[role="tablist"] button:not([role="tab"]) svg,
+[data-testid="stTabs"] button:not([role="tab"]) svg {{
+    fill: var(--ea-text) !important;
+    color: var(--ea-text) !important;
+}}
+
 /* ---- COMPACT + TYPOGRAPHY LAYER ---- */
 html {{ font-size: 14.5px; }}
 .stApp, [data-testid="stMarkdownContainer"] p, [data-testid="stMarkdownContainer"] li {{ font-size: 1rem; line-height: 1.55; }}
