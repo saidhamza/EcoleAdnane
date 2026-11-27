@@ -2917,27 +2917,6 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
 
             is_valid_pdf = bool(file_path and os.path.exists(file_path) and file_path.lower().endswith(".pdf"))
 
-            # Détection d'un PDF généré (Guide visuel ou Histoire)
-            guide_pdf_rel = current_course.get("explanatory_guide_pdf_url")
-            story_pdf_rel = current_course.get("story_pdf_url")
-            gen_pdf_path = None
-            gen_direct_url = None
-            gen_doc_title = None
-
-            static_root = Path(__file__).parent / "static"
-            if guide_pdf_rel:
-                cand = static_root / guide_pdf_rel.replace("/static/", "")
-                if cand.exists():
-                    gen_pdf_path = cand
-                    gen_direct_url = guide_pdf_rel
-                    gen_doc_title = "Guide Visuel Explicatif (PDF)" if not is_ar else "الدليل البصري التوضيحي (PDF)"
-            if not gen_pdf_path and story_pdf_rel:
-                cand = static_root / story_pdf_rel.replace("/static/", "")
-                if cand.exists():
-                    gen_pdf_path = cand
-                    gen_direct_url = story_pdf_rel
-                    gen_doc_title = "Livre Illustré Pédagogique (PDF)" if not is_ar else "الكتاب المصور التربوي (PDF)"
-
             if is_valid_pdf:
                 static_pdf_dir = Path(__file__).parent / "static" / "pdf"
                 static_pdf_dir.mkdir(parents=True, exist_ok=True)
@@ -2973,60 +2952,15 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                         use_container_width=True,
                     )
 
-                if gen_direct_url:
-                    st.caption(
-                        f"💡 *Ce cours dispose également d'un **[{gen_doc_title}]({gen_direct_url})** haute résolution disponible dans l'onglet **📚 Guide Visuel & Album Illustré**.*"
-                    )
-
                 st.write("")
-                st.markdown(
-                    f'<iframe src="{direct_url}" width="100%" height="750px" style="border: 1px solid #cbd5e1; border-radius: 10px;"></iframe>',
-                    unsafe_allow_html=True,
-                )
-            elif gen_pdf_path:
-                info_msg = (
-                    f"✨ **Document du cours disponible : {gen_doc_title}**\n\n"
-                    f"Le document source n'est pas sur le disque, mais le cours dispose de son {gen_doc_title} haute résolution généré et sauvegardé."
-                    if not is_ar else
-                    f"✨ **وثيقة الدرس المتوفرة : {gen_doc_title}**\n\n"
-                    f"يتوفر هذا الدرس على نسخته البصرية التوضيحية بصيغة PDF عالية الدقة ومحفوظة."
-                )
-                st.info(info_msg)
-
-                with open(gen_pdf_path, "rb") as f:
-                    gen_pdf_data = f.read()
-
-                col_dl_link, col_dl_btn = st.columns([1.5, 1])
-                with col_dl_link:
-                    st.link_button(
-                        label=f"📥 Télécharger le {gen_doc_title} (Lien direct)" if not is_ar else f"📥 تحميل {gen_doc_title} (رابط مباشر)",
-                        url=gen_direct_url,
-                        type="primary",
-                        use_container_width=True,
-                    )
-                with col_dl_btn:
-                    clean_dl_name = current_course.get("file_name") or f"{current_course.get('title', 'cours')}.pdf"
-                    if not clean_dl_name.lower().endswith(".pdf"):
-                        clean_dl_name = f"{clean_dl_name}.pdf"
-                    st.download_button(
-                        label="💾 Téléchargement alternatif" if not is_ar else "💾 تحميل بديل",
-                        data=gen_pdf_data,
-                        file_name=clean_dl_name,
-                        mime="application/pdf",
-                        key=f"dl_gen_pdf_{current_course['id']}",
-                        use_container_width=True,
-                    )
-
-                st.write("")
-                st.markdown(
-                    f'<iframe src="{gen_direct_url}" width="100%" height="750px" style="border: 1px solid #cbd5e1; border-radius: 10px;"></iframe>',
-                    unsafe_allow_html=True,
+                render_html(
+                    f'<iframe src="{direct_url}" width="100%" height="750px" style="border: 1px solid #cbd5e1; border-radius: 10px;"></iframe>'
                 )
             else:
                 msg_warn = (
-                    "⚠️ Fichier PDF original non trouvé sur le disque. Vous pouvez générer un **Guide Visuel ou Album Illustré en PDF** dans l'onglet **📚 Guide Visuel & Album Illustré**, ou réimporter le document dans **➕ Ajouter un Cours**."
+                    "⚠️ Fichier PDF original non trouvé sur le disque. Vous pouvez réimporter le document source dans **➕ Ajouter un Cours**."
                     if not is_ar else
-                    "⚠️ لم يتم العثور على ملف الـ PDF الأصلي في القرص. يمكنك إنشاء **دليل بصري أو قصة مصورة بصيغة PDF** في تبويب **📚 دليل بصري وقصص**، أو إعادة رفع الوثيقة في **➕ إضافة درس**."
+                    "⚠️ لم يتم العثور على ملف الـ PDF الأصلي في القرص. يمكنك إعادة رفع الوثيقة الأصلية في **➕ إضافة درس**."
                 )
                 st.warning(msg_warn)
 
