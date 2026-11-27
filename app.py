@@ -3069,6 +3069,16 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
         CATALOG_VIEW = "🗂️ Catalogue des Cours"
         WORKSPACE_VIEW = "📖 Espace d'Étude Immergé"
 
+        def _cb_open_course(c_id: int) -> None:
+            st.session_state["student_selected_course_id"] = c_id
+            st.session_state["revision_view_segmented"] = WORKSPACE_VIEW
+
+        def _cb_back_to_catalog() -> None:
+            st.session_state["revision_view_segmented"] = CATALOG_VIEW
+
+        def _cb_switch_course(c_id: int) -> None:
+            st.session_state["student_selected_course_id"] = c_id
+
         if "revision_view_segmented" not in st.session_state:
             st.session_state["revision_view_segmented"] = CATALOG_VIEW
 
@@ -3134,10 +3144,14 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                             ft_html += '</div>'
                             st.markdown(ft_html, unsafe_allow_html=True)
 
-                            if st.button("🚀 Étudier ce cours", key=f"btn_open_card_{c['id']}", type="primary", use_container_width=True):
-                                st.session_state["student_selected_course_id"] = c["id"]
-                                st.session_state["revision_view_segmented"] = WORKSPACE_VIEW
-                                st.rerun()
+                            st.button(
+                                "🚀 Étudier ce cours",
+                                key=f"btn_open_card_{c['id']}",
+                                type="primary",
+                                use_container_width=True,
+                                on_click=_cb_open_course,
+                                args=(c["id"],),
+                            )
             return
 
         # -------------------------------------------------------------
@@ -3153,9 +3167,12 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
 
         bar_col1, bar_col2, bar_col3 = st.columns([1.5, 2.5, 1.2])
         with bar_col1:
-            if st.button("⬅️ Retour au Catalogue", key="ws_btn_back_catalog", use_container_width=True):
-                st.session_state["revision_view_segmented"] = CATALOG_VIEW
-                st.rerun()
+            st.button(
+                "⬅️ Retour au Catalogue",
+                key="ws_btn_back_catalog",
+                use_container_width=True,
+                on_click=_cb_back_to_catalog,
+            )
 
         with bar_col2:
             new_selected_id = st.selectbox(
@@ -3173,13 +3190,25 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
         with bar_col3:
             p_col, n_col = st.columns(2)
             with p_col:
-                if st.button("◀️ Préc.", disabled=(c_idx == 0), key="ws_prev_course_btn", help="Cours précédent", use_container_width=True):
-                    st.session_state["student_selected_course_id"] = c_ids[c_idx - 1]
-                    st.rerun()
+                st.button(
+                    "◀️ Préc.",
+                    disabled=(c_idx == 0),
+                    key="ws_prev_course_btn",
+                    help="Cours précédent",
+                    use_container_width=True,
+                    on_click=_cb_switch_course,
+                    args=(c_ids[c_idx - 1] if c_idx > 0 else c_ids[0],),
+                )
             with n_col:
-                if st.button("Suiv. ▶️", disabled=(c_idx >= len(c_ids) - 1), key="ws_next_course_btn", help="Cours suivant", use_container_width=True):
-                    st.session_state["student_selected_course_id"] = c_ids[c_idx + 1]
-                    st.rerun()
+                st.button(
+                    "Suiv. ▶️",
+                    disabled=(c_idx >= len(c_ids) - 1),
+                    key="ws_next_course_btn",
+                    help="Cours suivant",
+                    use_container_width=True,
+                    on_click=_cb_switch_course,
+                    args=(c_ids[c_idx + 1] if c_idx < len(c_ids) - 1 else c_ids[-1],),
+                )
 
         selected_course_id = active_course_id
         current_course = get_course_by_id(selected_course_id, user_id=active_user_id)
