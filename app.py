@@ -104,6 +104,10 @@ try:
         save_course_story_scenario,
         get_course_story_pdf,
         save_course_story_pdf,
+        get_course_explanatory_guide,
+        save_course_explanatory_guide,
+        get_course_explanatory_guide_pdf,
+        save_course_explanatory_guide_pdf,
         ensure_course_pdf_on_disk,
         is_user_openrouter_allowed,
         set_user_openrouter_access,
@@ -173,6 +177,10 @@ except ImportError:
         save_course_story_scenario,
         get_course_story_pdf,
         save_course_story_pdf,
+        get_course_explanatory_guide,
+        save_course_explanatory_guide,
+        get_course_explanatory_guide_pdf,
+        save_course_explanatory_guide_pdf,
         ensure_course_pdf_on_disk,
         is_user_openrouter_allowed,
         set_user_openrouter_access,
@@ -252,6 +260,12 @@ from services.story_engine import (
     generate_course_story_scenario,
     build_story_pdf_and_viewer,
     generate_complete_story_and_pdf,
+)
+from services.explanatory_guide_engine import (
+    generate_course_explanatory_guide_deck,
+    build_explanatory_guide_pdf_and_viewer,
+    generate_complete_explanatory_guide,
+    detect_subject_theme,
 )
 from services.auth_manager import (
     check_active_user_session,
@@ -2451,7 +2465,7 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                 "⚡ بطاقة المراجعة",
                 "🧠 خريطة ذهنية",
                 "🎯 المفاهيم والمكتسبات",
-                "📚 قصة مصورة وكتاب تفاعلي",
+                "📚 دليل مرئي وقصة مصورة (PDF)",
                 "📝 تدريب الامتحان",
                 "🤖 الأستاذ سند",
                 "🏆 شارات وكؤوس الدرس",
@@ -2462,7 +2476,7 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                 "⚡ Revision Sheet",
                 "🧠 Mind Map",
                 "🎯 Key Concepts",
-                "📚 Storybook & Illustrated PDF",
+                "📚 Visual Guide & Storybook (PDF)",
                 "📝 Exam Quiz",
                 "🤖 AI Tutor (Sanad)",
                 "🏆 Course Trophies",
@@ -2473,7 +2487,7 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                 "⚡ Fiche Express",
                 "🧠 Carte Mentale",
                 "🎯 Notions & Acquis",
-                "📚 Histoire Illustrée & PDF",
+                "📚 Guide Visuel & Album Illustré (PDF)",
                 "📝 Entraînement Examen",
                 "🤖 Tuteur Virtuel (Sanad)",
                 "🏆 Trophées du Cours",
@@ -2892,224 +2906,322 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
             course_raw = current_course.get("raw_text") or current_course.get("summary_markdown") or ""
             course_lang = current_course.get("language") or ("ar" if is_ar else ("en" if is_en else "fr"))
 
+            theme = detect_subject_theme(course_subj)
+            is_scientific = theme["type"] in ("math", "physics_chemistry", "biology", "geography")
+
+            # Guide Explicatif Assets
+            guide_deck = get_course_explanatory_guide(course_id)
+            guide_pdf_url = get_course_explanatory_guide_pdf(course_id)
+            guide_pdf_disk = Path(__file__).parent / "static" / "guides" / f"guide_course_{course_id}.pdf"
+            guide_html_disk = Path(__file__).parent / "static" / "guides" / f"guide_course_{course_id}.html"
+            has_guide = bool(guide_pdf_url or guide_pdf_disk.exists() or guide_html_disk.exists())
+
+            # Storybook Assets
             story_scenario = get_course_story_scenario(course_id)
             story_pdf_url = get_course_story_pdf(course_id)
             anim_html = get_course_animation(course_id)
-
             pdf_path_disk = Path(__file__).parent / "static" / "stories" / f"story_course_{course_id}.pdf"
             html_path_disk = Path(__file__).parent / "static" / "stories" / f"story_course_{course_id}.html"
-            has_pdf = bool(story_pdf_url or pdf_path_disk.exists())
+            has_story_pdf = bool(story_pdf_url or pdf_path_disk.exists())
             has_story_html = html_path_disk.exists()
 
+            mode_options = ["guide", "story"]
             if is_ar:
-                st.markdown("### 📚 كتاب القصة المصورة التفاعلي & PDF للأطفال")
-                st.caption("تحويل الدرس إلى قصة شيقة مصورة بالألوان المائية مع قراءة صوتية مشكولة بالكامل بصوت المعلم وتصدير بصيغة PDF عالية الجودة.")
+                mode_labels = {
+                    "guide": "📐 دليل مرئي وشرح تفاعلي (رياضيات، علوم، جغرافيا...)",
+                    "story": "🎨 ألبوم قصة مصورة للأطفال (حكايات، تاريخ، أدب...)",
+                }
             else:
-                st.markdown("### 📚 Livre d'Histoire Illustré & PDF Pédagogique")
-                st.caption("Transforme ce cours en un conte illustré à l'aquarelle avec narration vocale et téléchargement en album PDF haute définition (format 16:9).")
+                mode_labels = {
+                    "guide": "📐 Guide Visuel Explicatif & PDF (Maths, Sciences, Géo...)",
+                    "story": "🎨 Album Histoire Illustré & PDF (Conte, Récit narratif)",
+                }
 
-            if has_pdf or has_story_html or (anim_html and anim_html.strip()):
-                story_viewer_url = f"/static/stories/story_course_{course_id}.html" if has_story_html else f"/static/simulations/course_{course_id}.html"
-                pdf_download_url = f"/static/stories/story_course_{course_id}.pdf"
+            default_idx = 0 if is_scientific else 1
+            selected_mode = st.radio(
+                "Format visuel :",
+                options=mode_options,
+                format_func=lambda x: mode_labels[x],
+                horizontal=True,
+                label_visibility="collapsed",
+                index=default_idx,
+                key=f"sim_mode_selector_{course_id}",
+            )
+            st.write("")
 
-                st.write("")
-                col_btn_open, col_btn_pdf, col_btn_menu = st.columns([2.5, 2, 1.2])
-                with col_btn_open:
-                    st.link_button(
-                        label="🚀 Ouvrir le Livre d'Histoire dans un nouvel onglet" if not is_ar else "🚀 قراءة كتاب القصة في نافذة جديدة ⛶",
-                        url=story_viewer_url,
-                        type="primary",
-                        use_container_width=True,
-                    )
-                with col_btn_pdf:
-                    if has_pdf:
+            if selected_mode == "guide":
+                if is_ar:
+                    st.markdown("### 📐 الدليل المرئي التوضيحي وعرض الشرائح (PDF)")
+                    st.caption("عرض توضيحي مركز على طريقة NotebookLM: مفاهيم أساسية، معادلات مبرزة، خطوات الحل، أمثلة امتحانات وفخاخ يجب تجنبها.")
+                else:
+                    st.markdown("### 📐 Guide Visuel Explicatif & Présentation Pédagogique (PDF)")
+                    st.caption("Deck de diapositives 16:9 haute définition style NotebookLM : concepts clés, formules mises en valeur, méthodes pas-à-pas, exemples d'examen résolus et pièges à éviter.")
+
+                if has_guide:
+                    guide_viewer_url = f"/static/guides/guide_course_{course_id}.html"
+                    guide_pdf_download = f"/static/guides/guide_course_{course_id}.pdf"
+
+                    st.write("")
+                    col_g_open, col_g_pdf, col_g_menu = st.columns([2.5, 2, 1.2])
+                    with col_g_open:
                         st.link_button(
-                            label="📥 Télécharger le Livre PDF (Haute Résolution)" if not is_ar else "📥 تحميل كتاب القصة المصور (PDF)",
-                            url=pdf_download_url,
+                            label="🚀 Ouvrir le Guide Explicatif dans un nouvel onglet" if not is_ar else "🚀 قراءة الدليل التفاعلي في نافذة جديدة ⛶",
+                            url=guide_viewer_url,
+                            type="primary",
                             use_container_width=True,
                         )
-                    elif anim_html:
-                        st.download_button(
-                            label="📥 Télécharger (HTML)" if not is_ar else "📥 تحميل (HTML)",
-                            data=anim_html,
-                            file_name=f"histoire_cours_{course_id}.html",
-                            mime="text/html",
-                            key=f"dl_anim_{course_id}",
+                    with col_g_pdf:
+                        st.link_button(
+                            label="📥 Télécharger le Guide PDF (Haute Résolution)" if not is_ar else "📥 تحميل دليل الدرس (PDF عالي الدقة)",
+                            url=guide_pdf_download,
                             use_container_width=True,
                         )
-                with col_btn_menu:
-                    with st.popover("⚙️ Options" if not is_ar else "⚙️ خيارات"):
-                        if st.button("🔄 Tout Régénérer en 1 clic (Scénario + Peintures + PDF)" if not is_ar else "🔄 إعادة إنشاء الألبوم بالكامل (بنقرة واحدة)", key=f"btn_regen_all_{course_id}", type="primary"):
-                            with st.status("Régénération complète de l'album..." if not is_ar else "جارٍ إعادة إنشاء الألبوم بالكامل...", expanded=True) as status_box:
-                                try:
-                                    st.write("📝 Écriture du nouveau scénario pédagogique..." if not is_ar else "📝 كتابة السيناريو التربوي الجديد...")
-                                    scen = generate_course_story_scenario(
-                                        course_text=course_raw,
-                                        subject=course_subj,
-                                        course_title=course_tit,
-                                        language=course_lang,
-                                        user_id=active_user_id,
-                                    )
-                                    save_course_story_scenario(course_id, scen)
-                                    st.write("🎨 Génération des illustrations et du PDF..." if not is_ar else "🎨 رسم اللوحات وتجميع الـ PDF...")
-                                    p_url, h_url = build_story_pdf_and_viewer(
-                                        scenario=scen,
-                                        course_id=course_id,
-                                        subject=course_subj,
-                                        course_title=course_tit,
-                                        language=course_lang,
-                                        user_id=active_user_id,
-                                    )
-                                    save_course_story_pdf(course_id, p_url)
-                                    status_box.update(label="✅ Album régénéré avec succès !" if not is_ar else "✅ تم تحديث الألبوم بنجاح!", state="complete", expanded=False)
-                                    st.success("Album régénéré avec succès !" if not is_ar else "تم تحديث الألبوم بنجاح!")
-                                    st.rerun()
-                                except Exception as e_reg_all:
-                                    status_box.update(label="❌ Erreur lors de la régénération" if not is_ar else "❌ حدث خطأ", state="error")
-                                    st.error(f"Erreur : {e_reg_all}")
-
-                        st.divider()
-                        if st.button("📝 Régénérer le Scénario uniquement" if not is_ar else "📝 إعادة كتابة السيناريو فقط", key=f"btn_regen_scen_{course_id}"):
-                            with st.spinner("Conception du nouveau scénario..." if not is_ar else "جارٍ كتابة السيناريو الجديد..."):
-                                try:
-                                    scen = generate_course_story_scenario(
-                                        course_text=course_raw,
-                                        subject=course_subj,
-                                        course_title=course_tit,
-                                        language=course_lang,
-                                        user_id=active_user_id,
-                                    )
-                                    save_course_story_scenario(course_id, scen)
-                                    st.success("Scénario régénéré avec succès !" if not is_ar else "تم تحديث السيناريو بنجاح!")
-                                    st.rerun()
-                                except Exception as e_sc:
-                                    st.error(f"Erreur : {e_sc}")
-
-                        if st.button("🎨 Recompiler les Illustrations & PDF" if not is_ar else "🎨 إعادة تلوين وتجميع الـ PDF", key=f"btn_recompile_pdf_{course_id}"):
-                            if not story_scenario:
-                                st.warning("Veuillez d'abord générer le scénario." if not is_ar else "يرجى إنشاء السيناريو أولاً.")
-                            else:
-                                with st.spinner("Génération des illustrations et compilation du PDF..." if not is_ar else "جارٍ توليد الرسوم المائية وتجميع الكتاب..."):
+                    with col_g_menu:
+                        with st.popover("⚙️ Options" if not is_ar else "⚙️ خيارات"):
+                            if st.button("🔄 Régénérer le Guide en 1 clic" if not is_ar else "🔄 إعادة إنشاء الدليل بالكامل", key=f"btn_regen_guide_all_{course_id}", type="primary"):
+                                with st.status("Régénération du guide explicatif en cours..." if not is_ar else "جارٍ إعادة إنشاء الدليل...", expanded=True) as status_box:
                                     try:
-                                        p_url, h_url = build_story_pdf_and_viewer(
-                                            scenario=story_scenario,
+                                        p_url, h_url = generate_complete_explanatory_guide(
                                             course_id=course_id,
+                                            course_text=course_raw,
                                             subject=course_subj,
                                             course_title=course_tit,
                                             language=course_lang,
                                             user_id=active_user_id,
                                         )
-                                        save_course_story_pdf(course_id, p_url)
-                                        st.success("Livre et PDF générés avec succès !" if not is_ar else "تم إنشاء الكتاب المصور بنجاح!")
+                                        status_box.update(label="✅ Guide explicatif mis à jour !" if not is_ar else "✅ تم تحديث الدليل بنجاح!", state="complete", expanded=False)
+                                        st.success("Guide mis à jour avec succès !" if not is_ar else "تم تحديث الدليل بنجاح!")
                                         st.rerun()
-                                    except Exception as e_comp:
-                                        st.error(f"Erreur compilation : {e_comp}")
+                                    except Exception as e_reg_g:
+                                        status_box.update(label="❌ Erreur régénération" if not is_ar else "❌ حدث خطأ", state="error")
+                                        st.error(f"Erreur : {e_reg_g}")
 
-                with st.expander("👁️ Aperçu intégré du livre d'histoire" if not is_ar else "👁️ معاينة سريعة داخل الصفحة", expanded=False):
-                    if has_story_html:
-                        story_content = html_path_disk.read_text(encoding="utf-8")
-                        st.components.v1.html(story_content, height=840, scrolling=True)
-                    elif anim_html:
-                        st.components.v1.html(anim_html, height=840, scrolling=True)
+                    with st.expander("👁️ Aperçu intégré du guide explicatif" if not is_ar else "👁️ معاينة سريعة داخل الصفحة", expanded=False):
+                        if guide_html_disk.exists():
+                            st.components.v1.html(guide_html_disk.read_text(encoding="utf-8"), height=840, scrolling=True)
 
-                if story_scenario and story_scenario.get("scenes"):
-                    with st.expander("📖 Découpage scénaristique du conte pédagogique" if not is_ar else "📖 السيناريو التربوي وتفاصيل المشاهد", expanded=False):
-                        st.markdown(f"#### ✦ {story_scenario.get('title', course_tit)} ✦")
-                        if story_scenario.get("synopsis"):
-                            st.info(f"**{'ملخص القصة :' if is_ar else 'Synopsis :'}** {story_scenario.get('synopsis')}")
-                        for sc in story_scenario.get("scenes", []):
-                            st.markdown(f"**{'المشهد' if is_ar else 'Scène'} {sc.get('scene_num', '')} : {sc.get('title', '')}**")
-                            st.write(sc.get("narration", ""))
-                            if sc.get("did_you_know"):
-                                st.caption(f"💡 *{'العبرة :' if is_ar else 'À retenir :'}* {sc.get('did_you_know')}")
-                            st.divider()
+                    if guide_deck and guide_deck.get("slides"):
+                        with st.expander("📋 Structure des diapositives explicatives" if not is_ar else "📋 هيكل الشرائح والمفاهيم", expanded=False):
+                            st.markdown(f"#### ✦ {guide_deck.get('title', course_tit)} ✦")
+                            ov_label = "نظرة عامة :" if is_ar else "Vue d'ensemble :"
+                            if guide_deck.get("overview"):
+                                st.info(f"**{ov_label}** {guide_deck.get('overview')}")
+                            for sl in guide_deck.get("slides", []):
+                                st.markdown(f"**{'الشريحة' if is_ar else 'Diapositive'} {sl.get('slide_num', '')} : {sl.get('title', '')}** ({sl.get('badge', '')})")
+                                for pt in sl.get("key_points", []):
+                                    st.markdown(f"- {pt}")
+                                if sl.get("highlight_box", {}).get("content"):
+                                    st.info(f"⚡ **{sl['highlight_box'].get('title', 'RÈGLE')}** : {sl['highlight_box'].get('content')}")
+                                st.divider()
+                else:
+                    st.write("")
+                    hero_title = "إنشاء الدليل المرئي التوضيحي والـ PDF" if is_ar else "Génération du Guide Visuel Explicatif & PDF"
+                    hero_subtitle = "مثالي للرياضيات، الفيزياء والكيمياء، علوم الحياة والأرض والجغرافيا: شرح مرئي مركز بأسلوب NotebookLM." if is_ar else "Idéal pour les Mathématiques, la Physique-Chimie, les SVT et la Géographie : présentation ultra-claire style NotebookLM."
+                    p1_title = "🎯 1. المفاهيم والقواعد" if is_ar else "🎯 1. Concepts & Formules"
+                    p1_desc = "تعاريف بديهية، قواعد رياضية وقوانين فيزيائية مبرزة بشكل أنيق." if is_ar else "Définitions intuitives, formules mathématiques et lois physiques mises en valeur."
+                    p2_title = "🔬 2. رسوم بيانية وتجارب" if is_ar else "🔬 2. Infographies & Schémas"
+                    p2_desc = "مخططات هندسية وتجارب مخبرية وخرائط جغرافية ثلاثية الأبعاد." if is_ar else "Diagrammes géométriques, schémas de labo ou cartes géographiques par IA."
+                    p3_title = "📝 3. أمثلة محلولة وPDF" if is_ar else "📝 3. Méthodes & Export PDF"
+                    p3_desc = "خطوات الحل بالتفصيل، فخاخ الامتحانات وملف PDF عالي الدقة قابل للتحميل." if is_ar else "Exemples résolus pas-à-pas, pièges d'examen et compilation PDF 1376x768."
+
+                    st.markdown(
+                        f"""
+                        <div style="background: linear-gradient(135deg, rgba(37, 99, 235, 0.08) 0%, rgba(14, 165, 233, 0.08) 100%); border: 2px solid {theme['primary']}; border-radius: 16px; padding: 22px; margin-bottom: 20px;">
+                            <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
+                                <span style="font-size: 32px;">{theme['icon']}</span>
+                                <div>
+                                    <h3 style="margin: 0; color: #1e3a8a; font-size: 19px;">{hero_title}</h3>
+                                    <p style="margin: 3px 0 0 0; color: #64748b; font-size: 13.5px;">{hero_subtitle}</p>
+                                </div>
+                            </div>
+                            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin-top: 14px;">
+                                <div style="background: white; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px;">
+                                    <strong style="color: {theme['primary']};">{p1_title}</strong>
+                                    <p style="font-size: 12.5px; color: #475569; margin: 4px 0 0 0;">{p1_desc}</p>
+                                </div>
+                                <div style="background: white; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px;">
+                                    <strong style="color: #059669;">{p2_title}</strong>
+                                    <p style="font-size: 12.5px; color: #475569; margin: 4px 0 0 0;">{p2_desc}</p>
+                                </div>
+                                <div style="background: white; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px;">
+                                    <strong style="color: #d97706;">{p3_title}</strong>
+                                    <p style="font-size: 12.5px; color: #475569; margin: 4px 0 0 0;">{p3_desc}</p>
+                                </div>
+                            </div>
+                        </div>
+                        """,
+                        unsafe_allow_html=True,
+                    )
+
+                    btn_guide_label = "📐 Générer le Guide Visuel Explicatif & PDF (en 1 clic)" if not is_ar else "📐 إنشاء الدليل المرئي التوضيحي والـ PDF (بنقرة واحدة)"
+                    if st.button(btn_guide_label, type="primary", use_container_width=True, key=f"btn_single_generate_guide_{course_id}"):
+                        with st.status("Génération du Guide Visuel Explicatif en cours..." if not is_ar else "جارٍ إنشاء الدليل التوضيحي والـ PDF...", expanded=True) as status_box:
+                            try:
+                                st.write("📝 **Étape 1/2 :** Conception didactique des diapositives, formules et exemples par l'IA..." if not is_ar else "📝 **الخطوة 1/2 :** إعداد الشرائح التربوية والقواعد وأمثلة الحل...")
+                                p_url, h_url = generate_complete_explanatory_guide(
+                                    course_id=course_id,
+                                    course_text=course_raw,
+                                    subject=course_subj,
+                                    course_title=course_tit,
+                                    language=course_lang,
+                                    user_id=active_user_id,
+                                )
+                                status_box.update(label="✅ Guide Visuel et PDF générés avec succès !" if not is_ar else "✅ تم إنشاء الدليل التوضيحي والـ PDF بنجاح!", state="complete", expanded=False)
+                                st.success("Guide Visuel et PDF créés avec succès !" if not is_ar else "تم إنشاء الدليل التوضيحي والـ PDF بنجاح!")
+                                st.rerun()
+                            except Exception as e_guide_err:
+                                status_box.update(label="❌ Erreur lors de la génération" if not is_ar else "❌ حدث خطأ أثناء الإنشاء", state="error")
+                                st.error(f"Erreur : {e_guide_err}")
 
             else:
-                st.write("")
-                st.markdown(
-                    """
-                    <div style="background: linear-gradient(135deg, rgba(37, 99, 235, 0.07) 0%, rgba(16, 185, 129, 0.07) 100%); border: 2px solid #3b82f6; border-radius: 16px; padding: 22px; margin-bottom: 20px;">
-                        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
-                            <span style="font-size: 30px;">🎨</span>
-                            <div>
-                                <h3 style="margin: 0; color: #1e3a8a; font-size: 19px;">Génération Complète de l'Album Histoire & PDF</h3>
-                                <p style="margin: 3px 0 0 0; color: #64748b; font-size: 13.5px;">Création automatique du conte jeunesse, des peintures aquarelle par IA, de l'audio et du livre PDF 16:9 haute résolution.</p>
-                            </div>
-                        </div>
-                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin-top: 14px;">
-                            <div style="background: white; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px;">
-                                <strong style="color: #2563eb;">📝 1. Scénario Pédagogique</strong>
-                                <p style="font-size: 12.5px; color: #475569; margin: 4px 0 0 0;">Découpage en 4 à 5 scènes vivantes avec Tashkeel complet et morale éducative.</p>
-                            </div>
-                            <div style="background: white; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px;">
-                                <strong style="color: #059669;">🎨 2. Peintures Aquarelle IA</strong>
-                                <p style="font-size: 12.5px; color: #475569; margin: 4px 0 0 0;">Illustrations artistiques 16:9 widescreen captivantes pour chaque scène.</p>
-                            </div>
-                            <div style="background: white; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px;">
-                                <strong style="color: #d97706;">🔊 3. Audio & Export PDF</strong>
-                                <p style="font-size: 12.5px; color: #475569; margin: 4px 0 0 0;">Narration vocale intégrée et compilation en album PDF 1376x768 paysage.</p>
-                            </div>
-                        </div>
-                    </div>
-                    """ if not is_ar else """
-                    <div style="background: linear-gradient(135deg, rgba(37, 99, 235, 0.07) 0%, rgba(16, 185, 129, 0.07) 100%); border: 2px solid #3b82f6; border-radius: 16px; padding: 22px; margin-bottom: 20px;">
-                        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
-                            <span style="font-size: 30px;">🎨</span>
-                            <div>
-                                <h3 style="margin: 0; color: #1e3a8a; font-size: 19px;">إنشاء ألبوم القصة المصور والـ PDF بنقرة واحدة</h3>
-                                <p style="margin: 3px 0 0 0; color: #64748b; font-size: 13.5px;">تأليف قصة للأطفال، رسم لوحات مائية بالذكاء الاصطناعي، تسجيل صوتي بالتشكيل وتصدير كتاب PDF عالي الدقة.</p>
-                            </div>
-                        </div>
-                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin-top: 14px;">
-                            <div style="background: white; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px;">
-                                <strong style="color: #2563eb;">📝 1. سيناريو تربوي مشكول</strong>
-                                <p style="font-size: 12.5px; color: #475569; margin: 4px 0 0 0;">تقسيم الدرس إلى مشاهد شيقة مع تشكيل كامل وعبر تربوية مستفادة.</p>
-                            </div>
-                            <div style="background: white; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px;">
-                                <strong style="color: #059669;">🎨 2. لوحات مائية بالذكاء الاصطناعي</strong>
-                                <p style="font-size: 12.5px; color: #475569; margin: 4px 0 0 0;">لوحات فنية ساحرة 16:9 لكل مشهد تناسب الأطفال والناشئة.</p>
-                            </div>
-                            <div style="background: white; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px;">
-                                <strong style="color: #d97706;">🔊 3. قراءة صوتية وألبوم PDF</strong>
-                                <p style="font-size: 12.5px; color: #475569; margin: 4px 0 0 0;">تسجيل صوتي وتجميع ألبوم PDF عالي الدقة (1376x768) قابل للتحميل.</p>
-                            </div>
-                        </div>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
+                # Mode Storybook
+                if is_ar:
+                    st.markdown("### 📚 كتاب القصة المصورة التفاعلي & PDF للأطفال")
+                    st.caption("تحويل الدرس إلى قصة شيقة مصورة بالألوان المائية مع قراءة صوتية مشكولة بالكامل بصوت المعلم وتصدير بصيغة PDF عالية الجودة.")
+                else:
+                    st.markdown("### 📚 Livre d'Histoire Illustré & PDF Pédagogique")
+                    st.caption("Transforme ce cours en un conte illustré à l'aquarelle avec narration vocale et téléchargement en album PDF haute définition (format 16:9).")
 
-                btn_label = "🎨 Générer l'Album Histoire Illustré & PDF (en 1 clic)" if not is_ar else "🎨 إنشاء كتاب القصة المصور والـ PDF (بنقرة واحدة)"
-                if st.button(btn_label, type="primary", use_container_width=True, key=f"btn_single_generate_{course_id}"):
-                    with st.status("Génération de l'Album d'Histoire en cours..." if not is_ar else "جارٍ إنشاء كتاب القصة والـ PDF...", expanded=True) as status_box:
-                        try:
-                            st.write("📝 **Étape 1/2 :** Écriture du conte pédagogique et du scénario par l'IA..." if not is_ar else "📝 **الخطوة 1/2 :** تأليف قصة الدرس والسيناريو التربوي...")
-                            scen = generate_course_story_scenario(
-                                course_text=course_raw,
-                                subject=course_subj,
-                                course_title=course_tit,
-                                language=course_lang,
-                                user_id=active_user_id,
+                if has_story_pdf or has_story_html or (anim_html and anim_html.strip()):
+                    story_viewer_url = f"/static/stories/story_course_{course_id}.html" if has_story_html else f"/static/simulations/course_{course_id}.html"
+                    pdf_download_url = f"/static/stories/story_course_{course_id}.pdf"
+
+                    st.write("")
+                    col_btn_open, col_btn_pdf, col_btn_menu = st.columns([2.5, 2, 1.2])
+                    with col_btn_open:
+                        st.link_button(
+                            label="🚀 Ouvrir le Livre d'Histoire dans un nouvel onglet" if not is_ar else "🚀 قراءة كتاب القصة في نافذة جديدة ⛶",
+                            url=story_viewer_url,
+                            type="primary",
+                            use_container_width=True,
+                        )
+                    with col_btn_pdf:
+                        if has_story_pdf:
+                            st.link_button(
+                                label="📥 Télécharger le Livre PDF (Haute Résolution)" if not is_ar else "📥 تحميل كتاب القصة المصور (PDF)",
+                                url=pdf_download_url,
+                                use_container_width=True,
                             )
-                            save_course_story_scenario(course_id, scen)
-
-                            st.write("🎨 **Étape 2/2 :** Création des peintures à l'aquarelle, narration audio et compilation du PDF (1376x768)..." if not is_ar else "🎨 **الخطوة 2/2 :** رسم اللوحات المائية وتسجيل الصوت وتجميع الـ PDF...")
-                            p_url, h_url = build_story_pdf_and_viewer(
-                                scenario=scen,
-                                course_id=course_id,
-                                subject=course_subj,
-                                course_title=course_tit,
-                                language=course_lang,
-                                user_id=active_user_id,
+                        elif anim_html:
+                            st.download_button(
+                                label="📥 Télécharger (HTML)" if not is_ar else "📥 تحميل (HTML)",
+                                data=anim_html,
+                                file_name=f"histoire_cours_{course_id}.html",
+                                mime="text/html",
+                                key=f"dl_anim_{course_id}",
+                                use_container_width=True,
                             )
-                            save_course_story_pdf(course_id, p_url)
+                    with col_btn_menu:
+                        with st.popover("⚙️ Options" if not is_ar else "⚙️ خيارات"):
+                            if st.button("🔄 Tout Régénérer en 1 clic (Scénario + Peintures + PDF)" if not is_ar else "🔄 إعادة إنشاء الألبوم بالكامل (بنقرة واحدة)", key=f"btn_regen_all_{course_id}", type="primary"):
+                                with st.status("Régénération complète de l'album..." if not is_ar else "جارٍ إعادة إنشاء الألبوم بالكامل...", expanded=True) as status_box:
+                                    try:
+                                        p_url, h_url = generate_complete_story_and_pdf(
+                                            course_id=course_id,
+                                            course_text=course_raw,
+                                            subject=course_subj,
+                                            course_title=course_tit,
+                                            language=course_lang,
+                                            user_id=active_user_id,
+                                        )
+                                        status_box.update(label="✅ Album régénéré avec succès !" if not is_ar else "✅ تم تحديث الألبوم بنجاح!", state="complete", expanded=False)
+                                        st.success("Album régénéré avec succès !" if not is_ar else "تم تحديث الألبوم بنجاح!")
+                                        st.rerun()
+                                    except Exception as e_reg_all:
+                                        status_box.update(label="❌ Erreur lors de la régénération" if not is_ar else "❌ حدث خطأ", state="error")
+                                        st.error(f"Erreur : {e_reg_all}")
 
-                            status_box.update(label="✅ Album Histoire et PDF générés avec succès !" if not is_ar else "✅ تم إنشاء كتاب القصة والـ PDF بنجاح!", state="complete", expanded=False)
-                            st.success("Livre d'histoire et PDF créés avec succès !" if not is_ar else "تم إنشاء كتاب القصة والـ PDF بنجاح!")
-                            st.rerun()
-                        except Exception as e_oneclick:
-                            status_box.update(label="❌ Erreur lors de la génération" if not is_ar else "❌ حدث خطأ أثناء الإنشاء", state="error")
-                            st.error(f"Erreur : {e_oneclick}")
+                    with st.expander("👁️ Aperçu intégré du livre d'histoire" if not is_ar else "👁️ معاينة سريعة داخل الصفحة", expanded=False):
+                        if has_story_html:
+                            story_content = html_path_disk.read_text(encoding="utf-8")
+                            st.components.v1.html(story_content, height=840, scrolling=True)
+                        elif anim_html:
+                            st.components.v1.html(anim_html, height=840, scrolling=True)
+
+                    if story_scenario and story_scenario.get("scenes"):
+                        with st.expander("📖 Découpage scénaristique du conte pédagogique" if not is_ar else "📖 السيناريو التربوي وتفاصيل المشاهد", expanded=False):
+                            st.markdown(f"#### ✦ {story_scenario.get('title', course_tit)} ✦")
+                            if story_scenario.get("synopsis"):
+                                st.info(f"**{'ملخص القصة :' if is_ar else 'Synopsis :'}** {story_scenario.get('synopsis')}")
+                            for sc in story_scenario.get("scenes", []):
+                                st.markdown(f"**{'المشهد' if is_ar else 'Scène'} {sc.get('scene_num', '')} : {sc.get('title', '')}**")
+                                st.write(sc.get("narration", ""))
+                                if sc.get("did_you_know"):
+                                    st.caption(f"💡 *{'العبرة :' if is_ar else 'À retenir :'}* {sc.get('did_you_know')}")
+                                st.divider()
+                else:
+                    st.write("")
+                    st.markdown(
+                        """
+                        <div style="background: linear-gradient(135deg, rgba(37, 99, 235, 0.07) 0%, rgba(16, 185, 129, 0.07) 100%); border: 2px solid #3b82f6; border-radius: 16px; padding: 22px; margin-bottom: 20px;">
+                            <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
+                                <span style="font-size: 30px;">🎨</span>
+                                <div>
+                                    <h3 style="margin: 0; color: #1e3a8a; font-size: 19px;">Génération Complète de l'Album Histoire & PDF</h3>
+                                    <p style="margin: 3px 0 0 0; color: #64748b; font-size: 13.5px;">Création automatique du conte jeunesse, des peintures aquarelle par IA, de l'audio et du livre PDF 16:9 haute résolution.</p>
+                                </div>
+                            </div>
+                            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin-top: 14px;">
+                                <div style="background: white; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px;">
+                                    <strong style="color: #2563eb;">📝 1. Scénario Pédagogique</strong>
+                                    <p style="font-size: 12.5px; color: #475569; margin: 4px 0 0 0;">Découpage en 4 à 5 scènes vivantes avec Tashkeel complet et morale éducative.</p>
+                                </div>
+                                <div style="background: white; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px;">
+                                    <strong style="color: #059669;">🎨 2. Peintures Aquarelle IA</strong>
+                                    <p style="font-size: 12.5px; color: #475569; margin: 4px 0 0 0;">Illustrations artistiques 16:9 widescreen captivantes pour chaque scène.</p>
+                                </div>
+                                <div style="background: white; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px;">
+                                    <strong style="color: #d97706;">🔊 3. Audio & Export PDF</strong>
+                                    <p style="font-size: 12.5px; color: #475569; margin: 4px 0 0 0;">Narration vocale intégrée et compilation en album PDF 1376x768 paysage.</p>
+                                </div>
+                            </div>
+                        </div>
+                        """ if not is_ar else """
+                        <div style="background: linear-gradient(135deg, rgba(37, 99, 235, 0.07) 0%, rgba(16, 185, 129, 0.07) 100%); border: 2px solid #3b82f6; border-radius: 16px; padding: 22px; margin-bottom: 20px;">
+                            <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
+                                <span style="font-size: 30px;">🎨</span>
+                                <div>
+                                    <h3 style="margin: 0; color: #1e3a8a; font-size: 19px;">إنشاء ألبوم القصة المصور والـ PDF بنقرة واحدة</h3>
+                                    <p style="margin: 3px 0 0 0; color: #64748b; font-size: 13.5px;">تأليف قصة للأطفال، رسم لوحات مائية بالذكاء الاصطناعي، تسجيل صوتي بالتشكيل وتصدير كتاب PDF عالي الدقة.</p>
+                                </div>
+                            </div>
+                            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin-top: 14px;">
+                                <div style="background: white; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px;">
+                                    <strong style="color: #2563eb;">📝 1. سيناريو تربوي مشكول</strong>
+                                    <p style="font-size: 12.5px; color: #475569; margin: 4px 0 0 0;">تقسيم الدرس إلى مشاهد شيقة مع تشكيل كامل وعبر تربوية مستفادة.</p>
+                                </div>
+                                <div style="background: white; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px;">
+                                    <strong style="color: #059669;">🎨 2. لوحات مائية بالذكاء الاصطناعي</strong>
+                                    <p style="font-size: 12.5px; color: #475569; margin: 4px 0 0 0;">لوحات فنية ساحرة 16:9 لكل مشهد تناسب الأطفال والناشئة.</p>
+                                </div>
+                                <div style="background: white; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px;">
+                                    <strong style="color: #d97706;">🔊 3. قراءة صوتية وألبوم PDF</strong>
+                                    <p style="font-size: 12.5px; color: #475569; margin: 4px 0 0 0;">تسجيل صوتي وتجميع ألبوم PDF عالي الدقة (1376x768) قابل للتحميل.</p>
+                                </div>
+                            </div>
+                        </div>
+                        """,
+                        unsafe_allow_html=True,
+                    )
+
+                    btn_label = "🎨 Générer l'Album Histoire Illustré & PDF (en 1 clic)" if not is_ar else "🎨 إنشاء كتاب القصة المصور والـ PDF (بنقرة واحدة)"
+                    if st.button(btn_label, type="primary", use_container_width=True, key=f"btn_single_generate_{course_id}"):
+                        with st.status("Génération de l'Album d'Histoire en cours..." if not is_ar else "جارٍ إنشاء كتاب القصة والـ PDF...", expanded=True) as status_box:
+                            try:
+                                p_url, h_url = generate_complete_story_and_pdf(
+                                    course_id=course_id,
+                                    course_text=course_raw,
+                                    subject=course_subj,
+                                    course_title=course_tit,
+                                    language=course_lang,
+                                    user_id=active_user_id,
+                                )
+                                status_box.update(label="✅ Album Histoire et PDF générés avec succès !" if not is_ar else "✅ تم إنشاء كتاب القصة والـ PDF بنجاح!", state="complete", expanded=False)
+                                st.success("Livre d'histoire et PDF créés avec succès !" if not is_ar else "تم إنشاء كتاب القصة والـ PDF بنجاح!")
+                                st.rerun()
+                            except Exception as e_oneclick:
+                                status_box.update(label="❌ Erreur lors de la génération" if not is_ar else "❌ حدث خطأ أثناء الإنشاء", state="error")
+                                st.error(f"Erreur : {e_oneclick}")
 
                 if story_scenario and story_scenario.get("scenes"):
                     with st.expander("👁️ Voir les détails du scénario déjà rédigé" if not is_ar else "👁️ تفاصيل السيناريو المحفوظ", expanded=False):

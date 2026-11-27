@@ -86,6 +86,14 @@ __all__ = [
     "set_user_openrouter_access",
     "is_user_openrouter_allowed",
     "get_openrouter_authorized_user_ids",
+    "get_course_story_scenario",
+    "save_course_story_scenario",
+    "get_course_story_pdf",
+    "save_course_story_pdf",
+    "get_course_explanatory_guide",
+    "save_course_explanatory_guide",
+    "get_course_explanatory_guide_pdf",
+    "save_course_explanatory_guide_pdf",
 ]
 
 DEFAULT_DB_DIR = Path(__file__).parent.parent / "storage"
@@ -2721,6 +2729,92 @@ def save_course_story_pdf(course_id: int, pdf_url: str) -> None:
                 conn.execute("ALTER TABLE courses ADD COLUMN story_pdf_url TEXT")
                 conn.execute(
                     "UPDATE courses SET story_pdf_url = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                    (pdf_url, course_id),
+                )
+    finally:
+        conn.close()
+
+
+def get_course_explanatory_guide(course_id: int) -> Optional[Dict[str, Any]]:
+    """Récupère le deck de présentation/guide visuel explicatif au format JSON."""
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        try:
+            cur.execute("SELECT explanatory_guide_json FROM courses WHERE id = ?", (course_id,))
+        except sqlite3.OperationalError:
+            with conn:
+                conn.execute("ALTER TABLE courses ADD COLUMN explanatory_guide_json TEXT")
+            cur.execute("SELECT explanatory_guide_json FROM courses WHERE id = ?", (course_id,))
+        row = cur.fetchone()
+        if row and row["explanatory_guide_json"] and row["explanatory_guide_json"].strip():
+            try:
+                return json.loads(row["explanatory_guide_json"])
+            except Exception:
+                return None
+        return None
+    finally:
+        conn.close()
+
+
+def save_course_explanatory_guide(course_id: int, guide: Any) -> None:
+    """Sauvegarde le deck de présentation/guide visuel explicatif (Maths, Sciences, Géographie...)."""
+    if isinstance(guide, dict):
+        guide_str = json.dumps(guide, ensure_ascii=False)
+    else:
+        guide_str = str(guide)
+
+    conn = get_connection()
+    try:
+        with conn:
+            try:
+                conn.execute(
+                    "UPDATE courses SET explanatory_guide_json = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                    (guide_str, course_id),
+                )
+            except sqlite3.OperationalError:
+                conn.execute("ALTER TABLE courses ADD COLUMN explanatory_guide_json TEXT")
+                conn.execute(
+                    "UPDATE courses SET explanatory_guide_json = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                    (guide_str, course_id),
+                )
+    finally:
+        conn.close()
+
+
+def get_course_explanatory_guide_pdf(course_id: int) -> Optional[str]:
+    """Récupère l'URL relative ou le chemin du PDF du guide visuel explicatif."""
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        try:
+            cur.execute("SELECT explanatory_guide_pdf_url FROM courses WHERE id = ?", (course_id,))
+        except sqlite3.OperationalError:
+            with conn:
+                conn.execute("ALTER TABLE courses ADD COLUMN explanatory_guide_pdf_url TEXT")
+            cur.execute("SELECT explanatory_guide_pdf_url FROM courses WHERE id = ?", (course_id,))
+        row = cur.fetchone()
+        if row and row["explanatory_guide_pdf_url"] and row["explanatory_guide_pdf_url"].strip():
+            return row["explanatory_guide_pdf_url"]
+        return None
+    finally:
+        conn.close()
+
+
+def save_course_explanatory_guide_pdf(course_id: int, pdf_url: str) -> None:
+    """Sauvegarde l'URL ou chemin du PDF du guide visuel explicatif."""
+    conn = get_connection()
+    try:
+        with conn:
+            try:
+                conn.execute(
+                    "UPDATE courses SET explanatory_guide_pdf_url = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                    (pdf_url, course_id),
+                )
+            except sqlite3.OperationalError:
+                conn.execute("ALTER TABLE courses ADD COLUMN explanatory_guide_pdf_url TEXT")
+                conn.execute(
+                    "UPDATE courses SET explanatory_guide_pdf_url = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
                     (pdf_url, course_id),
                 )
     finally:
