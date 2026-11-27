@@ -546,18 +546,75 @@ def get_custom_css(theme: str = "dark") -> str:
 /* Streamlit Chrome Overhaul & Resets */
 header[data-testid="stHeader"] {{
     background: transparent !important;
-    backdrop-filter: blur(8px) !important;
-}}
-
-#MainMenu, footer, [data-testid="stToolbar"] {{
-    visibility: hidden !important;
-    display: none !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    pointer-events: none !important;
 }}
 
 .block-container {{
-    padding-top: 1.8rem !important;
+    padding-top: 3.5rem !important;
     padding-bottom: 3.5rem !important;
     max-width: 1260px !important;
+}}
+
+/* Sidebar Toggle Controls (Re-open & Collapse) */
+[data-testid="stExpandSidebarButton"],
+[data-testid="stSidebarCollapseButton"],
+[data-testid="collapsedControl"] {{
+    display: inline-flex !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    pointer-events: auto !important;
+    cursor: pointer !important;
+    z-index: 999999 !important;
+}}
+
+[data-testid="stExpandSidebarButton"],
+[data-testid="collapsedControl"] {{
+    position: fixed !important;
+    top: 14px !important;
+    left: 14px !important;
+    background: var(--ea-surface) !important;
+    border: 1.5px solid var(--ea-border) !important;
+    border-radius: 10px !important;
+    padding: 8px 12px !important;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3) !important;
+    color: var(--ea-text) !important;
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}}
+
+[data-testid="stExpandSidebarButton"]:hover,
+[data-testid="collapsedControl"]:hover {{
+    background: var(--ea-surface-hover) !important;
+    border-color: var(--ea-primary) !important;
+    transform: scale(1.08) !important;
+    box-shadow: 0 6px 20px var(--ea-primary-glow) !important;
+}}
+
+[data-testid="stExpandSidebarButton"] svg,
+[data-testid="collapsedControl"] svg {{
+    color: var(--ea-primary) !important;
+    fill: var(--ea-primary) !important;
+}}
+
+/* Keep Toolbar visible strictly for expand button, hide developer/deploy elements */
+[data-testid="stToolbar"] {{
+    background: transparent !important;
+    visibility: visible !important;
+    display: flex !important;
+    pointer-events: none !important;
+}}
+
+[data-testid="stToolbar"] > * {{
+    pointer-events: auto !important;
+}}
+
+#MainMenu, footer,
+[data-testid="stToolbar"] [data-testid="stStatusWidget"],
+[data-testid="stToolbar"] [data-testid="manage-app-button"],
+[data-testid="stToolbarActionButtons"] {{
+    visibility: hidden !important;
+    display: none !important;
 }}
 
 /* Base Typography & Antialiasing */
@@ -772,7 +829,9 @@ h1, h2, h3, h4, h5, h6 {{
     display: none !important;
 }}
 
-[data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"]:not([aria-orientation="horizontal"]) {{
+/* Radio Group Vertical Container */
+[data-testid="stSidebar"] [data-testid="stRadioGroup"],
+[data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] {{
     gap: 6px !important;
     display: flex !important;
     flex-direction: column !important;
@@ -781,22 +840,23 @@ h1, h2, h3, h4, h5, h6 {{
     padding: 0 !important;
 }}
 
-[data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"]:not([aria-orientation="horizontal"]) > label {{
-    background: var(--ea-surface) !important;
-    border: 1px solid var(--ea-border) !important;
-    border-radius: 12px !important;
-    padding: 10px 14px !important;
+/* Radio Option Field Wrappers */
+[data-testid="stSidebar"] [data-testid="stRadioGroup"] > div,
+[data-testid="stSidebar"] [data-testid="stRadioGroup"] [class*="e1dm8mpf1"] {{
     margin: 0 !important;
-    cursor: pointer !important;
-    display: flex !important;
-    align-items: center !important;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04) !important;
-    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
-    user-select: none !important;
+    padding: 0 !important;
+    border: none !important;
+    background: transparent !important;
 }}
 
-/* Hide native radio circle button */
-[data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"]:not([aria-orientation="horizontal"]) > label > div:first-child,
+/* Hide native radio circle bullets COMPLETELY across all Streamlit versions (1.65+ and legacy) */
+[data-testid="stSidebar"] [class*="e1dm8mpf4"],
+[data-testid="stSidebar"] [class*="e1dm8mpf5"],
+[data-testid="stSidebar"] [data-testid="stRadioOption"] [class*="e1dm8mpf4"],
+[data-testid="stSidebar"] [data-testid="stRadioOption"] [class*="e1dm8mpf5"],
+[data-testid="stSidebar"] [data-testid="stRadioOption"] > div > div:first-child,
+[data-testid="stSidebar"] [data-testid="stRadioOption"] input[type="radio"],
+[data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] label > div:first-child,
 [data-testid="stSidebar"] [data-testid="stRadio"] input[type="radio"] {{
     display: none !important;
     visibility: hidden !important;
@@ -804,13 +864,71 @@ h1, h2, h3, h4, h5, h6 {{
     height: 0 !important;
     margin: 0 !important;
     padding: 0 !important;
+    border: none !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+    position: absolute !important;
+}}
+
+/* Style options as sleek SaaS nav items */
+[data-testid="stSidebar"] [data-testid="stRadioOption"],
+[data-testid="stSidebar"] [data-testid="stRadioGroup"] label,
+[data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] label {{
+    background: var(--ea-surface) !important;
+    border: 1px solid var(--ea-border) !important;
+    border-radius: 12px !important;
+    padding: 10px 14px !important;
+    margin: 0 0 6px 0 !important;
+    cursor: pointer !important;
+    display: flex !important;
+    align-items: center !important;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04) !important;
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
+    user-select: none !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+}}
+
+/* Options inner row flex */
+[data-testid="stSidebar"] [data-testid="stRadioOption"] > div,
+[data-testid="stSidebar"] [data-testid="stRadioOption"] [class*="e1dm8mpf3"] {{
+    display: flex !important;
+    align-items: center !important;
+    width: 100% !important;
+    gap: 10px !important;
+    cursor: pointer !important;
+}}
+
+/* Hover state */
+[data-testid="stSidebar"] [data-testid="stRadioOption"]:hover,
+[data-testid="stSidebar"] [data-testid="stRadioGroup"] label:hover,
+[data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] label:hover {{
+    background: var(--ea-surface-hover) !important;
+    border-color: var(--ea-border-hover) !important;
+    transform: translateX(4px) !important;
+}}
+
+/* Active / Selected Navigation Item */
+[data-testid="stSidebar"] [data-testid="stRadioOption"][data-selected="true"],
+[data-testid="stSidebar"] [data-testid="stRadioOption"][aria-checked="true"],
+[data-testid="stSidebar"] [data-testid="stRadioOption"]:has(input:checked),
+[data-testid="stSidebar"] [data-testid="stRadioGroup"] > div:has([data-selected="true"]) [data-testid="stRadioOption"],
+[data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] label:has(input:checked) {{
+    background: rgba(37, 99, 235, 0.12) !important;
+    border: 1.5px solid var(--ea-primary) !important;
+    border-left: 4px solid var(--ea-primary) !important;
+    box-shadow: 0 4px 14px var(--ea-primary-glow) !important;
+    transform: translateX(4px) !important;
 }}
 
 /* Sidebar Nav item text (always protected from RTL/Arabic overrides) */
-[data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"]:not([aria-orientation="horizontal"]) > label div[data-testid="stMarkdownContainer"] p,
+[data-testid="stSidebar"] [data-testid="stRadioOption"] p,
+[data-testid="stSidebar"] [data-testid="stRadioOption"] span,
+[data-testid="stSidebar"] [data-testid="stRadioOption"] div[data-testid="stMarkdownContainer"] p,
+[data-testid="stSidebar"] [data-testid="stRadioGroup"] label p,
 [data-testid="stSidebar"] [data-testid="stRadio"] label p,
 [data-testid="stSidebar"] [data-testid="stRadio"] label span {{
-    font-size: 0.92rem !important;
+    font-size: 0.94rem !important;
     font-weight: 600 !important;
     color: var(--ea-text-muted) !important;
     margin: 0 !important;
@@ -822,32 +940,19 @@ h1, h2, h3, h4, h5, h6 {{
     user-select: none !important;
 }}
 
-/* Hover state */
-[data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"]:not([aria-orientation="horizontal"]) > label:hover {{
-    background: var(--ea-surface-hover) !important;
-    border-color: var(--ea-border-hover) !important;
-    transform: translateX(4px) !important;
-}}
-
-[data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"]:not([aria-orientation="horizontal"]) > label:hover div[data-testid="stMarkdownContainer"] p {{
-    color: var(--ea-text) !important;
-}}
-
-/* Active / Selected Navigation Item */
-[data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"]:not([aria-orientation="horizontal"]) > label:has(input:checked) {{
-    background: rgba(37, 99, 235, 0.12) !important;
-    border: 1.5px solid var(--ea-primary) !important;
-    border-left: 4px solid var(--ea-primary) !important;
-    box-shadow: 0 4px 14px var(--ea-primary-glow) !important;
-    transform: translateX(4px) !important;
-}}
-
-[data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"]:not([aria-orientation="horizontal"]) > label:has(input:checked) div[data-testid="stMarkdownContainer"] p {{
+/* Active text styling */
+[data-testid="stSidebar"] [data-testid="stRadioOption"][data-selected="true"] p,
+[data-testid="stSidebar"] [data-testid="stRadioOption"][data-selected="true"] span,
+[data-testid="stSidebar"] [data-testid="stRadioOption"]:has(input:checked) p,
+[data-testid="stSidebar"] [data-testid="stRadioGroup"] > div:has([data-selected="true"]) p,
+[data-testid="stSidebar"] [data-testid="stRadio"] label:has(input:checked) p {{
     color: var(--ea-primary) !important;
     font-weight: 700 !important;
 }}
 
 /* Universal Cursor Pointer & No-Text-Select on all Interactive Elements (Prevents I-beam cursor) */
+[data-testid="stSidebar"] [data-testid="stRadioOption"],
+[data-testid="stSidebar"] [data-testid="stRadioOption"] *,
 [data-testid="stSidebar"] [data-testid="stRadio"] label,
 [data-testid="stSidebar"] [data-testid="stRadio"] label *,
 div[data-testid="stRadio"] label,
@@ -872,8 +977,10 @@ button, button * {{
 }}
 
 /* Horizontal Radios (Theme Toggle & Pill Switches) */
-div[data-testid="stRadio"] div[role="radiogroup"][aria-orientation="horizontal"] {{
-    display: inline-flex !important;
+div[data-testid="stRadio"] div[role="radiogroup"][aria-orientation="horizontal"],
+div[data-testid="stRadio"] [data-testid="stRadioGroup"][aria-orientation="horizontal"],
+[data-testid="stSidebar"] [data-testid="stRadioGroup"][aria-orientation="horizontal"] {{
+    display: flex !important;
     flex-direction: row !important;
     background: var(--ea-surface) !important;
     border: 1px solid var(--ea-border) !important;
@@ -881,9 +988,14 @@ div[data-testid="stRadio"] div[role="radiogroup"][aria-orientation="horizontal"]
     padding: 4px !important;
     gap: 4px !important;
     box-shadow: var(--ea-card-shadow) !important;
+    width: 100% !important;
 }}
 
+div[data-testid="stRadio"] div[role="radiogroup"][aria-orientation="horizontal"] [data-testid="stRadioOption"],
+div[data-testid="stRadio"] [data-testid="stRadioGroup"][aria-orientation="horizontal"] [data-testid="stRadioOption"],
+[data-testid="stSidebar"] [data-testid="stRadioGroup"][aria-orientation="horizontal"] [data-testid="stRadioOption"],
 div[data-testid="stRadio"] div[role="radiogroup"][aria-orientation="horizontal"] > label {{
+    flex: 1 1 0 !important;
     border-radius: 9999px !important;
     padding: 6px 14px !important;
     margin: 0 !important;
@@ -893,28 +1005,41 @@ div[data-testid="stRadio"] div[role="radiogroup"][aria-orientation="horizontal"]
     align-items: center !important;
     justify-content: center !important;
     transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+    transform: none !important;
 }}
 
+div[data-testid="stRadio"] [data-testid="stRadioGroup"][aria-orientation="horizontal"] [data-testid="stRadioOption"] [class*="e1dm8mpf4"],
+div[data-testid="stRadio"] [data-testid="stRadioGroup"][aria-orientation="horizontal"] [data-testid="stRadioOption"] [class*="e1dm8mpf5"],
+div[data-testid="stRadio"] [data-testid="stRadioGroup"][aria-orientation="horizontal"] [data-testid="stRadioOption"] > div > div:first-child,
 div[data-testid="stRadio"] div[role="radiogroup"][aria-orientation="horizontal"] > label > div:first-child {{
     display: none !important;
 }}
 
+div[data-testid="stRadio"] [data-testid="stRadioGroup"][aria-orientation="horizontal"] [data-testid="stRadioOption"] p,
 div[data-testid="stRadio"] div[role="radiogroup"][aria-orientation="horizontal"] > label div[data-testid="stMarkdownContainer"] p {{
     font-size: 0.85rem !important;
     font-weight: 600 !important;
     color: var(--ea-text-muted) !important;
     margin: 0 !important;
+    text-align: center !important;
 }}
 
+div[data-testid="stRadio"] [data-testid="stRadioGroup"][aria-orientation="horizontal"] [data-testid="stRadioOption"]:hover,
 div[data-testid="stRadio"] div[role="radiogroup"][aria-orientation="horizontal"] > label:hover {{
     background: var(--ea-surface-hover) !important;
 }}
 
+div[data-testid="stRadio"] [data-testid="stRadioGroup"][aria-orientation="horizontal"] [data-testid="stRadioOption"][data-selected="true"],
+div[data-testid="stRadio"] [data-testid="stRadioGroup"][aria-orientation="horizontal"] [data-testid="stRadioOption"]:has(input:checked),
 div[data-testid="stRadio"] div[role="radiogroup"][aria-orientation="horizontal"] > label:has(input:checked) {{
     background: var(--ea-primary) !important;
     box-shadow: 0 2px 10px rgba(37, 99, 235, 0.4) !important;
+    border-left: 1px solid transparent !important;
+    transform: none !important;
 }}
 
+div[data-testid="stRadio"] [data-testid="stRadioGroup"][aria-orientation="horizontal"] [data-testid="stRadioOption"][data-selected="true"] p,
+div[data-testid="stRadio"] [data-testid="stRadioGroup"][aria-orientation="horizontal"] [data-testid="stRadioOption"]:has(input:checked) p,
 div[data-testid="stRadio"] div[role="radiogroup"][aria-orientation="horizontal"] > label:has(input:checked) div[data-testid="stMarkdownContainer"] p {{
     color: #ffffff !important;
     font-weight: 700 !important;
