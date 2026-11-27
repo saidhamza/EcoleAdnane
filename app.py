@@ -436,42 +436,43 @@ def get_custom_css(theme: str = "dark") -> str:
 
     if is_dark:
         palette_vars = """
-    --ea-bg: #0b0f19;
-    --ea-surface: #131b2e;
-    --ea-surface-hover: #1b2640;
-    --ea-surface-card: rgba(19, 27, 46, 0.75);
-    --ea-border: rgba(255, 255, 255, 0.09);
-    --ea-border-hover: rgba(59, 130, 246, 0.45);
+    --ea-bg: #090d16;
+    --ea-bg-gradient: radial-gradient(circle at 50% 0%, #131b2e 0%, #090d16 100%);
+    --ea-surface: #0f172a;
+    --ea-surface-hover: #1e293b;
+    --ea-surface-card: rgba(15, 23, 42, 0.78);
+    --ea-border: rgba(255, 255, 255, 0.08);
+    --ea-border-hover: rgba(59, 130, 246, 0.5);
     --ea-primary: #3b82f6;
     --ea-primary-hover: #2563eb;
     --ea-primary-glow: rgba(59, 130, 246, 0.28);
     --ea-text: #f8fafc;
     --ea-text-muted: #94a3b8;
     --ea-text-dim: #64748b;
-    --ea-card-bg: linear-gradient(145deg, rgba(19, 27, 46, 0.85) 0%, rgba(13, 19, 34, 0.95) 100%);
-    --ea-card-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+    --ea-card-bg: linear-gradient(145deg, rgba(15, 23, 42, 0.85) 0%, rgba(11, 16, 29, 0.95) 100%);
+    --ea-card-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.4), 0 0 1px 1px rgba(255, 255, 255, 0.05);
     --ea-input-bg: rgba(15, 23, 42, 0.85);
-    --ea-input-border: rgba(255, 255, 255, 0.09);
-    --ea-tablist-bg: rgba(19, 27, 46, 0.8);
+    --ea-input-border: rgba(255, 255, 255, 0.1);
+    --ea-tablist-bg: rgba(15, 23, 42, 0.85);
     --ea-tab-color: #94a3b8;
-    --ea-sidebar-bg: #0d1322;
+    --ea-sidebar-bg: #0b0f19;
     --ea-sidebar-text: #f8fafc;
-    --ea-sidebar-border: rgba(255, 255, 255, 0.08);
-    --ea-hero-bg: linear-gradient(145deg, #131b2e 0%, #0d1322 100%);
+    --ea-sidebar-border: rgba(255, 255, 255, 0.07);
+    --ea-hero-bg: linear-gradient(145deg, rgba(19, 27, 46, 0.95) 0%, rgba(11, 16, 29, 0.98) 100%);
     --ea-hero-title: #ffffff;
     --ea-hero-desc: #94a3b8;
     --ea-hero-badge-bg: rgba(59, 130, 246, 0.15);
     --ea-hero-badge-color: #93c5fd;
     --ea-hero-badge-border: rgba(59, 130, 246, 0.3);
-    --ea-btn-sec-bg: rgba(19, 27, 46, 0.85);
-    --ea-btn-sec-border: rgba(255, 255, 255, 0.09);
+    --ea-btn-sec-bg: rgba(15, 23, 42, 0.85);
+    --ea-btn-sec-border: rgba(255, 255, 255, 0.1);
     --ea-btn-sec-color: #f1f5f9;
-    --ea-btn-sec-hover: rgba(28, 39, 66, 0.95);
+    --ea-btn-sec-hover: rgba(30, 41, 59, 0.95);
     --ea-trap-bg: rgba(245, 158, 11, 0.09);
     --ea-trap-color: #fef3c7;
     --ea-expl-bg: rgba(16, 185, 129, 0.09);
     --ea-expl-color: #dcfce7;
-    --ea-quiz-bg: linear-gradient(145deg, rgba(19, 27, 46, 0.75) 0%, rgba(13, 19, 34, 0.9) 100%);
+    --ea-quiz-bg: linear-gradient(145deg, rgba(15, 23, 42, 0.78) 0%, rgba(11, 16, 29, 0.92) 100%);
     --ea-quiz-badge: #93c5fd;
     --ea-emerald: #10b981;
     --ea-amber: #f59e0b;
@@ -483,6 +484,7 @@ def get_custom_css(theme: str = "dark") -> str:
     else:
         palette_vars = """
     --ea-bg: #f8fafc;
+    --ea-bg-gradient: radial-gradient(circle at 50% 0%, #edf2f7 0%, #f8fafc 100%);
     --ea-surface: #ffffff;
     --ea-surface-hover: #f1f5f9;
     --ea-surface-card: #ffffff;
@@ -495,7 +497,7 @@ def get_custom_css(theme: str = "dark") -> str:
     --ea-text-muted: #64748b;
     --ea-text-dim: #94a3b8;
     --ea-card-bg: #ffffff;
-    --ea-card-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.06), 0 2px 6px -1px rgba(0, 0, 0, 0.04);
+    --ea-card-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 1px 3px rgba(0, 0, 0, 0.05);
     --ea-input-bg: #ffffff;
     --ea-input-border: #cbd5e1;
     --ea-tablist-bg: #edf2f7;
@@ -506,9 +508,9 @@ def get_custom_css(theme: str = "dark") -> str:
     --ea-hero-bg: #ffffff;
     --ea-hero-title: #0f172a;
     --ea-hero-desc: #64748b;
-    --ea-hero-badge-bg: rgba(37, 99, 235, 0.1);
+    --ea-hero-badge-bg: rgba(37, 99, 235, 0.08);
     --ea-hero-badge-color: #2563eb;
-    --ea-hero-badge-border: rgba(37, 99, 235, 0.25);
+    --ea-hero-badge-border: rgba(37, 99, 235, 0.22);
     --ea-btn-sec-bg: #ffffff;
     --ea-btn-sec-border: #cbd5e1;
     --ea-btn-sec-color: #1e293b;
@@ -541,8 +543,26 @@ def get_custom_css(theme: str = "dark") -> str:
     --ea-radius-full: 9999px;
 }}
 
+/* Streamlit Chrome Overhaul & Resets */
+header[data-testid="stHeader"] {{
+    background: transparent !important;
+    backdrop-filter: blur(8px) !important;
+}}
+
+#MainMenu, footer, [data-testid="stToolbar"] {{
+    visibility: hidden !important;
+    display: none !important;
+}}
+
+.block-container {{
+    padding-top: 1.8rem !important;
+    padding-bottom: 3.5rem !important;
+    max-width: 1260px !important;
+}}
+
 /* Base Typography & Antialiasing */
 html, body, .stApp {{
+    background: var(--ea-bg-gradient) !important;
     background-color: var(--ea-bg) !important;
     color: var(--ea-text) !important;
     font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
@@ -562,7 +582,7 @@ button, input, select, textarea, label,
 /* Headings with Modern EdTech hierarchy */
 h1, h2, h3, h4, h5, h6 {{
     font-family: 'Plus Jakarta Sans', 'AdnaneSans', 'Cairo', sans-serif !important;
-    letter-spacing: -0.02em !important;
+    letter-spacing: -0.025em !important;
     font-weight: 800 !important;
     color: var(--ea-text) !important;
 }}
@@ -664,7 +684,7 @@ h1, h2, h3, h4, h5, h6 {{
     font-size: 1.3rem;
     font-weight: 800;
     color: #ffffff;
-    box-shadow: 0 2px 10px rgba(59, 130, 246, 0.35);
+    box-shadow: 0 4px 14px rgba(59, 130, 246, 0.4);
 }}
 
 .profile-name-text {{
@@ -741,62 +761,212 @@ h1, h2, h3, h4, h5, h6 {{
     100% {{ box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }}
 }}
 
+/* Sidebar Modern Navigation Menu (Turn radio into modern SaaS pill tabs) */
+[data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"]:not([aria-orientation="horizontal"]) {{
+    gap: 8px !important;
+    display: flex !important;
+    flex-direction: column !important;
+    background: transparent !important;
+    border: none !important;
+    padding: 0 !important;
+}}
+
+[data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"]:not([aria-orientation="horizontal"]) > label {{
+    background: var(--ea-surface) !important;
+    border: 1px solid var(--ea-border) !important;
+    border-radius: 14px !important;
+    padding: 12px 16px !important;
+    margin: 0 !important;
+    cursor: pointer !important;
+    display: flex !important;
+    align-items: center !important;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04) !important;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}}
+
+/* Hide the native radio circle button */
+[data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"]:not([aria-orientation="horizontal"]) > label > div:first-child {{
+    display: none !important;
+}}
+
+/* Label text */
+[data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"]:not([aria-orientation="horizontal"]) > label div[data-testid="stMarkdownContainer"] p {{
+    font-size: 0.95rem !important;
+    font-weight: 600 !important;
+    color: var(--ea-text-muted) !important;
+    margin: 0 !important;
+    transition: all 0.2s ease !important;
+}}
+
+/* Hover state */
+[data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"]:not([aria-orientation="horizontal"]) > label:hover {{
+    background: var(--ea-surface-hover) !important;
+    border-color: var(--ea-border-hover) !important;
+    transform: translateX(4px) !important;
+}}
+
+[data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"]:not([aria-orientation="horizontal"]) > label:hover div[data-testid="stMarkdownContainer"] p {{
+    color: var(--ea-text) !important;
+}}
+
+/* Selected / Active Navigation Item */
+[data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"]:not([aria-orientation="horizontal"]) > label:has(input:checked) {{
+    background: linear-gradient(135deg, rgba(59, 130, 246, 0.16) 0%, rgba(139, 92, 246, 0.12) 100%) !important;
+    border: 1.5px solid var(--ea-primary) !important;
+    box-shadow: 0 4px 16px var(--ea-primary-glow) !important;
+    transform: translateX(4px) !important;
+}}
+
+[data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"]:not([aria-orientation="horizontal"]) > label:has(input:checked) div[data-testid="stMarkdownContainer"] p {{
+    color: var(--ea-primary) !important;
+    font-weight: 800 !important;
+}}
+
+/* Horizontal Radios (Theme Toggle & Pill Switches) */
+div[data-testid="stRadio"] div[role="radiogroup"][aria-orientation="horizontal"] {{
+    display: inline-flex !important;
+    flex-direction: row !important;
+    background: var(--ea-surface) !important;
+    border: 1px solid var(--ea-border) !important;
+    border-radius: 9999px !important;
+    padding: 4px !important;
+    gap: 4px !important;
+    box-shadow: var(--ea-card-shadow) !important;
+}}
+
+div[data-testid="stRadio"] div[role="radiogroup"][aria-orientation="horizontal"] > label {{
+    border-radius: 9999px !important;
+    padding: 6px 14px !important;
+    margin: 0 !important;
+    border: 1px solid transparent !important;
+    cursor: pointer !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}}
+
+div[data-testid="stRadio"] div[role="radiogroup"][aria-orientation="horizontal"] > label > div:first-child {{
+    display: none !important;
+}}
+
+div[data-testid="stRadio"] div[role="radiogroup"][aria-orientation="horizontal"] > label div[data-testid="stMarkdownContainer"] p {{
+    font-size: 0.85rem !important;
+    font-weight: 600 !important;
+    color: var(--ea-text-muted) !important;
+    margin: 0 !important;
+}}
+
+div[data-testid="stRadio"] div[role="radiogroup"][aria-orientation="horizontal"] > label:hover {{
+    background: var(--ea-surface-hover) !important;
+}}
+
+div[data-testid="stRadio"] div[role="radiogroup"][aria-orientation="horizontal"] > label:has(input:checked) {{
+    background: var(--ea-primary) !important;
+    box-shadow: 0 2px 10px rgba(37, 99, 235, 0.4) !important;
+}}
+
+div[data-testid="stRadio"] div[role="radiogroup"][aria-orientation="horizontal"] > label:has(input:checked) div[data-testid="stMarkdownContainer"] p {{
+    color: #ffffff !important;
+    font-weight: 700 !important;
+}}
+
 /* Segmented Control / Modern Pill Tabs */
 div[role="tablist"] {{
     background: var(--ea-tablist-bg) !important;
     border: 1px solid var(--ea-border) !important;
-    border-radius: 16px !important;
+    border-radius: 18px !important;
     padding: 6px !important;
     gap: 6px !important;
     margin-bottom: 24px !important;
-    backdrop-filter: blur(12px) !important;
+    backdrop-filter: blur(16px) !important;
     box-shadow: var(--ea-card-shadow) !important;
+    display: flex !important;
+    overflow-x: auto !important;
 }}
 
 div[role="tablist"] button {{
     background: transparent !important;
     color: var(--ea-tab-color) !important;
-    border-radius: 11px !important;
-    padding: 8px 18px !important;
-    font-size: 0.92rem !important;
+    border-radius: 12px !important;
+    padding: 10px 20px !important;
+    font-size: 0.94rem !important;
     font-weight: 600 !important;
     border: 1px solid transparent !important;
-    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
     margin: 0 !important;
+    white-space: nowrap !important;
 }}
 
 div[role="tablist"] button:hover {{
     background: var(--ea-surface-hover) !important;
     color: var(--ea-text) !important;
+    transform: translateY(-1px) !important;
 }}
 
 div[role="tablist"] button[aria-selected="true"] {{
-    background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%) !important;
+    background: linear-gradient(135deg, #2563eb 0%, #3b82f6 100%) !important;
     color: #ffffff !important;
     border: 1px solid rgba(255, 255, 255, 0.25) !important;
-    box-shadow: 0 4px 14px rgba(37, 99, 235, 0.35) !important;
+    box-shadow: 0 4px 16px rgba(37, 99, 235, 0.4) !important;
     font-weight: 700 !important;
+    transform: translateY(-1px) !important;
 }}
 
 div[role="tablist"] button p {{
-    font-size: 0.92rem !important;
+    font-size: 0.94rem !important;
     font-weight: inherit !important;
     margin: 0 !important;
+}}
+
+/* Modern Pills (st.pills) Styling */
+[data-testid="stPills"] {{
+    gap: 8px !important;
+    margin-bottom: 12px !important;
+}}
+
+[data-testid="stPills"] button {{
+    border-radius: 9999px !important;
+    padding: 6px 16px !important;
+    font-weight: 600 !important;
+    font-size: 0.88rem !important;
+    border: 1px solid var(--ea-border) !important;
+    background: var(--ea-surface) !important;
+    color: var(--ea-text-muted) !important;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04) !important;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}}
+
+[data-testid="stPills"] button:hover {{
+    background: var(--ea-surface-hover) !important;
+    border-color: var(--ea-border-hover) !important;
+    color: var(--ea-text) !important;
+    transform: translateY(-1px) !important;
+}}
+
+[data-testid="stPills"] button[aria-pressed="true"],
+[data-testid="stPills"] button[data-checked="true"] {{
+    background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%) !important;
+    color: #ffffff !important;
+    border-color: transparent !important;
+    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.35) !important;
+    font-weight: 700 !important;
 }}
 
 /* Modern Dashboard Hero & Catalog Styles */
 .ea-dashboard-hero {{
     background: var(--ea-hero-bg);
     border: 1px solid var(--ea-border);
-    border-radius: var(--ea-radius-lg);
+    border-radius: 20px;
     padding: 24px 28px;
-    margin-bottom: 22px;
+    margin-bottom: 24px;
     box-shadow: var(--ea-card-shadow);
     display: flex;
     align-items: center;
-    gap: 20px;
+    gap: 24px;
     position: relative;
     overflow: hidden;
+    backdrop-filter: blur(16px);
 }}
 
 .ea-dashboard-hero::before {{
@@ -810,15 +980,15 @@ div[role="tablist"] button p {{
 }}
 
 .ea-hero-icon-box {{
-    width: 60px;
-    height: 60px;
-    border-radius: 16px;
+    width: 64px;
+    height: 64px;
+    border-radius: 18px;
     background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 2rem;
-    box-shadow: 0 8px 18px rgba(59, 130, 246, 0.3);
+    font-size: 2.2rem;
+    box-shadow: 0 10px 24px rgba(59, 130, 246, 0.35);
     flex-shrink: 0;
 }}
 
@@ -827,19 +997,19 @@ div[role="tablist"] button p {{
 }}
 
 .ea-hero-title {{
-    font-size: 1.5rem;
+    font-size: 1.6rem;
     font-weight: 800;
     color: var(--ea-hero-title);
-    letter-spacing: -0.02em;
-    margin-bottom: 4px;
+    letter-spacing: -0.025em;
+    margin-bottom: 6px;
     font-family: 'Cairo', 'Plus Jakarta Sans', sans-serif;
 }}
 
 .ea-hero-desc {{
-    font-size: 0.92rem;
+    font-size: 0.94rem;
     color: var(--ea-hero-desc);
-    line-height: 1.5;
-    margin-bottom: 10px;
+    line-height: 1.55;
+    margin-bottom: 12px;
 }}
 
 .ea-hero-badges {{
@@ -851,34 +1021,14 @@ div[role="tablist"] button p {{
 .ea-hero-badge-pill {{
     display: inline-flex;
     align-items: center;
-    gap: 5px;
+    gap: 6px;
     background: var(--ea-hero-badge-bg);
     color: var(--ea-hero-badge-color);
     border: 1px solid var(--ea-hero-badge-border);
     border-radius: var(--ea-radius-full);
-    padding: 3px 12px;
-    font-size: 0.78rem;
+    padding: 4px 14px;
+    font-size: 0.8rem;
     font-weight: 700;
-}}
-
-/* Theme Toggle Radio Pill Styling */
-div[data-testid="stRadio"] > div[role="radiogroup"] {{
-    background: var(--ea-surface) !important;
-    border: 1px solid var(--ea-border) !important;
-    border-radius: 30px !important;
-    padding: 4px !important;
-    gap: 4px !important;
-    display: inline-flex !important;
-}}
-
-div[data-testid="stRadio"] > div[role="radiogroup"] label {{
-    border-radius: 20px !important;
-    padding: 4px 12px !important;
-    margin: 0 !important;
-    cursor: pointer !important;
-    font-size: 0.82rem !important;
-    font-weight: 700 !important;
-    transition: all 0.2s ease !important;
 }}
 
 /* Hero Course Header Box */
@@ -886,12 +1036,13 @@ div[data-testid="stRadio"] > div[role="radiogroup"] label {{
     background: var(--ea-hero-bg) !important;
     color: var(--ea-hero-title) !important;
     border: 1px solid var(--ea-border) !important;
-    padding: 22px 26px !important;
-    border-radius: var(--ea-radius-md) !important;
-    margin-bottom: 20px !important;
+    padding: 24px 28px !important;
+    border-radius: 18px !important;
+    margin-bottom: 24px !important;
     box-shadow: var(--ea-card-shadow) !important;
     position: relative !important;
     overflow: hidden !important;
+    backdrop-filter: blur(16px) !important;
 }}
 
 .course-header-box::before {{
@@ -962,7 +1113,7 @@ div[data-testid="stRadio"] > div[role="radiogroup"] label {{
     background: rgba(56, 189, 248, 0.12);
     color: #0284c7;
     border: 1px solid rgba(56, 189, 248, 0.28);
-    padding: 3px 12px;
+    padding: 4px 12px;
     border-radius: 12px;
     font-size: 0.84rem;
     font-weight: 600;
@@ -1029,33 +1180,33 @@ div[data-testid="stRadio"] > div[role="radiogroup"] label {{
 /* Modern Buttons Override */
 button[kind="primary"], [data-testid="stBaseButton-primary"] {{
     background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%) !important;
-    border: 1px solid rgba(255, 255, 255, 0.15) !important;
-    border-radius: 12px !important;
+    border: 1px solid rgba(255, 255, 255, 0.18) !important;
+    border-radius: 14px !important;
     font-weight: 700 !important;
     color: #ffffff !important;
-    box-shadow: 0 4px 14px rgba(37, 99, 235, 0.35) !important;
-    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+    box-shadow: 0 4px 16px rgba(37, 99, 235, 0.35) !important;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
     letter-spacing: 0.2px !important;
 }}
 
 button[kind="primary"]:hover, [data-testid="stBaseButton-primary"]:hover {{
-    transform: translateY(-1px) !important;
-    box-shadow: 0 6px 20px rgba(37, 99, 235, 0.5) !important;
+    transform: translateY(-2px) !important;
+    box-shadow: 0 8px 24px rgba(37, 99, 235, 0.5) !important;
 }}
 
 button[kind="secondary"], [data-testid="stBaseButton-secondary"] {{
     background: var(--ea-btn-sec-bg) !important;
     border: 1px solid var(--ea-btn-sec-border) !important;
-    border-radius: 12px !important;
+    border-radius: 14px !important;
     color: var(--ea-btn-sec-color) !important;
     font-weight: 600 !important;
-    transition: all 0.2s ease !important;
+    transition: all 0.25s ease !important;
 }}
 
 button[kind="secondary"]:hover, [data-testid="stBaseButton-secondary"]:hover {{
     background: var(--ea-btn-sec-hover) !important;
     border-color: var(--ea-border-hover) !important;
-    transform: translateY(-1px) !important;
+    transform: translateY(-2px) !important;
 }}
 
 /* Modern Metrics Styling */
@@ -1063,9 +1214,9 @@ button[kind="secondary"]:hover, [data-testid="stBaseButton-secondary"]:hover {{
     background: var(--ea-card-bg) !important;
     border: 1px solid var(--ea-border) !important;
     border-radius: var(--ea-radius-md) !important;
-    padding: 16px 20px !important;
+    padding: 18px 22px !important;
     box-shadow: var(--ea-card-shadow) !important;
-    transition: all 0.2s ease !important;
+    transition: all 0.25s ease !important;
 }}
 
 [data-testid="stMetric"]:hover {{
@@ -1091,7 +1242,7 @@ button[kind="secondary"]:hover, [data-testid="stBaseButton-secondary"]:hover {{
     background: var(--ea-surface-card) !important;
     border: 1px solid var(--ea-border) !important;
     border-radius: var(--ea-radius-md) !important;
-    margin-bottom: 12px !important;
+    margin-bottom: 14px !important;
 }}
 
 [data-testid="stExpander"] summary {{
@@ -1105,7 +1256,7 @@ div[data-baseweb="input"] > div,
 div[data-baseweb="textarea"] > div {{
     background-color: var(--ea-input-bg) !important;
     border: 1px solid var(--ea-input-border) !important;
-    border-radius: 12px !important;
+    border-radius: 14px !important;
     color: var(--ea-text) !important;
     transition: all 0.2s ease !important;
 }}
@@ -1119,8 +1270,8 @@ div[data-baseweb="input"]:hover > div {{
 [data-testid="stChatMessage"] {{
     background: var(--ea-surface-card) !important;
     border: 1px solid var(--ea-border) !important;
-    border-radius: 16px !important;
-    padding: 16px 20px !important;
+    border-radius: 18px !important;
+    padding: 18px 22px !important;
     margin-bottom: 14px !important;
     box-shadow: var(--ea-card-shadow) !important;
 }}
@@ -1130,15 +1281,32 @@ div[data-baseweb="input"]:hover > div {{
     border: 1px solid var(--ea-hero-badge-border) !important;
 }}
 
+/* Modern Audio Player Container */
+div[data-testid="stAudio"] {{
+    background: var(--ea-surface) !important;
+    border: 1px solid var(--ea-border) !important;
+    border-radius: 16px !important;
+    padding: 8px 12px !important;
+    margin: 12px 0 !important;
+    box-shadow: var(--ea-card-shadow) !important;
+}}
+
+div[data-testid="stAudio"] audio {{
+    width: 100% !important;
+    height: 42px !important;
+}}
+
 /* Quiz Question Card */
 .quiz-question-card {{
     background: var(--ea-quiz-bg);
     border: 1px solid var(--ea-border);
-    border-radius: var(--ea-radius-md);
-    padding: 18px 22px;
-    margin-top: 16px;
-    margin-bottom: 8px;
+    border-radius: 18px;
+    padding: 22px 26px;
+    margin-top: 18px;
+    margin-bottom: 12px;
     box-shadow: var(--ea-card-shadow);
+    backdrop-filter: blur(12px);
+    transition: all 0.25s ease;
 }}
 
 .quiz-q-badge {{
@@ -1147,11 +1315,11 @@ div[data-baseweb="input"]:hover > div {{
     background: var(--ea-hero-badge-bg);
     color: var(--ea-quiz-badge);
     border: 1px solid var(--ea-hero-badge-border);
-    border-radius: 8px;
-    padding: 3px 12px;
+    border-radius: 10px;
+    padding: 4px 14px;
     font-size: 0.82rem;
     font-weight: 700;
-    margin-bottom: 10px;
+    margin-bottom: 12px;
     letter-spacing: 0.3px;
 }}
 
@@ -2732,12 +2900,43 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
         )
         render_html(hero_banner_html)
 
-        col_f1, col_f2, col_f3 = st.columns([2, 2, 2])
-        with col_f1:
-            all_subjects = ["Toutes"] + SUBJECTS_FR + SUBJECTS_EN + SUBJECTS_AR
-            selected_subject = st.selectbox("Filtrer par matière :", all_subjects)
-        with col_f2:
-            selected_lang = st.selectbox("Langue :", ["Toutes", "Français", "English", "العربية"])
+        # Sujets rapides avec icônes
+        pill_subject_map = {
+            "✨ Toutes": None,
+            "📐 Mathématiques": "Mathématiques",
+            "🧪 Physique-Chimie": "Physique-Chimie",
+            "🌱 SVT": "SVT",
+            "🌍 Histoire-Géographie": "Histoire-Géographie",
+            "📖 Langue Arabe": "اللغة العربية",
+            "🇫🇷 Français": "Français",
+            "🇬🇧 English": "English",
+            "🕌 Éducation Islamique": "التربية الإسلامية",
+            "💻 Informatique": "Informatique",
+            "🧠 Philosophie": "الفلسفة",
+        }
+
+        # Obtenir les matières disponibles
+        available_subjects = {c.get("subject", "") for c in all_user_courses}
+        pill_options = ["✨ Toutes"]
+        for p_label, p_subj in pill_subject_map.items():
+            if p_subj is None or p_subj in available_subjects or any(p_subj in s for s in available_subjects if s):
+                if p_label not in pill_options:
+                    pill_options.append(p_label)
+
+        selected_pill = st.pills(
+            "Matières",
+            options=pill_options,
+            default="✨ Toutes",
+            label_visibility="collapsed",
+            key="revision_subject_pills",
+        )
+        selected_subject = pill_subject_map.get(selected_pill)
+
+        col_s1, col_s2 = st.columns([3, 1])
+        with col_s1:
+            search_query = st.text_input("Rechercher un cours", placeholder="🔍 Rechercher un cours par titre ou notion...", label_visibility="collapsed")
+        with col_s2:
+            selected_lang = st.selectbox("Langue", ["Toutes", "Français", "English", "العربية"], label_visibility="collapsed")
             if selected_lang == "Français":
                 lang_filter = "fr"
             elif selected_lang == "English":
@@ -2746,30 +2945,35 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                 lang_filter = "ar"
             else:
                 lang_filter = None
-        with col_f3:
-            courses_list = list_courses(
-                user_id=active_user_id,
-                subject=selected_subject if selected_subject != "Toutes" else None,
-                language=lang_filter,
-            )
-            st.write(f"**{len(courses_list)} cours disponible(s)**")
+
+        raw_courses_list = list_courses(
+            user_id=active_user_id,
+            subject=selected_subject,
+            language=lang_filter,
+        )
+
+        if search_query and search_query.strip():
+            sq = search_query.strip().lower()
+            courses_list = [c for c in raw_courses_list if sq in c.get("title", "").lower() or sq in c.get("subject", "").lower() or sq in (c.get("key_concepts") or "").lower()]
+        else:
+            courses_list = raw_courses_list
 
         if not courses_list:
             if is_admin:
                 st.info(
-                    "👋 Aucun cours enregistré pour cet espace. Utilisez le menu **➕ Gestion & Ajout des Cours** pour déposer vos documents PDF."
+                    "👋 Aucun cours ne correspond à ces critères. Utilisez le menu **➕ Gestion & Ajout des Cours** pour déposer vos documents PDF."
                 )
             else:
                 st.info(
-                    "👋 **Bienvenue dans votre espace de révision !**\n\n"
-                    "Vous n'avez pas encore de cours enregistré. Rendez-vous dans le menu **➕ Ajouter un Cours** "
-                    "pour téléverser vos premiers supports PDF ou dans **⚙️ Paramètres & Sauvegardes** pour restaurer une sauvegarde existante."
+                    "👋 **Aucun cours trouvé pour ce filtre.**\n\n"
+                    "Essayez de réinitialiser le filtre ou rendez-vous dans le menu **➕ Ajouter un Cours** "
+                    "pour téléverser vos premiers supports PDF."
                 )
             return
 
-        course_options = {c["id"]: f"{'🇲🇦 [AR]' if c['language'] == 'ar' else ('🇬🇧 [EN]' if c['language'] == 'en' else '🇫🇷 [FR]')} {c['subject']} - {c['title']}" for c in courses_list}
+        course_options = {c["id"]: f"{'🇲🇦 [AR]' if c['language'] == 'ar' else ('🇬🇧 [EN]' if c['language'] == 'en' else '🇫🇷 [FR]')} {c['subject']} — {c['title']}" for c in courses_list}
         selected_course_id = st.selectbox(
-            "Sélectionnez le cours à réviser :",
+            f"📚 Sélectionnez le cours à réviser ({len(courses_list)} disponible{'s' if len(courses_list) > 1 else ''}) :",
             options=list(course_options.keys()),
             format_func=lambda x: course_options[x],
             key="student_selected_course_id",
