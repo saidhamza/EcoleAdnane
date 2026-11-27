@@ -1238,6 +1238,16 @@ print("debug")
         self.assertIn("مرحباً", ar_cleaned)
         self.assertIn("درس الرياضيات", ar_cleaned)
 
+    def test_clean_text_expands_arabic_dates(self):
+        # 1934م ne doit plus être prononcé mètre mais ميلادية
+        self.assertIn("1934 مِيلَادِيَّة", clean_text_for_speech("في سنة 1934م، جمع هتلر بين السلطات"))
+        self.assertIn("1933 مِيلَادِيَّة", clean_text_for_speech("عين مستشاراً سنة 1933م."))
+        self.assertIn("1945 مِيلَادِيَّة", clean_text_for_speech("انتحر سنة 1945م"))
+        self.assertIn("500 قَبْلَ الْمِيلَاد", clean_text_for_speech("حدث ذلك سنة 500 ق.م"))
+        self.assertIn("1445 هِجْرِيَّة", clean_text_for_speech("في عام 1445هـ"))
+        # Vérifier que les mesures de distance légitimes (ex: 10م) ne sont pas touchées
+        self.assertIn("10م", clean_text_for_speech("المسافة هي 10م"))
+
     def test_get_speech_config_trilingual(self):
         cfg_fr = get_speech_config("fr")
         self.assertEqual(cfg_fr["lang_code"], "fr-FR")

@@ -96,7 +96,32 @@ def clean_text_for_speech(text: str) -> str:
         s,
     )
 
-    # 12. Remplacer les sauts de lignes et espaces multiples par un espace unique
+    # 12. Normalisation et expansion phonétique des dates et abréviations pour le TTS
+    # Les moteurs vocaux (Google, Microsoft Edge) lisent "م" après un nombre comme "متر" (mètre).
+    # On remplace les abréviations de dates par leur prononciation naturelle :
+    # "1934م" -> "1934 مِيلَادِيَّة", "ق.م" -> "قَبْلَ الْمِيلَاد", "هـ" -> "هِجْرِيَّة".
+    AR_WORD_CHARS = r"[\u0621-\u064A\u064B-\u065F\u0671-\u06D3\u06D5a-zA-Z]"
+
+    # a) Avant J.-C. : 500 ق.م / 500 ق م -> 500 قبل الميلاد
+    s = re.sub(rf"([\d٠-٩]+)\s*ق[\u064B-\u0652\u0670]*\.?\s*م[\u064B-\u0652\u0670]*\.?(?!{AR_WORD_CHARS})", r"\1 قَبْلَ الْمِيلَاد", s)
+
+    # b) Année hégirienne : 1445هـ / 1445 هـ -> 1445 هجرية
+    s = re.sub(rf"([\d٠-٩]+)\s*(?:هـ|هـ?)(?!{AR_WORD_CHARS})", r"\1 هِجْرِيَّة", s)
+
+    # c) Siècle en lettres + م : القرن العشرين م -> القرن العشرين ميلادي
+    s = re.sub(rf"((?:القرن|قرن|الْقَرْن|قَرْن)[\u064B-\u065F]*\s+[\u0621-\u064A\u064B-\u065F]+)\s+م[\u064B-\u0652\u0670]*\.?(?!{AR_WORD_CHARS})", r"\1 مِيلَادِيّ", s)
+
+    # d) Année précédée de termes temporels (سنة، عام، القرن، فترة، عهد...) : سنة 33م -> سنة 33 ميلادية
+    s = re.sub(
+        rf"(سَنَةَ?|عامَ?|سنة|عام|فترة|عهد|القرن|قرن|حوالي|بين|إلى|من|تاريخ)\s+([\d٠-٩]+)\s*م[\u064B-\u0652\u0670]*\.?(?!{AR_WORD_CHARS})",
+        r"\1 \2 مِيلَادِيَّة",
+        s,
+    )
+
+    # e) Années à 3 ou 4 chiffres suivies de م (ex: 1934م, 1934 م, 1934م.) -> 1934 ميلادية
+    s = re.sub(rf"([\d٠-٩]{{3,4}})\s*م[\u064B-\u0652\u0670]*\.?(?!{AR_WORD_CHARS})", r"\1 مِيلَادِيَّة", s)
+
+    # 13. Remplacer les sauts de lignes et espaces multiples par un espace unique
     s = re.sub(r"\s+", " ", s).strip()
 
     return s
