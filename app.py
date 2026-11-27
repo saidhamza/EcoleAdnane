@@ -1925,6 +1925,66 @@ div[data-testid="stSegmentedControl"], [data-testid="stButtonGroup"] {{ backgrou
 [data-testid="stSelectbox"] div[data-baseweb="select"] > div {{ background-color: var(--ea-input-bg) !important; border: 1px solid var(--ea-input-border) !important; }}
 [data-testid="stSelectbox"] div[data-baseweb="select"] div, [data-testid="stSelectbox"] div[data-baseweb="select"] span {{ color: var(--ea-text) !important; }}
 
+/* ---- THEME FIDELITY 3: force inactive pills/segmented_control & selectbox arrow ---- */
+[data-testid="stButtonGroup"] button,
+[data-testid="stPills"] button,
+div[data-testid="stSegmentedControl"] button {{
+    background-color: var(--ea-surface) !important;
+    background: var(--ea-surface) !important;
+    color: var(--ea-text-muted) !important;
+    border: 1px solid var(--ea-border) !important;
+    box-shadow: none !important;
+}}
+[data-testid="stButtonGroup"] button *,
+[data-testid="stPills"] button *,
+div[data-testid="stSegmentedControl"] button * {{
+    color: var(--ea-text-muted) !important;
+}}
+[data-testid="stButtonGroup"] button:hover,
+[data-testid="stPills"] button:hover,
+div[data-testid="stSegmentedControl"] button:hover {{
+    background-color: var(--ea-surface-hover) !important;
+    background: var(--ea-surface-hover) !important;
+    border-color: var(--ea-border-hover) !important;
+    color: var(--ea-text) !important;
+}}
+[data-testid="stButtonGroup"] button[aria-pressed="true"],
+[data-testid="stButtonGroup"] button[aria-checked="true"],
+[data-testid="stButtonGroup"] button[data-checked="true"],
+[data-testid="stButtonGroup"] button[data-testid="stBaseButton-pillsActive"],
+[data-testid="stButtonGroup"] button[data-testid="stBaseButton-segmented_controlActive"],
+[data-testid="stPills"] button[aria-pressed="true"],
+[data-testid="stPills"] button[data-checked="true"],
+div[data-testid="stSegmentedControl"] button[aria-checked="true"],
+div[data-testid="stSegmentedControl"] button[data-checked="true"] {{
+    background-color: var(--ea-primary) !important;
+    background: var(--ea-primary) !important;
+    color: var(--ea-on-primary) !important;
+    border-color: var(--ea-primary) !important;
+    font-weight: 700 !important;
+}}
+[data-testid="stButtonGroup"] button[aria-pressed="true"] *,
+[data-testid="stButtonGroup"] button[aria-checked="true"] *,
+[data-testid="stButtonGroup"] button[data-checked="true"] *,
+[data-testid="stButtonGroup"] button[data-testid="stBaseButton-pillsActive"] *,
+[data-testid="stButtonGroup"] button[data-testid="stBaseButton-segmented_controlActive"] *,
+[data-testid="stPills"] button[aria-pressed="true"] *,
+[data-testid="stPills"] button[data-checked="true"] *,
+div[data-testid="stSegmentedControl"] button[aria-checked="true"] *,
+div[data-testid="stSegmentedControl"] button[data-checked="true"] * {{
+    color: var(--ea-on-primary) !important;
+}}
+
+/* Selectbox right arrow container */
+[data-testid="stSelectbox"] div[data-baseweb="select"] > div > div {{
+    background-color: transparent !important;
+    background: transparent !important;
+}}
+[data-testid="stSelectbox"] div[data-baseweb="select"] > div {{
+    background-color: var(--ea-input-bg) !important;
+    background: var(--ea-input-bg) !important;
+}}
+
 /* ---- COMPACT + TYPOGRAPHY LAYER ---- */
 html {{ font-size: 14.5px; }}
 .stApp, [data-testid="stMarkdownContainer"] p, [data-testid="stMarkdownContainer"] li {{ font-size: 1rem; line-height: 1.55; }}
