@@ -2104,6 +2104,31 @@ div[data-testid="stVerticalBlockBorderWrapper"] {{ padding: 0.2rem !important; }
 [data-testid="stSidebar"] [data-testid="stRadioOption"], [data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] label {{ min-height: 34px !important; }}
 [data-testid="stSidebar"] [data-testid="stRadioOption"] p {{ font-size: 0.9rem !important; }}
 @media (max-width: 768px) {{ .block-container {{ padding: 2.8rem 0.8rem 3rem !important; }} }}
+/* ---- THEME FIDELITY 6: high-specificity tabs text (Streamlit 1.65 BaseWeb) ---- */
+div[data-testid="stTabs"] div[role="tablist"] button[data-baseweb="tab"],
+div[data-testid="stTabs"] div[role="tablist"] button[data-baseweb="tab"] div,
+div[data-testid="stTabs"] div[role="tablist"] button[data-baseweb="tab"] p,
+div[data-testid="stTabs"] div[role="tablist"] button[data-baseweb="tab"] span {{
+    color: var(--ea-text-muted) !important;
+    -webkit-text-fill-color: var(--ea-text-muted) !important;
+    opacity: 1 !important;
+}}
+div[data-testid="stTabs"] div[role="tablist"] button[data-baseweb="tab"]:hover,
+div[data-testid="stTabs"] div[role="tablist"] button[data-baseweb="tab"]:hover p,
+div[data-testid="stTabs"] div[role="tablist"] button[data-baseweb="tab"]:hover span {{
+    color: var(--ea-text) !important;
+    -webkit-text-fill-color: var(--ea-text) !important;
+}}
+div[data-testid="stTabs"] div[role="tablist"] button[data-baseweb="tab"][aria-selected="true"],
+div[data-testid="stTabs"] div[role="tablist"] button[data-baseweb="tab"][aria-selected="true"] div,
+div[data-testid="stTabs"] div[role="tablist"] button[data-baseweb="tab"][aria-selected="true"] p,
+div[data-testid="stTabs"] div[role="tablist"] button[data-baseweb="tab"][aria-selected="true"] span {{
+    background: var(--ea-primary) !important;
+    background-color: var(--ea-primary) !important;
+    color: var(--ea-on-primary) !important;
+    -webkit-text-fill-color: var(--ea-on-primary) !important;
+}}
+
 </style>
 """
 
