@@ -393,7 +393,7 @@ if check_and_handle_cloud_redirect():
 # ---------------------------------------------------------------------------
 
 @st.cache_data
-def get_custom_css() -> str:
+def get_custom_css(theme: str = "dark") -> str:
     base_dir = Path(__file__).parent
     local_naskh = base_dir / "assets" / "fonts" / "NotoNaskhArabic.ttf"
     local_sans = base_dir / "assets" / "fonts" / "NotoSansArabic.ttf"
@@ -432,13 +432,10 @@ def get_custom_css() -> str:
         }}
         """
 
-    return f"""
-<style>
-{font_faces}
+    is_dark = (theme != "light")
 
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Cairo:wght@500;600;700;800;900&family=Amiri:wght@400;700&family=Tajawal:wght@500;700;800&display=swap');
-
-:root {{
+    if is_dark:
+        palette_vars = """
     --ea-bg: #0b0f19;
     --ea-surface: #131b2e;
     --ea-surface-hover: #1b2640;
@@ -451,12 +448,93 @@ def get_custom_css() -> str:
     --ea-text: #f8fafc;
     --ea-text-muted: #94a3b8;
     --ea-text-dim: #64748b;
+    --ea-card-bg: linear-gradient(145deg, rgba(19, 27, 46, 0.85) 0%, rgba(13, 19, 34, 0.95) 100%);
+    --ea-card-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+    --ea-input-bg: rgba(15, 23, 42, 0.85);
+    --ea-input-border: rgba(255, 255, 255, 0.09);
+    --ea-tablist-bg: rgba(19, 27, 46, 0.8);
+    --ea-tab-color: #94a3b8;
+    --ea-sidebar-bg: #0d1322;
+    --ea-sidebar-text: #f8fafc;
+    --ea-sidebar-border: rgba(255, 255, 255, 0.08);
+    --ea-hero-bg: linear-gradient(145deg, #131b2e 0%, #0d1322 100%);
+    --ea-hero-title: #ffffff;
+    --ea-hero-desc: #94a3b8;
+    --ea-hero-badge-bg: rgba(59, 130, 246, 0.15);
+    --ea-hero-badge-color: #93c5fd;
+    --ea-hero-badge-border: rgba(59, 130, 246, 0.3);
+    --ea-btn-sec-bg: rgba(19, 27, 46, 0.85);
+    --ea-btn-sec-border: rgba(255, 255, 255, 0.09);
+    --ea-btn-sec-color: #f1f5f9;
+    --ea-btn-sec-hover: rgba(28, 39, 66, 0.95);
+    --ea-trap-bg: rgba(245, 158, 11, 0.09);
+    --ea-trap-color: #fef3c7;
+    --ea-expl-bg: rgba(16, 185, 129, 0.09);
+    --ea-expl-color: #dcfce7;
+    --ea-quiz-bg: linear-gradient(145deg, rgba(19, 27, 46, 0.75) 0%, rgba(13, 19, 34, 0.9) 100%);
+    --ea-quiz-badge: #93c5fd;
     --ea-emerald: #10b981;
     --ea-amber: #f59e0b;
     --ea-rose: #f43f5e;
     --ea-indigo: #6366f1;
     --ea-purple: #8b5cf6;
     --ea-cyan: #06b6d4;
+        """
+    else:
+        palette_vars = """
+    --ea-bg: #f8fafc;
+    --ea-surface: #ffffff;
+    --ea-surface-hover: #f1f5f9;
+    --ea-surface-card: #ffffff;
+    --ea-border: #e2e8f0;
+    --ea-border-hover: #3b82f6;
+    --ea-primary: #2563eb;
+    --ea-primary-hover: #1d4ed8;
+    --ea-primary-glow: rgba(37, 99, 235, 0.15);
+    --ea-text: #0f172a;
+    --ea-text-muted: #64748b;
+    --ea-text-dim: #94a3b8;
+    --ea-card-bg: #ffffff;
+    --ea-card-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.06), 0 2px 6px -1px rgba(0, 0, 0, 0.04);
+    --ea-input-bg: #ffffff;
+    --ea-input-border: #cbd5e1;
+    --ea-tablist-bg: #edf2f7;
+    --ea-tab-color: #475569;
+    --ea-sidebar-bg: #ffffff;
+    --ea-sidebar-text: #0f172a;
+    --ea-sidebar-border: #e2e8f0;
+    --ea-hero-bg: #ffffff;
+    --ea-hero-title: #0f172a;
+    --ea-hero-desc: #64748b;
+    --ea-hero-badge-bg: rgba(37, 99, 235, 0.1);
+    --ea-hero-badge-color: #2563eb;
+    --ea-hero-badge-border: rgba(37, 99, 235, 0.25);
+    --ea-btn-sec-bg: #ffffff;
+    --ea-btn-sec-border: #cbd5e1;
+    --ea-btn-sec-color: #1e293b;
+    --ea-btn-sec-hover: #f8fafc;
+    --ea-trap-bg: #fffbeb;
+    --ea-trap-color: #78350f;
+    --ea-expl-bg: #f0fdf4;
+    --ea-expl-color: #064e3b;
+    --ea-quiz-bg: #ffffff;
+    --ea-quiz-badge: #2563eb;
+    --ea-emerald: #059669;
+    --ea-amber: #d97706;
+    --ea-rose: #e11d48;
+    --ea-indigo: #4f46e5;
+    --ea-purple: #7c3aed;
+    --ea-cyan: #0891b2;
+        """
+
+    return f"""
+<style>
+{font_faces}
+
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Cairo:wght@500;600;700;800;900&family=Amiri:wght@400;700&family=Tajawal:wght@500;700;800&display=swap');
+
+:root {{
+{palette_vars}
     --ea-radius-sm: 8px;
     --ea-radius-md: 14px;
     --ea-radius-lg: 20px;
@@ -505,7 +583,7 @@ h1, h2, h3, h4, h5, h6 {{
     text-align: right !important;
     direction: rtl !important;
     font-weight: 800 !important;
-    color: #ffffff !important;
+    color: var(--ea-text) !important;
     margin-top: 1.3rem !important;
     margin-bottom: 0.6rem !important;
     line-height: 1.6 !important;
@@ -515,13 +593,13 @@ h1, h2, h3, h4, h5, h6 {{
     font-family: 'AdnaneNaskh', 'Noto Naskh Arabic', serif !important;
     font-size: 1.22rem !important;
     line-height: 2.2 !important;
-    color: #f1f5f9 !important;
+    color: var(--ea-text) !important;
 }}
 
 .rtl-box strong {{
     font-family: 'Cairo', 'AdnaneSans', sans-serif !important;
     font-weight: 700 !important;
-    color: #38bdf8 !important;
+    color: var(--ea-primary) !important;
 }}
 
 .rtl-section-title {{
@@ -530,20 +608,20 @@ h1, h2, h3, h4, h5, h6 {{
     font-family: 'Cairo', 'AdnaneSans', sans-serif !important;
     font-size: 1.6rem !important;
     font-weight: 800 !important;
-    color: #ffffff !important;
+    color: var(--ea-text) !important;
     margin-top: 14px;
     margin-bottom: 12px;
     line-height: 1.5 !important;
 }}
 
-/* Modern Glassmorphic Sidebar */
+/* Modern Glassmorphic / Solid Sidebar */
 [data-testid="stSidebar"] {{
-    background-color: #0d1322 !important;
-    border-right: 1px solid var(--ea-border) !important;
+    background-color: var(--ea-sidebar-bg) !important;
+    border-right: 1px solid var(--ea-sidebar-border) !important;
 }}
 
 [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] h2 {{
-    color: #ffffff !important;
+    color: var(--ea-sidebar-text) !important;
     font-size: 1.35rem !important;
     font-weight: 800 !important;
     letter-spacing: -0.02em !important;
@@ -552,15 +630,20 @@ h1, h2, h3, h4, h5, h6 {{
     gap: 8px;
 }}
 
+[data-testid="stSidebar"] label,
+[data-testid="stSidebar"] p,
+[data-testid="stSidebar"] span {{
+    color: var(--ea-sidebar-text) !important;
+}}
+
 /* Sidebar Student Profile Card */
 .sidebar-profile-card {{
-    background: linear-gradient(145deg, rgba(21, 30, 50, 0.8) 0%, rgba(13, 19, 34, 0.95) 100%);
+    background: var(--ea-surface) !important;
     border: 1px solid var(--ea-border);
     border-radius: var(--ea-radius-md);
     padding: 16px;
-    margin-bottom: 16px;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
-    backdrop-filter: blur(10px);
+    margin-bottom: 14px;
+    box-shadow: var(--ea-card-shadow);
 }}
 
 .profile-avatar-row {{
@@ -587,7 +670,7 @@ h1, h2, h3, h4, h5, h6 {{
 .profile-name-text {{
     font-size: 1.05rem;
     font-weight: 700;
-    color: #ffffff;
+    color: var(--ea-sidebar-text) !important;
     line-height: 1.2;
 }}
 
@@ -660,19 +743,19 @@ h1, h2, h3, h4, h5, h6 {{
 
 /* Segmented Control / Modern Pill Tabs */
 div[role="tablist"] {{
-    background: rgba(19, 27, 46, 0.8) !important;
+    background: var(--ea-tablist-bg) !important;
     border: 1px solid var(--ea-border) !important;
     border-radius: 16px !important;
-    padding: 5px !important;
-    gap: 5px !important;
+    padding: 6px !important;
+    gap: 6px !important;
     margin-bottom: 24px !important;
     backdrop-filter: blur(12px) !important;
-    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.2) !important;
+    box-shadow: var(--ea-card-shadow) !important;
 }}
 
 div[role="tablist"] button {{
     background: transparent !important;
-    color: var(--ea-text-muted) !important;
+    color: var(--ea-tab-color) !important;
     border-radius: 11px !important;
     padding: 8px 18px !important;
     font-size: 0.92rem !important;
@@ -683,15 +766,15 @@ div[role="tablist"] button {{
 }}
 
 div[role="tablist"] button:hover {{
-    background: rgba(255, 255, 255, 0.05) !important;
-    color: #ffffff !important;
+    background: var(--ea-surface-hover) !important;
+    color: var(--ea-text) !important;
 }}
 
 div[role="tablist"] button[aria-selected="true"] {{
     background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%) !important;
     color: #ffffff !important;
-    border: 1px solid rgba(255, 255, 255, 0.2) !important;
-    box-shadow: 0 4px 14px rgba(37, 99, 235, 0.4) !important;
+    border: 1px solid rgba(255, 255, 255, 0.25) !important;
+    box-shadow: 0 4px 14px rgba(37, 99, 235, 0.35) !important;
     font-weight: 700 !important;
 }}
 
@@ -701,15 +784,112 @@ div[role="tablist"] button p {{
     margin: 0 !important;
 }}
 
+/* Modern Dashboard Hero & Catalog Styles */
+.ea-dashboard-hero {{
+    background: var(--ea-hero-bg);
+    border: 1px solid var(--ea-border);
+    border-radius: var(--ea-radius-lg);
+    padding: 24px 28px;
+    margin-bottom: 22px;
+    box-shadow: var(--ea-card-shadow);
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    position: relative;
+    overflow: hidden;
+}}
+
+.ea-dashboard-hero::before {{
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 4px;
+    background: linear-gradient(90deg, #3b82f6 0%, #8b5cf6 50%, #10b981 100%);
+}}
+
+.ea-hero-icon-box {{
+    width: 60px;
+    height: 60px;
+    border-radius: 16px;
+    background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2rem;
+    box-shadow: 0 8px 18px rgba(59, 130, 246, 0.3);
+    flex-shrink: 0;
+}}
+
+.ea-hero-content {{
+    flex: 1;
+}}
+
+.ea-hero-title {{
+    font-size: 1.5rem;
+    font-weight: 800;
+    color: var(--ea-hero-title);
+    letter-spacing: -0.02em;
+    margin-bottom: 4px;
+    font-family: 'Cairo', 'Plus Jakarta Sans', sans-serif;
+}}
+
+.ea-hero-desc {{
+    font-size: 0.92rem;
+    color: var(--ea-hero-desc);
+    line-height: 1.5;
+    margin-bottom: 10px;
+}}
+
+.ea-hero-badges {{
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}}
+
+.ea-hero-badge-pill {{
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    background: var(--ea-hero-badge-bg);
+    color: var(--ea-hero-badge-color);
+    border: 1px solid var(--ea-hero-badge-border);
+    border-radius: var(--ea-radius-full);
+    padding: 3px 12px;
+    font-size: 0.78rem;
+    font-weight: 700;
+}}
+
+/* Theme Toggle Radio Pill Styling */
+div[data-testid="stRadio"] > div[role="radiogroup"] {{
+    background: var(--ea-surface) !important;
+    border: 1px solid var(--ea-border) !important;
+    border-radius: 30px !important;
+    padding: 4px !important;
+    gap: 4px !important;
+    display: inline-flex !important;
+}}
+
+div[data-testid="stRadio"] > div[role="radiogroup"] label {{
+    border-radius: 20px !important;
+    padding: 4px 12px !important;
+    margin: 0 !important;
+    cursor: pointer !important;
+    font-size: 0.82rem !important;
+    font-weight: 700 !important;
+    transition: all 0.2s ease !important;
+}}
+
 /* Hero Course Header Box */
 .course-header-box {{
-    background: linear-gradient(145deg, #131b2e 0%, #0d1322 100%) !important;
-    color: #ffffff !important;
+    background: var(--ea-hero-bg) !important;
+    color: var(--ea-hero-title) !important;
     border: 1px solid var(--ea-border) !important;
     padding: 22px 26px !important;
     border-radius: var(--ea-radius-md) !important;
     margin-bottom: 20px !important;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25) !important;
+    box-shadow: var(--ea-card-shadow) !important;
     position: relative !important;
     overflow: hidden !important;
 }}
@@ -725,7 +905,7 @@ div[role="tablist"] button p {{
 }}
 
 .course-header-box h2 {{
-    color: #ffffff !important;
+    color: var(--ea-hero-title) !important;
     font-family: 'Cairo', 'AdnaneSans', 'Plus Jakarta Sans', sans-serif !important;
     font-size: 1.85rem !important;
     font-weight: 800 !important;
@@ -771,8 +951,8 @@ div[role="tablist"] button p {{
     border-radius: var(--ea-radius-full);
     font-size: 0.82rem;
     font-weight: 700;
-    background-color: rgba(255, 255, 255, 0.08) !important;
-    color: #e2e8f0 !important;
+    background-color: var(--ea-surface) !important;
+    color: var(--ea-text) !important;
     border: 1px solid var(--ea-border) !important;
 }}
 
@@ -780,7 +960,7 @@ div[role="tablist"] button p {{
 .concept-tag {{
     display: inline-block;
     background: rgba(56, 189, 248, 0.12);
-    color: #38bdf8;
+    color: #0284c7;
     border: 1px solid rgba(56, 189, 248, 0.28);
     padding: 3px 12px;
     border-radius: 12px;
@@ -797,9 +977,9 @@ div[role="tablist"] button p {{
 
 /* Cards: Trap and Explanation */
 .trap-card {{
-    background-color: rgba(245, 158, 11, 0.09) !important;
+    background-color: var(--ea-trap-bg) !important;
     border-left: 4px solid var(--ea-amber) !important;
-    color: #fef3c7 !important;
+    color: var(--ea-trap-color) !important;
     padding: 16px 20px;
     border-radius: var(--ea-radius-sm);
     margin: 14px 0;
@@ -807,9 +987,9 @@ div[role="tablist"] button p {{
 }}
 
 .trap-card-rtl {{
-    background-color: rgba(245, 158, 11, 0.09) !important;
+    background-color: var(--ea-trap-bg) !important;
     border-right: 4px solid var(--ea-amber) !important;
-    color: #fef3c7 !important;
+    color: var(--ea-trap-color) !important;
     padding: 16px 20px;
     border-radius: var(--ea-radius-sm);
     margin: 14px 0;
@@ -822,9 +1002,9 @@ div[role="tablist"] button p {{
 }}
 
 .explanation-card {{
-    background-color: rgba(16, 185, 129, 0.09) !important;
+    background-color: var(--ea-expl-bg) !important;
     border-left: 4px solid var(--ea-emerald) !important;
-    color: #dcfce7 !important;
+    color: var(--ea-expl-color) !important;
     padding: 16px 20px;
     border-radius: var(--ea-radius-sm);
     margin: 14px 0;
@@ -832,9 +1012,9 @@ div[role="tablist"] button p {{
 }}
 
 .explanation-card-rtl {{
-    background-color: rgba(16, 185, 129, 0.09) !important;
+    background-color: var(--ea-expl-bg) !important;
     border-right: 4px solid var(--ea-emerald) !important;
-    color: #dcfce7 !important;
+    color: var(--ea-expl-color) !important;
     padding: 16px 20px;
     border-radius: var(--ea-radius-sm);
     margin: 14px 0;
@@ -864,35 +1044,33 @@ button[kind="primary"]:hover, [data-testid="stBaseButton-primary"]:hover {{
 }}
 
 button[kind="secondary"], [data-testid="stBaseButton-secondary"] {{
-    background: rgba(19, 27, 46, 0.85) !important;
-    border: 1px solid var(--ea-border) !important;
+    background: var(--ea-btn-sec-bg) !important;
+    border: 1px solid var(--ea-btn-sec-border) !important;
     border-radius: 12px !important;
-    color: #f1f5f9 !important;
+    color: var(--ea-btn-sec-color) !important;
     font-weight: 600 !important;
     transition: all 0.2s ease !important;
 }}
 
 button[kind="secondary"]:hover, [data-testid="stBaseButton-secondary"]:hover {{
-    background: rgba(28, 39, 66, 0.95) !important;
+    background: var(--ea-btn-sec-hover) !important;
     border-color: var(--ea-border-hover) !important;
-    color: #ffffff !important;
     transform: translateY(-1px) !important;
 }}
 
 /* Modern Metrics Styling */
 [data-testid="stMetric"] {{
-    background: linear-gradient(145deg, rgba(19, 27, 46, 0.85) 0%, rgba(13, 19, 34, 0.95) 100%) !important;
+    background: var(--ea-card-bg) !important;
     border: 1px solid var(--ea-border) !important;
     border-radius: var(--ea-radius-md) !important;
     padding: 16px 20px !important;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18) !important;
+    box-shadow: var(--ea-card-shadow) !important;
     transition: all 0.2s ease !important;
 }}
 
 [data-testid="stMetric"]:hover {{
     border-color: var(--ea-border-hover) !important;
     transform: translateY(-2px) !important;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25) !important;
 }}
 
 [data-testid="stMetricLabel"] {{
@@ -903,14 +1081,14 @@ button[kind="secondary"]:hover, [data-testid="stBaseButton-secondary"]:hover {{
 }}
 
 [data-testid="stMetricValue"] {{
-    color: #ffffff !important;
+    color: var(--ea-text) !important;
     font-weight: 800 !important;
     font-size: 1.85rem !important;
 }}
 
 /* Expanders */
 [data-testid="stExpander"] {{
-    background: rgba(19, 27, 46, 0.6) !important;
+    background: var(--ea-surface-card) !important;
     border: 1px solid var(--ea-border) !important;
     border-radius: var(--ea-radius-md) !important;
     margin-bottom: 12px !important;
@@ -918,17 +1096,17 @@ button[kind="secondary"]:hover, [data-testid="stBaseButton-secondary"]:hover {{
 
 [data-testid="stExpander"] summary {{
     font-weight: 700 !important;
-    color: #f1f5f9 !important;
+    color: var(--ea-text) !important;
 }}
 
 /* Inputs, Selectboxes & Textareas */
 div[data-baseweb="select"] > div,
 div[data-baseweb="input"] > div,
 div[data-baseweb="textarea"] > div {{
-    background-color: rgba(15, 23, 42, 0.85) !important;
-    border: 1px solid var(--ea-border) !important;
+    background-color: var(--ea-input-bg) !important;
+    border: 1px solid var(--ea-input-border) !important;
     border-radius: 12px !important;
-    color: #ffffff !important;
+    color: var(--ea-text) !important;
     transition: all 0.2s ease !important;
 }}
 
@@ -939,36 +1117,36 @@ div[data-baseweb="input"]:hover > div {{
 
 /* Chat Messages Styling */
 [data-testid="stChatMessage"] {{
-    background: rgba(19, 27, 46, 0.65) !important;
+    background: var(--ea-surface-card) !important;
     border: 1px solid var(--ea-border) !important;
     border-radius: 16px !important;
     padding: 16px 20px !important;
     margin-bottom: 14px !important;
-    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12) !important;
+    box-shadow: var(--ea-card-shadow) !important;
 }}
 
 [data-testid="stChatMessage"][data-test-is-user="true"] {{
-    background: linear-gradient(135deg, rgba(37, 99, 235, 0.15) 0%, rgba(30, 64, 175, 0.2) 100%) !important;
-    border: 1px solid rgba(59, 130, 246, 0.3) !important;
+    background: var(--ea-hero-badge-bg) !important;
+    border: 1px solid var(--ea-hero-badge-border) !important;
 }}
 
 /* Quiz Question Card */
 .quiz-question-card {{
-    background: linear-gradient(145deg, rgba(19, 27, 46, 0.75) 0%, rgba(13, 19, 34, 0.9) 100%);
+    background: var(--ea-quiz-bg);
     border: 1px solid var(--ea-border);
     border-radius: var(--ea-radius-md);
     padding: 18px 22px;
     margin-top: 16px;
     margin-bottom: 8px;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.16);
+    box-shadow: var(--ea-card-shadow);
 }}
 
 .quiz-q-badge {{
     display: inline-flex;
     align-items: center;
-    background: rgba(59, 130, 246, 0.15);
-    color: #93c5fd;
-    border: 1px solid rgba(59, 130, 246, 0.3);
+    background: var(--ea-hero-badge-bg);
+    color: var(--ea-quiz-badge);
+    border: 1px solid var(--ea-hero-badge-border);
     border-radius: 8px;
     padding: 3px 12px;
     font-size: 0.82rem;
@@ -981,12 +1159,15 @@ div[data-baseweb="input"]:hover > div {{
 div[data-testid="stAlert"] {{
     border-radius: var(--ea-radius-md) !important;
     border-width: 1px !important;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15) !important;
+    box-shadow: var(--ea-card-shadow) !important;
 }}
 </style>
 """
 
-st.markdown(get_custom_css(), unsafe_allow_html=True)
+if "ea_theme" not in st.session_state:
+    st.session_state["ea_theme"] = "dark"
+current_theme = st.session_state.get("ea_theme", "dark")
+st.markdown(get_custom_css(theme=current_theme), unsafe_allow_html=True)
 
 
 def render_html(html_str: str, sidebar: bool = False) -> None:
@@ -1444,6 +1625,22 @@ if "code" in st.query_params:
 if not st.session_state.get("is_authenticated"):
     total_users = get_user_count()
 
+    top_c1, top_c2 = st.columns([7, 3])
+    with top_c2:
+        cur_t = st.session_state.get("ea_theme", "dark")
+        login_t = st.radio(
+            "Thème",
+            options=["🌙 Sombre", "☀️ Clair"],
+            index=0 if cur_t == "dark" else 1,
+            horizontal=True,
+            label_visibility="collapsed",
+            key="login_theme_toggle",
+        )
+        t_val = "dark" if "Sombre" in login_t else "light"
+        if t_val != cur_t:
+            st.session_state["ea_theme"] = t_val
+            st.rerun()
+
     col_login_c1, col_login_c2, col_login_c3 = st.columns([1, 2, 1])
     with col_login_c2:
         st.write("")
@@ -1612,13 +1809,23 @@ def render_magnificent_trophy_grid(badges: List[Dict[str, Any]], cols_count: int
             is_unlocked = badge.get("is_unlocked", False)
             unlocked_at = badge.get("unlocked_at")
 
+            is_theme_dark = st.session_state.get("ea_theme", "dark") != "light"
+
             if is_unlocked:
-                bg_style = "linear-gradient(135deg, rgba(30, 41, 59, 0.95) 0%, rgba(15, 23, 42, 0.98) 100%)"
-                border_color = "#f59e0b"
-                shadow_style = "0 8px 20px -4px rgba(245, 158, 11, 0.35), inset 0 1px 1px rgba(255, 255, 255, 0.15)"
-                title_color = "#fef08a"
-                desc_color = "#e2e8f0"
-                glow_aura = "radial-gradient(circle, rgba(245, 158, 11, 0.3) 0%, transparent 70%)"
+                if is_theme_dark:
+                    bg_style = "linear-gradient(135deg, rgba(30, 41, 59, 0.95) 0%, rgba(15, 23, 42, 0.98) 100%)"
+                    border_color = "#f59e0b"
+                    shadow_style = "0 8px 20px -4px rgba(245, 158, 11, 0.35), inset 0 1px 1px rgba(255, 255, 255, 0.15)"
+                    title_color = "#fef08a"
+                    desc_color = "#e2e8f0"
+                    glow_aura = "radial-gradient(circle, rgba(245, 158, 11, 0.3) 0%, transparent 70%)"
+                else:
+                    bg_style = "linear-gradient(135deg, #ffffff 0%, #fffbeb 100%)"
+                    border_color = "#f59e0b"
+                    shadow_style = "0 6px 18px rgba(245, 158, 11, 0.18)"
+                    title_color = "#92400e"
+                    desc_color = "#334155"
+                    glow_aura = "radial-gradient(circle, rgba(245, 158, 11, 0.15) 0%, transparent 70%)"
                 badge_tag_text = "✨ تم الفوز به" if is_ar else "✨ DÉBLOQUÉ"
                 badge_tag = (
                     f"<span style='background: linear-gradient(135deg, #10b981 0%, #059669 100%); "
@@ -1630,18 +1837,30 @@ def render_magnificent_trophy_grid(badges: List[Dict[str, Any]], cols_count: int
                 pct = 100
                 prog_val = 1.0
             else:
-                bg_style = "linear-gradient(135deg, rgba(15, 23, 42, 0.75) 0%, rgba(2, 6, 23, 0.85) 100%)"
-                border_color = "#334155"
-                shadow_style = "0 4px 12px rgba(0, 0, 0, 0.3)"
-                title_color = "#cbd5e1"
-                desc_color = "#94a3b8"
-                glow_aura = "none"
                 badge_tag_text = "🔒 قيد الإنجاز" if is_ar else "🔒 EN COURS"
-                badge_tag = (
-                    f"<span style='background: rgba(51, 65, 85, 0.8); color: #94a3b8; padding: 4px 12px; "
-                    f"border-radius: 20px; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.5px; "
-                    f"border: 1px solid #475569;'>{badge_tag_text}</span>"
-                )
+                if is_theme_dark:
+                    bg_style = "linear-gradient(135deg, rgba(15, 23, 42, 0.75) 0%, rgba(2, 6, 23, 0.85) 100%)"
+                    border_color = "#334155"
+                    shadow_style = "0 4px 12px rgba(0, 0, 0, 0.3)"
+                    title_color = "#cbd5e1"
+                    desc_color = "#94a3b8"
+                    badge_tag = (
+                        f"<span style='background: rgba(51, 65, 85, 0.8); color: #94a3b8; padding: 4px 12px; "
+                        f"border-radius: 20px; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.5px; "
+                        f"border: 1px solid #475569;'>{badge_tag_text}</span>"
+                    )
+                else:
+                    bg_style = "#ffffff"
+                    border_color = "#e2e8f0"
+                    shadow_style = "0 2px 8px rgba(0, 0, 0, 0.05)"
+                    title_color = "#475569"
+                    desc_color = "#64748b"
+                    badge_tag = (
+                        f"<span style='background: #f1f5f9; color: #64748b; padding: 4px 12px; "
+                        f"border-radius: 20px; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.5px; "
+                        f"border: 1px solid #cbd5e1;'>{badge_tag_text}</span>"
+                    )
+                glow_aura = "none"
                 icon_filter = "grayscale(100%) opacity(0.38)"
                 pct = badge.get("progress_percent", 0)
                 prog_val = badge.get("progress_ratio", 0.0)
@@ -1778,6 +1997,20 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
         '</div>'
     )
     render_html(profile_card_html, sidebar=True)
+
+    current_theme = st.session_state.get("ea_theme", "dark")
+    sidebar_theme_choice = st.sidebar.radio(
+        "Thème d'affichage",
+        options=["🌙 Sombre", "☀️ Clair"],
+        index=0 if current_theme == "dark" else 1,
+        horizontal=True,
+        label_visibility="collapsed",
+        key="sidebar_theme_toggle",
+    )
+    new_theme = "dark" if "Sombre" in sidebar_theme_choice else "light"
+    if new_theme != current_theme:
+        st.session_state["ea_theme"] = new_theme
+        st.rerun()
 
     # Configuration de la navigation selon le rôle
     is_global_admin_view = False
@@ -2477,7 +2710,27 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
 
         active_u_dict = active_student_info if (is_admin and active_student_info) else current_user
         active_u_cycle = get_pedagogical_cycle(active_u_dict.get("age"), level=active_u_dict.get("level"))
-        st.title(f"📚 Espace de Révision — {active_u_cycle.get('level', 'Collège')}")
+
+        student_name_disp = html.escape(str(active_u_dict.get("name") or "Élève"))
+        cycle_badge_disp = html.escape(str(active_u_cycle.get("badge_text", "Collège")))
+        all_user_courses = list_courses(user_id=active_user_id)
+        total_courses_count = len(all_user_courses)
+
+        hero_banner_html = (
+            '<div class="ea-dashboard-hero">'
+            '<div class="ea-hero-icon-box">🎓</div>'
+            '<div class="ea-hero-content">'
+            f'<div class="ea-hero-title">Espace d\'Apprentissage & Révision — {html.escape(str(active_u_cycle.get("level", "Collège")))}</div>'
+            f'<div class="ea-hero-desc">Bienvenue, <b>{student_name_disp}</b> ! Votre parcours interactif enrichi avec synthèse vocale naturelle, quiz stimulants, fiches de révision et tuteur IA.</div>'
+            '<div class="ea-hero-badges">'
+            f'<span class="ea-hero-badge-pill">🎒 {cycle_badge_disp}</span>'
+            f'<span class="ea-hero-badge-pill">📚 {total_courses_count} cours au total</span>'
+            '<span class="ea-hero-badge-pill">⚡ Entraînement interactif</span>'
+            '</div>'
+            '</div>'
+            '</div>'
+        )
+        render_html(hero_banner_html)
 
         col_f1, col_f2, col_f3 = st.columns([2, 2, 2])
         with col_f1:
