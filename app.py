@@ -100,6 +100,10 @@ try:
         resolve_course_file_path,
         get_course_animation,
         save_course_animation,
+        get_course_story_scenario,
+        save_course_story_scenario,
+        get_course_story_pdf,
+        save_course_story_pdf,
         is_user_openrouter_allowed,
         set_user_openrouter_access,
     )
@@ -164,6 +168,10 @@ except ImportError:
         resolve_course_file_path,
         get_course_animation,
         save_course_animation,
+        get_course_story_scenario,
+        save_course_story_scenario,
+        get_course_story_pdf,
+        save_course_story_pdf,
         is_user_openrouter_allowed,
         set_user_openrouter_access,
     )
@@ -238,6 +246,10 @@ except ImportError:
         transcribe_audio_with_ai,
         generate_course_animation_simulation,
     )
+from services.story_engine import (
+    generate_course_story_scenario,
+    build_story_pdf_and_viewer,
+)
 from services.auth_manager import (
     check_active_user_session,
     check_and_handle_cloud_redirect,
@@ -2433,7 +2445,7 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                 "⚡ بطاقة المراجعة",
                 "🧠 خريطة ذهنية",
                 "🎯 المفاهيم والمكتسبات",
-                "🎬 رسوم متحركة ومحاكاة",
+                "📚 قصة مصورة وكتاب تفاعلي",
                 "📝 تدريب الامتحان",
                 "🤖 الأستاذ سند",
                 "🏆 شارات وكؤوس الدرس",
@@ -2444,7 +2456,7 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                 "⚡ Revision Sheet",
                 "🧠 Mind Map",
                 "🎯 Key Concepts",
-                "🎬 Simulations & Comics",
+                "📚 Storybook & Illustrated PDF",
                 "📝 Exam Quiz",
                 "🤖 AI Tutor (Sanad)",
                 "🏆 Course Trophies",
@@ -2455,7 +2467,7 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                 "⚡ Fiche Express",
                 "🧠 Carte Mentale",
                 "🎯 Notions & Acquis",
-                "🎬 Simulations & BD Animée",
+                "📚 Histoire Illustrée & PDF",
                 "📝 Entraînement Examen",
                 "🤖 Tuteur Virtuel (Sanad)",
                 "🏆 Trophées du Cours",
@@ -2832,129 +2844,221 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
 
         with tab_simulation:
             course_id = current_course["id"]
-            anim_html = get_course_animation(course_id)
             course_subj = current_course.get("subject", "")
             course_tit = current_course.get("title", "")
             course_raw = current_course.get("raw_text") or current_course.get("summary_markdown") or ""
             course_lang = current_course.get("language") or ("ar" if is_ar else ("en" if is_en else "fr"))
 
-            sim_header = "🎬 الرسوم المتحركة والمحاكاة التفاعلية" if is_ar else ("🎬 Interactive Simulations & Animated Comics" if is_en else "🎬 Simulations & BD Animée Interactive")
-            st.markdown(f"### {sim_header}")
+            story_scenario = get_course_story_scenario(course_id)
+            story_pdf_url = get_course_story_pdf(course_id)
+            anim_html = get_course_animation(course_id)
 
-            can_generate = bool(user_api_key or (is_user_openrouter_allowed(active_user_id) and get_openrouter_api_key()))
+            pdf_path_disk = Path(__file__).parent / "static" / "stories" / f"story_course_{course_id}.pdf"
+            html_path_disk = Path(__file__).parent / "static" / "stories" / f"story_course_{course_id}.html"
+            has_pdf = bool(story_pdf_url or pdf_path_disk.exists())
+            has_story_html = html_path_disk.exists()
 
-            if anim_html and anim_html.strip():
-                # Garantir l'existence du fichier statique autonome
-                static_sim_dir = Path(__file__).parent / "static" / "simulations"
-                static_sim_dir.mkdir(parents=True, exist_ok=True)
-                sim_file_path = static_sim_dir / f"course_{course_id}.html"
-                try:
-                    sim_file_path.write_text(anim_html, encoding="utf-8")
-                except Exception as e_w:
-                    logger.debug(f"Impossible d'écrire le fichier statique {sim_file_path}: {e_w}")
+            if is_ar:
+                st.markdown("### 📚 كتاب القصة المصورة التفاعلي & PDF للأطفال")
+                st.caption("تحويل الدرس إلى قصة شيقة مصورة بالألوان المائية مع قراءة صوتية مشكولة بالكامل بصوت المعلم وتصدير بصيغة PDF عالية الجودة.")
+            else:
+                st.markdown("### 📚 Livre d'Histoire Illustré & PDF Pédagogique")
+                st.caption("Transforme ce cours en un conte illustré à l'aquarelle avec narration vocale et téléchargement en album PDF haute définition (format 16:9).")
 
-                static_url = f"/static/simulations/course_{course_id}.html"
+            if has_pdf or has_story_html or (anim_html and anim_html.strip()):
+                story_viewer_url = f"/static/stories/story_course_{course_id}.html" if has_story_html else f"/static/simulations/course_{course_id}.html"
+                pdf_download_url = f"/static/stories/story_course_{course_id}.pdf"
 
                 st.write("")
-                col_btn_main, col_btn_sub1, col_btn_sub2 = st.columns([2.5, 1, 1])
-                with col_btn_main:
-                    open_tab_label = "🚀 Ouvrir la présentation dans un nouvel onglet" if not is_ar else "🚀 فتح العرض في نافذة جديدة"
+                col_btn_open, col_btn_pdf, col_btn_menu = st.columns([2.5, 2, 1.2])
+                with col_btn_open:
                     st.link_button(
-                        label=open_tab_label,
-                        url=static_url,
+                        label="🚀 Ouvrir le Livre d'Histoire dans un nouvel onglet" if not is_ar else "🚀 قراءة كتاب القصة في نافذة جديدة ⛶",
+                        url=story_viewer_url,
                         type="primary",
                         use_container_width=True,
                     )
-                with col_btn_sub1:
-                    dl_label_sim = "📥 Télécharger (HTML)" if not is_ar else "📥 تحميل (HTML)"
-                    st.download_button(
-                        label=dl_label_sim,
-                        data=anim_html,
-                        file_name=f"presentation_cours_{course_id}.html",
-                        mime="text/html",
-                        key=f"dl_sim_btn_{course_id}",
-                        use_container_width=True,
-                    )
-                with col_btn_sub2:
-                    with st.popover("🔄 Régénérer..." if not is_ar else "🔄 إعادة التوليد..."):
-                        style_choice = st.selectbox(
-                            "Style :" if not is_ar else "النمط :",
-                            options=["auto", "notebooklm", "simulation"],
-                            format_func=lambda x: {
-                                "auto": "🤖 Automatique (Diaporama Coloré pour Histoire, Simulation pour Sciences)" if not is_ar else "🤖 تلقائي (عرض ملون مبسط للتاريخ ومحاكاة للعلوم)",
-                                "notebooklm": "🎨 Diaporama Coloré & Pédagogique (Slide Deck interactif)" if not is_ar else "🎨 عرض شرائح ملون وتفاعلي مبسط",
-                                "simulation": "🧪 Simulation Scientifique Interactive" if not is_ar else "🧪 محاكاة علمية تفاعلية",
-                            }[x],
-                            key=f"regen_style_sel_{course_id}",
+                with col_btn_pdf:
+                    if has_pdf:
+                        st.link_button(
+                            label="📥 Télécharger le Livre PDF (Haute Résolution)" if not is_ar else "📥 تحميل كتاب القصة المصور (PDF)",
+                            url=pdf_download_url,
+                            use_container_width=True,
                         )
-                        if st.button("Confirmer et Régénérer" if not is_ar else "تأكيد وبدء التوليد", type="primary", key=f"btn_confirm_regen_{course_id}"):
-                            with st.spinner("Génération de l'animation en cours..." if not is_ar else "جارٍ إنشاء المحاكاة..."):
+                    elif anim_html:
+                        st.download_button(
+                            label="📥 Télécharger (HTML)" if not is_ar else "📥 تحميل (HTML)",
+                            data=anim_html,
+                            file_name=f"histoire_cours_{course_id}.html",
+                            mime="text/html",
+                            key=f"dl_anim_{course_id}",
+                            use_container_width=True,
+                        )
+                with col_btn_menu:
+                    with st.popover("⚙️ Options" if not is_ar else "⚙️ خيارات"):
+                        if st.button("📝 Régénérer le Scénario" if not is_ar else "📝 إعادة كتابة السيناريو", key=f"btn_regen_scen_{course_id}"):
+                            with st.spinner("Conception du nouveau scénario..." if not is_ar else "جارٍ كتابة السيناريو الجديد..."):
                                 try:
-                                    new_html = generate_course_animation_simulation(
+                                    scen = generate_course_story_scenario(
                                         course_text=course_raw,
                                         subject=course_subj,
                                         course_title=course_tit,
                                         language=course_lang,
                                         user_id=active_user_id,
-                                        force_style=None if style_choice == "auto" else style_choice,
                                     )
-                                    if new_html and "<html" in new_html.lower():
-                                        save_course_animation(course_id, new_html)
-                                        st.success("Animation générée avec succès !" if not is_ar else "تم إنشاء المحاكاة بنجاح!")
+                                    save_course_story_scenario(course_id, scen)
+                                    st.success("Scénario régénéré avec succès !" if not is_ar else "تم تحديث السيناريو بنجاح!")
+                                    st.rerun()
+                                except Exception as e_sc:
+                                    st.error(f"Erreur : {e_sc}")
+
+                        if st.button("🎨 Recompiler le Livre & PDF" if not is_ar else "🎨 إعادة تلوين وإنشاء الـ PDF", key=f"btn_recompile_pdf_{course_id}"):
+                            if not story_scenario:
+                                st.warning("Veuillez d'abord générer le scénario." if not is_ar else "يرجى إنشاء السيناريو أولاً.")
+                            else:
+                                with st.spinner("Génération des illustrations et compilation du PDF..." if not is_ar else "جارٍ توليد الرسوم المائية وتجميع الكتاب..."):
+                                    try:
+                                        p_url, h_url = build_story_pdf_and_viewer(
+                                            scenario=story_scenario,
+                                            course_id=course_id,
+                                            subject=course_subj,
+                                            course_title=course_tit,
+                                            language=course_lang,
+                                            user_id=active_user_id,
+                                        )
+                                        save_course_story_pdf(course_id, p_url)
+                                        st.success("Livre et PDF générés avec succès !" if not is_ar else "تم إنشاء الكتاب المصور بنجاح!")
                                         st.rerun()
-                                    else:
-                                        st.error("Le format généré est inattendu.")
-                                except Exception as e_gen:
-                                    st.error(f"Erreur de génération : {e_gen}")
+                                    except Exception as e_comp:
+                                        st.error(f"Erreur compilation : {e_comp}")
 
-                with st.expander("👁️ Aperçu intégré sur cette page" if not is_ar else "👁️ معاينة العرض داخل الصفحة", expanded=False):
-                    st.components.v1.html(anim_html, height=840, scrolling=True)
+                with st.expander("👁️ Aperçu intégré du livre d'histoire" if not is_ar else "👁️ معاينة سريعة داخل الصفحة", expanded=False):
+                    if has_story_html:
+                        story_content = html_path_disk.read_text(encoding="utf-8")
+                        st.components.v1.html(story_content, height=840, scrolling=True)
+                    elif anim_html:
+                        st.components.v1.html(anim_html, height=840, scrolling=True)
+
+                if story_scenario and story_scenario.get("scenes"):
+                    with st.expander("📖 Découpage scénaristique du conte pédagogique" if not is_ar else "📖 السيناريو التربوي وتفاصيل المشاهد", expanded=False):
+                        st.markdown(f"#### ✦ {story_scenario.get('title', course_tit)} ✦")
+                        if story_scenario.get("synopsis"):
+                            st.info(f"**{'ملخص القصة :' if is_ar else 'Synopsis :'}** {story_scenario.get('synopsis')}")
+                        for sc in story_scenario.get("scenes", []):
+                            st.markdown(f"**{'المشهد' if is_ar else 'Scène'} {sc.get('scene_num', '')} : {sc.get('title', '')}**")
+                            st.write(sc.get("narration", ""))
+                            if sc.get("did_you_know"):
+                                st.caption(f"💡 *{'العبرة :' if is_ar else 'À retenir :'}* {sc.get('did_you_know')}")
+                            st.divider()
+
             else:
-                st.info(
-                    "💡 **Donnez vie à ce cours !** Générez une présentation colorée et pédagogique (Slide Deck percutant, Audio explicatif avec visualiseur d'ondes sonores, dialogue d'experts et flashcards) ou une simulation scientifique interactive."
-                    if not is_ar else
-                    "💡 **اجعل هذا الدرس ينبض بالحياة!** أنشئ عرضاً تقديمياً تفاعلياً ملوناً ومبسطاً (شرائح تفاعلية ذكية، حوار صوتي تحليلي مع تموجات صوتية وبطاقات مراجعة) أو محاكاة علمية تفاعلية."
-                )
+                st.write("")
+                col_step1, col_step2 = st.columns(2)
 
-                col_gen1, col_gen2 = st.columns([2, 1])
-                with col_gen1:
-                    style_sel = st.selectbox(
-                        "Format de présentation souhaité :" if not is_ar else "نمط العرض المطلوب :",
-                        options=["auto", "notebooklm", "simulation"],
-                        format_func=lambda x: {
-                            "auto": "🤖 Automatique (Diaporama Coloré pour Histoire/Lettres, Simulation pour Sciences)",
-                            "notebooklm": "🎙️ Diaporama Coloré & Pédagogique (Slide Deck, Audio & Flashcards)",
-                            "simulation": "🧪 Simulation Scientifique Interactive (Sciences, Physique, SVT, Maths)",
-                        }[x] if not is_ar else {
-                            "auto": "🤖 تلقائي (عرض ملون مبسط للتاريخ/الأدب، ومحاكاة للعلوم)",
-                            "notebooklm": "🎙️ عرض ملون وتفاعلي (شرائح ذكية، حوار صوتي وبطاقات مراجعة)",
-                            "simulation": "🧪 محاكاة علمية تفاعلية (فيزياء، كيمياء، علوم، رياضيات)",
-                        }[x],
-                        key=f"init_style_sel_{course_id}",
+                with col_step1:
+                    st.markdown(
+                        """
+                        <div style="background: rgba(37, 99, 235, 0.08); border: 2px solid #3b82f6; border-radius: 14px; padding: 18px; min-height: 220px;">
+                            <h4 style="margin-top:0; color: #2563eb;">📝 Étape 1 : Scénario Pédagogique</h4>
+                            <p style="font-size: 14px; color: #475569;">
+                                L'IA transforme la leçon en un récit vivant pour enfants, découpé en 4 à 5 scènes captivantes avec narration imagée et diacritiques complets (Tashkeel).
+                            </p>
+                        </div>
+                        """ if not is_ar else """
+                        <div style="background: rgba(37, 99, 235, 0.08); border: 2px solid #3b82f6; border-radius: 14px; padding: 18px; min-height: 220px;">
+                            <h4 style="margin-top:0; color: #2563eb;">📝 الخطوة 1 : كتابة سيناريو القصة</h4>
+                            <p style="font-size: 14px; color: #475569;">
+                                يقوم الذكاء الاصطناعي بتحويل الدرس إلى حكاية شيقة ومبسطة للأطفال، مقسمة إلى 4 أو 5 مشاهد ممتعة مع تشكيل كامل للنصوص وعبر تربوية.
+                            </p>
+                        </div>
+                        """,
+                        unsafe_allow_html=True,
                     )
-                with col_gen2:
                     st.write("")
-                    st.write("")
-                    btn_gen_label = "✨ Générer la Présentation Interactive" if not is_ar else "✨ إنشاء العرض التفاعلي"
-                    if st.button(btn_gen_label, type="primary", use_container_width=True, key=f"btn_init_gen_anim_{course_id}"):
-                        with st.spinner("Génération de l'expérience interactive en cours..." if not is_ar else "جارٍ إنشاء التجربة التفاعلية..."):
+                    if story_scenario:
+                        st.success("✅ Scénario prêt !" if not is_ar else "✅ السيناريو مكتمل وجاهز !")
+                        with st.expander("👁️ Voir le scénario généré" if not is_ar else "👁️ عرض تفاصيل السيناريو", expanded=False):
+                            st.json(story_scenario)
+                        btn_label_step1 = "🔄 Réécrire le Scénario" if not is_ar else "🔄 إعادة كتابة السيناريو"
+                    else:
+                        btn_label_step1 = "✨ 1. Générer le Scénario d'Histoire" if not is_ar else "✨ 1. كتابة سيناريو القصة"
+
+                    if st.button(btn_label_step1, type="secondary" if story_scenario else "primary", use_container_width=True, key=f"btn_step1_{course_id}"):
+                        with st.spinner("Écriture du conte pédagogique en cours..." if not is_ar else "جارٍ تأليف القصة وكتابة السيناريو..."):
                             try:
-                                new_html = generate_course_animation_simulation(
+                                scen = generate_course_story_scenario(
                                     course_text=course_raw,
                                     subject=course_subj,
                                     course_title=course_tit,
                                     language=course_lang,
                                     user_id=active_user_id,
-                                    force_style=None if style_sel == "auto" else style_sel,
                                 )
-                                if new_html and "<html" in new_html.lower():
-                                    save_course_animation(course_id, new_html)
-                                    st.success("Expérience interactive générée avec succès !" if not is_ar else "تم إنشاء التجربة بنجاح!")
+                                save_course_story_scenario(course_id, scen)
+                                st.success("Scénario créé avec succès !" if not is_ar else "تم تأليف السيناريو بنجاح!")
+                                st.rerun()
+                            except Exception as e_s1:
+                                st.error(f"Erreur : {e_s1}")
+
+                with col_step2:
+                    st.markdown(
+                        """
+                        <div style="background: rgba(16, 185, 129, 0.08); border: 2px solid #10b981; border-radius: 14px; padding: 18px; min-height: 220px;">
+                            <h4 style="margin-top:0; color: #059669;">🎨 Étape 2 : Livre Illustré & PDF</h4>
+                            <p style="font-size: 14px; color: #475569;">
+                                Génération des illustrations féeriques à l'aquarelle pour chaque scène, synthèse vocale de la narration et compilation en livre PDF haute qualité (16:9).
+                            </p>
+                        </div>
+                        """ if not is_ar else """
+                        <div style="background: rgba(16, 185, 129, 0.08); border: 2px solid #10b981; border-radius: 14px; padding: 18px; min-height: 220px;">
+                            <h4 style="margin-top:0; color: #059669;">🎨 الخطوة 2 : توليد الرسوم وكتاب الـ PDF</h4>
+                            <p style="font-size: 14px; color: #475569;">
+                                رسم لوحات مائية فنية لكل مشهد عبر الذكاء الاصطناعي، تسجيل الصوت بالتشكيل الكامل وتجميع القصة في كتاب PDF رائع عالي الدقة.
+                            </p>
+                        </div>
+                        """,
+                        unsafe_allow_html=True,
+                    )
+                    st.write("")
+                    btn_step2_disabled = not bool(story_scenario)
+                    btn_label_step2 = "🎨 2. Générer le Livre & PDF Illustré" if not is_ar else "🎨 2. إنشاء كتاب القصة والـ PDF"
+                    if st.button(btn_label_step2, type="primary", disabled=btn_step2_disabled, use_container_width=True, key=f"btn_step2_{course_id}"):
+                        with st.spinner("Génération des illustrations à l'aquarelle et compilation du PDF (cela peut prendre environ 30 secondes)..." if not is_ar else "جارٍ رسم اللوحات الفنية وتجميع كتاب الـ PDF..."):
+                            try:
+                                p_url, h_url = build_story_pdf_and_viewer(
+                                    scenario=story_scenario,
+                                    course_id=course_id,
+                                    subject=course_subj,
+                                    course_title=course_tit,
+                                    language=course_lang,
+                                    user_id=active_user_id,
+                                )
+                                save_course_story_pdf(course_id, p_url)
+                                st.success("Livre d'histoire et PDF créés avec succès !" if not is_ar else "تم إنشاء كتاب القصة والـ PDF بنجاح!")
+                                st.rerun()
+                            except Exception as e_s2:
+                                st.error(f"Erreur : {e_s2}")
+
+                with st.expander("🧪 Besoin d'une simulation scientifique interactive de laboratoire ?" if not is_ar else "🧪 هل تفضل تجربة محاكاة علمية تفاعلية؟", expanded=False):
+                    st.caption("Convient particulièrement aux cours de Physique-Chimie, SVT ou Mathématiques complexes." if not is_ar else "مناسبة لدروس الفيزياء والكيمياء وعلوم الحياة والأرض.")
+                    if st.button("✨ Générer une Simulation Scientifique" if not is_ar else "✨ توليد محاكاة علمية تفاعلية", key=f"btn_alt_sim_{course_id}"):
+                        with st.spinner("Génération de la simulation de laboratoire..." if not is_ar else "جارٍ إنشاء المحاكاة..."):
+                            try:
+                                sim_code = generate_course_animation_simulation(
+                                    course_text=course_raw,
+                                    subject=course_subj,
+                                    course_title=course_tit,
+                                    language=course_lang,
+                                    user_id=active_user_id,
+                                    force_style="simulation",
+                                )
+                                if sim_code and "<html" in sim_code.lower():
+                                    save_course_animation(course_id, sim_code)
+                                    st.success("Simulation générée avec succès !" if not is_ar else "تم إنشاء المحاكاة بنجاح!")
                                     st.rerun()
                                 else:
-                                    st.error("Le format généré est inattendu.")
-                            except Exception as e_gen:
-                                st.error(f"Erreur de génération : {e_gen}")
+                                    st.error("Format inattendu.")
+                            except Exception as e_alt:
+                                st.error(f"Erreur : {e_alt}")
 
         with tab_quiz:
 

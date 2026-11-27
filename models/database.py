@@ -2520,6 +2520,92 @@ def save_course_animation(course_id: int, animation_html: str) -> None:
         logger.debug(f"Erreur écriture fichier statique animation: {e_write}")
 
 
+def get_course_story_scenario(course_id: int) -> Optional[Dict[str, Any]]:
+    """Récupère le scénario d'histoire jeunesse pédagogique au format JSON."""
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        try:
+            cur.execute("SELECT story_scenario_json FROM courses WHERE id = ?", (course_id,))
+        except sqlite3.OperationalError:
+            with conn:
+                conn.execute("ALTER TABLE courses ADD COLUMN story_scenario_json TEXT")
+            cur.execute("SELECT story_scenario_json FROM courses WHERE id = ?", (course_id,))
+        row = cur.fetchone()
+        if row and row["story_scenario_json"] and row["story_scenario_json"].strip():
+            try:
+                return json.loads(row["story_scenario_json"])
+            except Exception:
+                return None
+        return None
+    finally:
+        conn.close()
+
+
+def save_course_story_scenario(course_id: int, scenario: Any) -> None:
+    """Sauvegarde le scénario d'histoire jeunesse pédagogique."""
+    if isinstance(scenario, dict):
+        scenario_str = json.dumps(scenario, ensure_ascii=False)
+    else:
+        scenario_str = str(scenario)
+
+    conn = get_connection()
+    try:
+        with conn:
+            try:
+                conn.execute(
+                    "UPDATE courses SET story_scenario_json = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                    (scenario_str, course_id),
+                )
+            except sqlite3.OperationalError:
+                conn.execute("ALTER TABLE courses ADD COLUMN story_scenario_json TEXT")
+                conn.execute(
+                    "UPDATE courses SET story_scenario_json = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                    (scenario_str, course_id),
+                )
+    finally:
+        conn.close()
+
+
+def get_course_story_pdf(course_id: int) -> Optional[str]:
+    """Récupère l'URL relative ou le chemin du PDF du livre d'histoire illustré."""
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        try:
+            cur.execute("SELECT story_pdf_url FROM courses WHERE id = ?", (course_id,))
+        except sqlite3.OperationalError:
+            with conn:
+                conn.execute("ALTER TABLE courses ADD COLUMN story_pdf_url TEXT")
+            cur.execute("SELECT story_pdf_url FROM courses WHERE id = ?", (course_id,))
+        row = cur.fetchone()
+        if row and row["story_pdf_url"] and row["story_pdf_url"].strip():
+            return row["story_pdf_url"]
+        return None
+    finally:
+        conn.close()
+
+
+def save_course_story_pdf(course_id: int, pdf_url: str) -> None:
+    """Sauvegarde l'URL ou chemin du PDF du livre d'histoire illustré."""
+    conn = get_connection()
+    try:
+        with conn:
+            try:
+                conn.execute(
+                    "UPDATE courses SET story_pdf_url = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                    (pdf_url, course_id),
+                )
+            except sqlite3.OperationalError:
+                conn.execute("ALTER TABLE courses ADD COLUMN story_pdf_url TEXT")
+                conn.execute(
+                    "UPDATE courses SET story_pdf_url = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                    (pdf_url, course_id),
+                )
+    finally:
+        conn.close()
+
+
 def get_student_concept_mastery(user_id: int, course_id: int) -> List[Dict[str, Any]]:
     """Récupère les notions et leur statut d'assimilation pour un élève sur un cours (avec auto-réparation et purge des labels génériques)."""
     conn = get_connection()
