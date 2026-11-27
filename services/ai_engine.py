@@ -2077,7 +2077,11 @@ def extract_and_inject_server_tts(html_code: str, language: str = "fr") -> str:
         return html_code.replace("</body>", f"{injection}</body>", 1)
     if "</html>" in html_code:
         return html_code.replace("</html>", f"{injection}</html>", 1)
-    return html_code + f"\n{injection}\n</body>\n</html>"
+    closed_prefix = ""
+    trimmed = html_code.rstrip()
+    if trimmed.rfind("<") > trimmed.rfind(">"):
+        closed_prefix = '">\n</div>\n</div>'
+    return html_code + f"{closed_prefix}\n{injection}\n</body>\n</html>"
 
 
 
@@ -2242,10 +2246,12 @@ SPÉCIFICATIONS TECHNIQUES IMPÉRATIVES :
 RÈGLES D'EXÉCUTION :
 1. {lang_instruction}
 2. Design moderne, lumineux et coloré : fond reposant doux (#f8fafc / #f1f5f9), grandes cartes blanches aérées avec ombres portées soignées et coins arrondis (border-radius: 18px), typographie très lisible, et code couleur vif (bleu, orange, violet, vert, rouge) pour rendre chaque notion visuelle et facile à assimiler pour l'élève.
-3. 100% AUTONOME : tout le CSS dans une balise <style>, tout le JS dans une balise <script>. AUCUNE dépendance CDN externe obligatoire.
-4. Le code doit être PRÊT À L'EMPLOI et s'exécuter directement dans un iframe Streamlit avec support du mode plein écran (window.toggleFullscreenOrNewTab()).
-5. SVG épuré et optimisé : Les illustrations vectorielles SVG doivent être propres, structurées et concises (formes géométriques bien agencées, <rect>, <circle>, <polygon>, <path> optimisés). INTERDICTION FORMELLE de boucles répétitives infinies de coordonnées SVG.
-6. IMPÉRATIF : Le document HTML DOIT ÊTRE COMPLET et se terminer impérativement par </html> sans être tronqué. Ne renvoie AUCUN commentaire avant ou après.
+3. CSS COMPACT (MOINS DE 70 LIGNES) : Rédige un style CSS sobre, propre et concis dans <style> (styles de base pour .container, .card, .badge, .slide, .stat-card, .takeaway, .did-you-know, .flashcard). INTERDICTION FORMELLE d'écrire des centaines de lignes de CSS redondantes ou d'interminables variables : réserve tes tokens pour le contenu des diapositives !
+4. CONTENU COMPLET OBLIGATOIRE : Rédige l'INTÉGRALITÉ des 4 à 5 diapositives, le dialogue de podcast complet et les 4 flashcards.
+5. 100% AUTONOME : tout le CSS dans une balise <style>, tout le JS dans une balise <script>. AUCUNE dépendance CDN externe obligatoire.
+6. Le code doit être PRÊT À L'EMPLOI et s'exécuter directement dans un iframe Streamlit avec support du mode plein écran (window.toggleFullscreenOrNewTab()).
+7. SVG épuré et optimisé : Les illustrations vectorielles SVG doivent être propres, structurées et concises (formes géométriques bien agencées, <rect>, <circle>, <polygon>, <path> optimisés). INTERDICTION FORMELLE de boucles répétitives infinies de coordonnées SVG.
+8. IMPÉRATIF : Le document HTML DOIT ÊTRE COMPLET et se terminer impérativement par </html> sans être tronqué. Ne renvoie AUCUN commentaire avant ou après.
 """
 
     system_instruction = (
