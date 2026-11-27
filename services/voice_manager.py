@@ -9,7 +9,9 @@ Fournit :
 6. Zéro consommation de quota ou de jetons Google Gemini (100% gratuit côté client).
 """
 
+import asyncio
 import base64
+import concurrent.futures
 import hashlib
 import html
 import io
@@ -197,11 +199,66 @@ def is_linux_platform() -> bool:
     return sys.platform.startswith("linux") or platform.system().lower() == "linux"
 
 
-def get_server_tts_audio_base64(text: str, language: str = "fr") -> Optional[str]:
+# ===========================================================================
+# 2. SYNTHÈSE VOCALE HAUTE FIDÉLITÉ (MICROSOFT EDGE NEURAL TTS)
+# ===========================================================================
+
+MICROSOFT_DEFAULT_VOICES = {
+    "ar": "ar-SA-HamedNeural",
+    "fr": "fr-FR-HenriNeural",
+    "en": "en-US-GuyNeural",
+}
+
+AVAILABLE_VOICES = {
+    "ar": [
+        {"id": "ar-SA-HamedNeural", "name": "حامد - السعودية (رسمي وقور)", "gender": "Male"},
+        {"id": "ar-SA-ZariyahNeural", "name": "زارية - السعودية (واضح ونقي)", "gender": "Female"},
+        {"id": "ar-MA-JamalNeural", "name": "جمال - المغرب (مغاربي هادئ)", "gender": "Male"},
+    ],
+    "fr": [
+        {"id": "fr-FR-HenriNeural", "name": "Henri - France (Formel / Posé)", "gender": "Male"},
+        {"id": "fr-FR-DeniseNeural", "name": "Denise - France (Clair / Naturel)", "gender": "Female"},
+        {"id": "fr-FR-VivienneMultilingualNeural", "name": "Vivienne - France (Expressif)", "gender": "Female"},
+    ],
+    "en": [
+        {"id": "en-US-GuyNeural", "name": "Guy - US (Professional / Clear)", "gender": "Male"},
+        {"id": "en-US-JennyNeural", "name": "Jenny - US (Natural / Friendly)", "gender": "Female"},
+    ],
+}
+
+
+async def _synthesize_edge_tts(text: str, voice_name: str, rate_val: str = "+0%") -> bytes:
+    """Synthétise l'audio en streaming via edge_tts."""
+    import edge_tts
+    communicate = edge_tts.Communicate(text, voice_name, rate=rate_val)
+    buf = io.BytesIO()
+    async for chunk in communicate.stream():
+        if chunk["type"] == "audio":
+            buf.write(chunk["data"])
+    buf.seek(0)
+    return buf.getvalue()
+
+
+def _run_async_edge_tts(text: str, voice_name: str, rate_val: str = "+0%") -> bytes:
+    """Exécute la coroutine edge_tts dans un thread worker isolé avec sa propre boucle asyncio."""
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(lambda: asyncio.run(_synthesize_edge_tts(text, voice_name, rate_val)))
+        return future.result(timeout=35)
+
+
+def get_server_tts_audio_base64(
+    text: str,
+    language: str = "fr",
+    voice: Optional[str] = None,
+    rate: str = "+0%",
+) -> Optional[str]:
     """
-    Génère un flux audio MP3 encodé en base64 via gTTS côté serveur.
-    Coût : 0 token / 0 quota Gemini (utilise l'API publique Google Translate TTS).
-    Met en cache les résultats en mémoire vive (hash SHA256) pour une latence quasi-nulle lors des réécoutes.
+    Génère un flux audio MP3 haute fidélité encodé en base64 via Microsoft Edge Neural TTS
+    (identique à la méthode de haute qualité employée dans PDFReader).
+    - Voix ultra-naturelles (ar-SA-HamedNeural pour l'arabe avec Tashkeel, fr-FR-HenriNeural pour le français).
+    - 0 quota ou coût API (100% gratuit, voix neuronales haute définition).
+    - Double cache pour une latence instantanée : disque (storage/audio_cache/) et mémoire vive (SHA256).
+    - Repli automatique sur gTTS en cas de coupure réseau ou d'indisponibilité d'edge-tts.
     """
     if not text or not text.strip():
         return None
@@ -211,37 +268,76 @@ def get_server_tts_audio_base64(text: str, language: str = "fr") -> Optional[str
         return None
 
     if detect_arabic_content(cleaned):
-        gtts_lang = "ar"
+        target_lang = "ar"
     else:
-        lang = (language or "fr").lower().strip()
-        gtts_lang = "ar" if lang.startswith("ar") else ("en" if lang.startswith("en") else "fr")
+        l = (language or "fr").lower().strip()
+        target_lang = "ar" if l.startswith("ar") else ("en" if l.startswith("en") else "fr")
 
-    cache_key = hashlib.sha256(f"{gtts_lang}:{cleaned}".encode("utf-8")).hexdigest()
+    selected_voice = voice or MICROSOFT_DEFAULT_VOICES.get(target_lang, "fr-FR-HenriNeural")
+
+    # Clé de cache unique pour le triplet (voix, vitesse, texte)
+    cache_key = hashlib.sha256(f"ms:{selected_voice}:{rate}:{cleaned}".encode("utf-8")).hexdigest()
+
+    # 1. Cache mémoire vive (0 ms)
     if cache_key in _TTS_MEMORY_CACHE:
         return _TTS_MEMORY_CACHE[cache_key]
 
+    # 2. Cache persistant sur disque (storage/audio_cache/)
+    cached_file = None
+    try:
+        from services.downloader import STORAGE_DIR
+        audio_cache_dir = STORAGE_DIR / "audio_cache"
+        audio_cache_dir.mkdir(parents=True, exist_ok=True)
+        cached_file = audio_cache_dir / f"{cache_key}.mp3"
+        if cached_file.exists() and cached_file.stat().st_size > 0:
+            b64_audio = base64.b64encode(cached_file.read_bytes()).decode("ascii")
+            data_uri = f"data:audio/mp3;base64,{b64_audio}"
+            _TTS_MEMORY_CACHE[cache_key] = data_uri
+            return data_uri
+    except Exception as e_cache:
+        logger.debug(f"Vérification cache audio disque ignorée : {e_cache}")
+
+    # 3. Synthèse haute qualité via Microsoft Edge Neural TTS
+    try:
+        raw_audio = _run_async_edge_tts(cleaned, selected_voice, rate)
+        if raw_audio and len(raw_audio) > 0:
+            if cached_file:
+                try:
+                    cached_file.write_bytes(raw_audio)
+                except Exception:
+                    pass
+            b64_audio = base64.b64encode(raw_audio).decode("ascii")
+            data_uri = f"data:audio/mp3;base64,{b64_audio}"
+
+            if len(_TTS_MEMORY_CACHE) > 250:
+                first_key = next(iter(_TTS_MEMORY_CACHE))
+                _TTS_MEMORY_CACHE.pop(first_key, None)
+
+            _TTS_MEMORY_CACHE[cache_key] = data_uri
+            return data_uri
+    except Exception as e_ms:
+        logger.warning(f"Échec synthèse Microsoft Edge Neural TTS ({e_ms}), repli sur gTTS...")
+
+    # 4. Repli de secours sur gTTS (Google Translate) si indisponible
     try:
         from gtts import gTTS
-    except ImportError:
-        logger.warning("gTTS n'est pas installé dans l'environnement Python.")
-        return None
-
-    try:
         mp3_fp = io.BytesIO()
+        gtts_lang = "ar" if target_lang == "ar" else ("en" if target_lang == "en" else "fr")
         tts = gTTS(text=cleaned, lang=gtts_lang, slow=False)
         tts.write_to_fp(mp3_fp)
         mp3_fp.seek(0)
-        b64_audio = base64.b64encode(mp3_fp.read()).decode("ascii")
+        raw_gtts = mp3_fp.read()
+        if cached_file:
+            try:
+                cached_file.write_bytes(raw_gtts)
+            except Exception:
+                pass
+        b64_audio = base64.b64encode(raw_gtts).decode("ascii")
         data_uri = f"data:audio/mp3;base64,{b64_audio}"
-
-        if len(_TTS_MEMORY_CACHE) > 200:
-            first_key = next(iter(_TTS_MEMORY_CACHE))
-            _TTS_MEMORY_CACHE.pop(first_key, None)
-
         _TTS_MEMORY_CACHE[cache_key] = data_uri
         return data_uri
-    except Exception as e:
-        logger.warning(f"Échec de la génération audio serveur gTTS : {e}")
+    except Exception as e_gtts:
+        logger.error(f"Échec complet de la synthèse audio : {e_gtts}")
         return None
 
 
