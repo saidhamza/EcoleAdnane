@@ -1985,6 +1985,52 @@ div[data-testid="stSegmentedControl"] button[data-checked="true"] * {{
     background: var(--ea-input-bg) !important;
 }}
 
+/* ---- THEME FIDELITY 4: selectbox button & dropdown portal options ---- */
+[data-testid="stSelectbox"] div[data-baseweb="select"],
+[data-testid="stSelectbox"] div[data-baseweb="select"] > div,
+[data-testid="stSelectbox"] div[data-baseweb="select"] > div > div,
+div[data-baseweb="select"] > div {{
+    background-color: var(--ea-input-bg) !important;
+    background: var(--ea-input-bg) !important;
+    color: var(--ea-text) !important;
+    border-color: var(--ea-input-border) !important;
+}}
+[data-testid="stSelectbox"] div[data-baseweb="select"] svg,
+div[data-baseweb="select"] svg {{
+    fill: var(--ea-text-muted) !important;
+    color: var(--ea-text-muted) !important;
+    background: transparent !important;
+}}
+div[data-baseweb="popover"],
+div[data-baseweb="popover"] > div,
+div[data-baseweb="popover"] div[data-baseweb="menu"],
+ul[data-baseweb="menu"],
+[data-testid="stSelectboxVirtualDropdown"],
+[data-testid="stSelectboxVirtualDropdown"] > div,
+[role="listbox"] {{
+    background-color: var(--ea-surface) !important;
+    background: var(--ea-surface) !important;
+    color: var(--ea-text) !important;
+    border-color: var(--ea-border) !important;
+}}
+ul[data-baseweb="menu"] li,
+ul[data-baseweb="menu"] li *,
+[data-testid="stSelectboxVirtualDropdown"] li,
+[data-testid="stSelectboxVirtualDropdown"] li *,
+[role="listbox"] [role="option"],
+[role="listbox"] [role="option"] * {{
+    background-color: transparent !important;
+    color: var(--ea-text) !important;
+    -webkit-text-fill-color: var(--ea-text) !important;
+}}
+ul[data-baseweb="menu"] li:hover,
+[data-testid="stSelectboxVirtualDropdown"] li:hover,
+[role="listbox"] [role="option"]:hover,
+[role="listbox"] [role="option"][aria-selected="true"] {{
+    background-color: var(--ea-surface-hover) !important;
+    background: var(--ea-surface-hover) !important;
+}}
+
 /* ---- COMPACT + TYPOGRAPHY LAYER ---- */
 html {{ font-size: 14.5px; }}
 .stApp, [data-testid="stMarkdownContainer"] p, [data-testid="stMarkdownContainer"] li {{ font-size: 1rem; line-height: 1.55; }}
