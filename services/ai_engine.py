@@ -1627,11 +1627,40 @@ def extract_and_inject_server_tts(html_code: str, language: str = "fr") -> str:
                 scene_id = sc.get("data-scene") or sc.get("data-index") or str(idx)
                 text_el = sc.select_one(".narration-script, .narration, .caption, .comic-caption, .speech-bubble, .bubble, .dialogue, .description, p")
                 if text_el:
-                    cleaned = clean_text_for_speech(text_el.get_text(separator=" ", strip=True))
-                    if cleaned:
-                        audio_uri = get_server_tts_audio_base64(cleaned, language=language)
-                        if audio_uri:
-                            scene_audios.append((str(scene_id), audio_uri, cleaned))
+                    raw_text = text_el.get_text(separator=" ", strip=True)
+                else:
+                    # NotebookLM Slide structure
+                    title_el = sc.select_one(".slide-title, h1, h2, h3")
+                    stats_els = sc.select(".stat")
+                    takeaways_els = sc.select(".takeaway")
+                    quote_el = sc.select_one(".quote, blockquote")
+                    parts = []
+                    if title_el:
+                        parts.append(title_el.get_text(separator=" ", strip=True))
+                    for st in stats_els:
+                        parts.append(st.get_text(separator=" ", strip=True))
+                    for tk in takeaways_els:
+                        parts.append(tk.get_text(separator=" ", strip=True))
+                    if quote_el:
+                        parts.append(quote_el.get_text(separator=" ", strip=True))
+                    raw_text = ". ".join(parts) if parts else sc.get_text(separator=" ", strip=True)
+
+                cleaned = clean_text_for_speech(raw_text)
+                if cleaned:
+                    audio_uri = get_server_tts_audio_base64(cleaned, language=language)
+                    if audio_uri:
+                        scene_audios.append((str(scene_id), audio_uri, cleaned))
+
+        # Check for NotebookLM transcript dialogue to create the main podcast overview track
+        transcript_entries = soup.select(".transcript-entry")
+        if transcript_entries:
+            dialogue_parts = [te.get_text(separator=" ", strip=True) for te in transcript_entries]
+            full_podcast_txt = ". ".join(dialogue_parts)
+            cleaned_pod = clean_text_for_speech(full_podcast_txt)
+            if cleaned_pod:
+                pod_audio = get_server_tts_audio_base64(cleaned_pod, language=language)
+                if pod_audio:
+                    scene_audios.insert(0, ("podcast", pod_audio, cleaned_pod))
 
         if not scene_audios:
             explanation_el = soup.select_one("#explanation, .explanation, .pedagogy-text, .info-box, .comic-caption")
@@ -1669,6 +1698,8 @@ def extract_and_inject_server_tts(html_code: str, language: str = "fr") -> str:
                 if not raw_cap:
                     p = re.search(r"<p[^>]*>(.*?)</p>", sc_body, re.DOTALL | re.IGNORECASE)
                     raw_cap = p.group(1) if p else None
+                if not raw_cap:
+                    raw_cap = re.sub(r"<[^>]+>", " ", sc_body)
                 if raw_cap:
                     clean_cap = clean_text_for_speech(raw_cap)
                     if clean_cap:
@@ -1676,6 +1707,9 @@ def extract_and_inject_server_tts(html_code: str, language: str = "fr") -> str:
                         if audio_uri:
                             scene_audios.append((str(scene_id), audio_uri, clean_cap))
 
+    # Assurer une piste podcast si des scènes existent
+    if scene_audios and not any(s[0] == "podcast" for s in scene_audios):
+        scene_audios.insert(0, ("podcast", scene_audios[0][1], scene_audios[0][2]))
 
     if not scene_audios:
         return html_code
@@ -1707,6 +1741,7 @@ def extract_and_inject_server_tts(html_code: str, language: str = "fr") -> str:
   window._activeAudio = null;
 
   function getActiveSceneIndex() {
+    if (typeof window.currentSlide !== 'undefined') return window.currentSlide;
     if (typeof window.currentScene !== 'undefined') return window.currentScene;
     if (typeof window.currentSceneIndex !== 'undefined') return window.currentSceneIndex;
     if (typeof window.activeSceneIndex !== 'undefined') return window.activeSceneIndex;
@@ -1714,6 +1749,9 @@ def extract_and_inject_server_tts(html_code: str, language: str = "fr") -> str:
     if (el) {
       var ds = el.getAttribute('data-scene') || el.getAttribute('data-index');
       if (ds !== null) return parseInt(ds, 10);
+      var allSlides = Array.from(document.querySelectorAll('.slide, .scene'));
+      var idx = allSlides.indexOf(el);
+      if (idx !== -1) return idx;
     }
     return 0;
   }
@@ -1750,19 +1788,142 @@ def extract_and_inject_server_tts(html_code: str, language: str = "fr") -> str:
 
   window.stopSceneAudio = function() {
     if (window._activeAudio) {
-      try { window._activeAudio.pause(); window._activeAudio.currentTime = 0; } catch(e) {}
+      try { window._activeAudio.pause(); } catch(e) {}
       window._activeAudio = null;
     }
     audioList.forEach(function(a) {
-      try { a.pause(); a.currentTime = 0; } catch(e) {}
+      try { a.pause(); } catch(e) {}
     });
     document.querySelectorAll('.is-speaking').forEach(function(b) { b.classList.remove('is-speaking'); });
+    var playBtn = document.querySelector('.audio-controls button, #play-pause');
+    if (playBtn) playBtn.textContent = '▶️';
     if (window.speechSynthesis) {
       try { window.speechSynthesis.cancel(); } catch(e) {}
     }
   };
 
-  // Interception universelle de window.speechSynthesis pour garantir le fonctionnement audio
+  // Contrôleur de Podcast Audio Overview (Play / Pause, scrubber, visualiseur)
+  window.togglePodcastAudio = function() {
+    var playBtn = document.querySelector('.audio-controls button, #play-pause');
+    var aud = serverAudios['podcast'] || serverAudios[getActiveSceneIndex()] || audioList[0];
+    if (!aud) return;
+    if (window._activeAudio && !window._activeAudio.paused) {
+      window.stopSceneAudio();
+      if (playBtn) playBtn.textContent = '▶️';
+    } else {
+      window.stopSceneAudio();
+      window._activeAudio = aud;
+      aud.playbackRate = window._audioPlaybackRate || 1.0;
+      aud.play().catch(function(e){ console.warn(e); });
+      if (playBtn) playBtn.textContent = '⏸️';
+
+      var progress = document.querySelector('#progress, .audio-progress');
+      aud.ontimeupdate = function() {
+        if (progress && aud.duration) {
+          progress.value = (aud.currentTime / aud.duration) * 100;
+        }
+      };
+      aud.onended = function() {
+        if (playBtn) playBtn.textContent = '▶️';
+        window._activeAudio = null;
+      };
+    }
+  };
+  window.playPause = window.togglePodcastAudio;
+
+  // Visualiseur Canvas Waveform dynamique
+  function initWaveform() {
+    var player = document.querySelector('.audio-player');
+    if (!player) return;
+    var canvas = document.getElementById('waveform-canvas');
+    if (!canvas) {
+      canvas = document.createElement('canvas');
+      canvas.id = 'waveform-canvas';
+      canvas.width = 600;
+      canvas.height = 36;
+      canvas.style.cssText = 'width:100%; height:36px; border-radius:8px; margin-bottom:12px; background:rgba(0,0,0,0.3); display:block;';
+      var controls = player.querySelector('.audio-controls') || player.firstElementChild;
+      if (controls) player.insertBefore(canvas, controls);
+      else player.appendChild(canvas);
+    }
+    var ctx = canvas.getContext('2d');
+    var bars = 36;
+    function drawWave() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      var isPlaying = window._activeAudio && !window._activeAudio.paused;
+      var barW = canvas.width / bars;
+      for (var i = 0; i < bars; i++) {
+        var h = isPlaying ? (Math.sin(Date.now() / 140 + i * 0.45) * 0.5 + 0.5) * (canvas.height - 6) + 4 : 4;
+        var grad = ctx.createLinearGradient(0, canvas.height - h, 0, canvas.height);
+        grad.addColorStop(0, '#38bdf8');
+        grad.addColorStop(1, '#818cf8');
+        ctx.fillStyle = grad;
+        ctx.fillRect(i * barW + 2, (canvas.height - h) / 2, barW - 4, h);
+      }
+      requestAnimationFrame(drawWave);
+    }
+    drawWave();
+  }
+
+  // Scrubber & Boutons +/-10s & Vitesse
+  function wireAudioControls() {
+    var progressEl = document.querySelector('#progress');
+    if (progressEl) {
+      progressEl.max = 100;
+      progressEl.oninput = function() {
+        if (window._activeAudio && window._activeAudio.duration) {
+          window._activeAudio.currentTime = (parseFloat(progressEl.value) / 100) * window._activeAudio.duration;
+        }
+      };
+    }
+    window.skip = function(seconds) {
+      if (window._activeAudio) {
+        window._activeAudio.currentTime = Math.max(0, Math.min(window._activeAudio.duration || 9999, window._activeAudio.currentTime + seconds));
+      }
+    };
+    var speedSelect = document.querySelector('#speed');
+    if (speedSelect) {
+      speedSelect.onchange = function() {
+        var r = parseFloat(speedSelect.value) || 1.0;
+        window._audioPlaybackRate = r;
+        if (window._activeAudio) window._activeAudio.playbackRate = r;
+      };
+    }
+  }
+
+  // Correction navigation Onglets NotebookLM (Slide Deck, Transcript, Flashcards)
+  var origShowTab = window.showTab;
+  window.showTab = function(arg) {
+    if (typeof origShowTab === 'function') {
+      try { origShowTab(arg); } catch(e){}
+    }
+    var slideDeck = document.querySelector('.slide-deck');
+    var transcript = document.querySelector('.transcript, .live-transcript');
+    var flashcards = document.querySelector('.flashcards, .study-flashcards');
+    var isTab0 = (arg === 0 || arg === 'slide-deck');
+    var isTab1 = (arg === 1 || arg === 'live-transcript');
+    var isTab2 = (arg === 2 || arg === 'study-flashcards');
+    var tabs = document.querySelectorAll('.tab');
+    tabs.forEach(function(t, i) {
+      if ((i === arg) || (arg === 0 && i === 0) || (arg === 1 && i === 1) || (arg === 2 && i === 2)) {
+        t.classList.add('active');
+      } else {
+        t.classList.remove('active');
+      }
+    });
+    if (slideDeck) slideDeck.style.display = isTab0 ? 'block' : 'none';
+    if (transcript) transcript.style.display = isTab1 ? 'block' : 'none';
+    if (flashcards) flashcards.style.display = isTab2 ? 'flex' : 'none';
+  };
+
+  // Flipcard flip interactif
+  window.flipCard = function(card) {
+    if (!card) return;
+    card.classList.toggle('flipped');
+    card.classList.toggle('active');
+  };
+
+  // Interception universelle de window.speechSynthesis
   if (typeof window.speechSynthesis !== 'undefined' && audioList.length > 0) {
     var origSpeak = window.speechSynthesis.speak.bind(window.speechSynthesis);
     var origCancel = window.speechSynthesis.cancel.bind(window.speechSynthesis);
@@ -1802,6 +1963,17 @@ def extract_and_inject_server_tts(html_code: str, language: str = "fr") -> str:
       window.stopSceneAudio();
       try { origCancel(); } catch(e) {}
     };
+  }
+
+  // Initialisation au chargement
+  if (document.readyState === 'complete' || document.readyState === 'interactive') {
+    initWaveform();
+    wireAudioControls();
+  } else {
+    window.addEventListener('DOMContentLoaded', function() {
+      initWaveform();
+      wireAudioControls();
+    });
   }
 
   // Écouteur global pour les boutons audio
