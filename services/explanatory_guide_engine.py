@@ -353,6 +353,7 @@ RÉPONDS STRICTEMENT SOUS FORME D'UN OBJET JSON VALIDE SANS TEXTE AVANT NI APRÈ
                 messages=messages,
                 model="google/gemini-2.5-flash",
                 temperature=0.3,
+                max_tokens=8192,
                 json_mode=True,
             )
         except Exception as e_or:
@@ -383,6 +384,7 @@ RÉPONDS STRICTEMENT SOUS FORME D'UN OBJET JSON VALIDE SANS TEXTE AVANT NI APRÈ
                 messages=[{"role": "user", "content": fix_prompt}],
                 model="google/gemini-2.5-flash",
                 temperature=0.1,
+                max_tokens=8192,
                 json_mode=True,
             )
             guide_deck = extract_and_parse_deck_json(repair_resp or "")
