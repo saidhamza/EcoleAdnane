@@ -989,6 +989,15 @@ div[data-testid="stAlert"] {{
 st.markdown(get_custom_css(), unsafe_allow_html=True)
 
 
+def render_html(html_str: str, sidebar: bool = False) -> None:
+    """Affiche du HTML brut proprement sans passer par le parseur Markdown CommonMark."""
+    target = st.sidebar if sidebar else st
+    if hasattr(target, "html"):
+        target.html(html_str)
+    else:
+        target.markdown(html_str, unsafe_allow_html=True)
+
+
 def get_subject_badge_class(subject: str) -> str:
     mapping = {
         "Mathématiques": "badge-maths",
@@ -1664,7 +1673,7 @@ def render_magnificent_trophy_grid(badges: List[Dict[str, Any]], cols_count: int
                 </div>
             </div>
             """
-            st.markdown(card_html, unsafe_allow_html=True)
+            render_html(card_html)
             st.progress(prog_val)
             if is_unlocked and unlocked_at:
                 date_str = str(unlocked_at)[:16]
@@ -1731,47 +1740,44 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
         )
 
     # Barre Latérale : En-tête & Profil Élève Élégant
-    st.sidebar.markdown(
-        """
-        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 14px;">
-            <div style="width: 36px; height: 36px; border-radius: 10px; background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); display: flex; align-items: center; justify-content: center; font-size: 1.3rem; box-shadow: 0 4px 12px rgba(37,99,235,0.35);">
-                🎓
-            </div>
-            <div>
-                <div style="font-size: 1.25rem; font-weight: 800; color: #ffffff; letter-spacing: -0.02em; line-height: 1.1;">Ecole Adnane</div>
-                <div style="font-size: 0.75rem; color: #94a3b8; font-weight: 500;">Plateforme de Révision</div>
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
+    sidebar_header_html = (
+        '<div style="display: flex; align-items: center; gap: 10px; margin-bottom: 14px;">'
+        '<div style="width: 36px; height: 36px; border-radius: 10px; background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); display: flex; align-items: center; justify-content: center; font-size: 1.3rem; box-shadow: 0 4px 12px rgba(37,99,235,0.35);">'
+        '🎓'
+        '</div>'
+        '<div>'
+        '<div style="font-size: 1.25rem; font-weight: 800; color: #ffffff; letter-spacing: -0.02em; line-height: 1.1;">Ecole Adnane</div>'
+        '<div style="font-size: 0.75rem; color: #94a3b8; font-weight: 500;">Plateforme de Révision</div>'
+        '</div>'
+        '</div>'
     )
+    render_html(sidebar_header_html, sidebar=True)
 
     user_cycle = get_pedagogical_cycle(current_user.get("age"), level=current_user.get("level"))
     role_badge = "👑 Administrateur" if is_admin else user_cycle["badge_text"]
     _my_rank = None if is_admin else get_student_rank(logged_in_user_id)
-    initial_letter = (current_user.get("name") or "A")[0].upper()
+    initial_letter = html.escape((current_user.get("name") or "A")[0].upper())
+    user_name_esc = html.escape(str(current_user.get("name") or ""))
+    user_email_esc = html.escape(str(current_user.get("email") or ""))
 
     rank_html = f"<span class='profile-pill-rank'>{_my_rank['emoji']} {_my_rank['label']}</span>" if _my_rank else ""
     cycle_html = f"<span class='profile-pill-cycle'>{role_badge}</span>"
     trophies_caption = f"<div style='font-size: 0.75rem; color: #94a3b8; margin-top: 6px;'>🏆 {_my_rank['badge_count']} trophée(s) remportés</div>" if _my_rank else ""
 
-    profile_card_html = f"""
-    <div class="sidebar-profile-card">
-        <div class="profile-avatar-row">
-            <div class="profile-avatar-circle">{initial_letter}</div>
-            <div>
-                <div class="profile-name-text">{current_user['name']}</div>
-                <div class="profile-email-text">{current_user['email']}</div>
-            </div>
-        </div>
-        <div class="profile-badges-row">
-            {cycle_html}
-            {rank_html}
-        </div>
-        {trophies_caption}
-    </div>
-    """
-    st.sidebar.markdown(profile_card_html, unsafe_allow_html=True)
+    profile_card_html = (
+        '<div class="sidebar-profile-card">'
+        '<div class="profile-avatar-row">'
+        f'<div class="profile-avatar-circle">{initial_letter}</div>'
+        '<div>'
+        f'<div class="profile-name-text">{user_name_esc}</div>'
+        f'<div class="profile-email-text">{user_email_esc}</div>'
+        '</div>'
+        '</div>'
+        f'<div class="profile-badges-row">{cycle_html}{rank_html}</div>'
+        f'{trophies_caption}'
+        '</div>'
+    )
+    render_html(profile_card_html, sidebar=True)
 
     # Configuration de la navigation selon le rôle
     is_global_admin_view = False
@@ -1855,15 +1861,13 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
 
     if user_api_key or has_openrouter_access:
         ai_provider_name = "Clé Gemini" if user_api_key else "OpenRouter École"
-        st.sidebar.markdown(
-            f"""
-            <div class="ai-status-pill">
-                <span class="ai-pulse-dot"></span>
-                <span>Tuteur IA connecté ({ai_provider_name})</span>
-            </div>
-            """,
-            unsafe_allow_html=True,
+        ai_status_html = (
+            '<div class="ai-status-pill">'
+            '<span class="ai-pulse-dot"></span>'
+            f'<span>Tuteur IA connecté ({ai_provider_name})</span>'
+            '</div>'
         )
+        render_html(ai_status_html, sidebar=True)
     else:
         st.sidebar.warning("⚠️ Clé IA non configurée", icon="🔑")
         if not is_admin:
