@@ -438,58 +438,59 @@ def get_custom_css(theme: str = "dark") -> str:
 
     if is_dark:
         palette_vars = """
-    --ea-bg: #0f1b2d;
-    --ea-bg-gradient: linear-gradient(180deg, #13233a 0%, #0f1b2d 100%);
-    --ea-surface: #16263d;
-    --ea-surface-hover: #1e3250;
-    --ea-surface-card: rgba(22, 38, 61, 0.92);
-    --ea-border: rgba(232, 220, 190, 0.14);
-    --ea-border-hover: rgba(212, 168, 75, 0.65);
-    --ea-primary: #d4a84b;
-    --ea-primary-hover: #e0b95f;
-    --ea-primary-glow: rgba(212, 168, 75, 0.25);
-    --ea-text: #f3ecdc;
-    --ea-text-muted: #b9b4a4;
-    --ea-text-dim: #8c8878;
-    --ea-card-bg: #16263d;
+    --ea-bg: #0d131c;
+    --ea-bg-gradient: linear-gradient(180deg, #101824 0%, #0d131c 100%);
+    --ea-surface: #151d2a;
+    --ea-surface-hover: #1c2737;
+    --ea-surface-card: #151d2a;
+    --ea-border: rgba(200, 196, 180, 0.12);
+    --ea-border-hover: rgba(190, 154, 80, 0.55);
+    --ea-primary: #b89650;
+    --ea-primary-hover: #c6a45c;
+    --ea-primary-glow: rgba(184, 150, 80, 0.2);
+    --ea-text: #cfcbbf;
+    --ea-text-muted: #98978c;
+    --ea-text-dim: #75756c;
+    --ea-card-bg: #151d2a;
     --ea-card-shadow: 0 6px 20px -6px rgba(0, 0, 0, 0.45);
-    --ea-input-bg: #1a2c47;
-    --ea-input-border: rgba(232, 220, 190, 0.2);
-    --ea-tablist-bg: #16263d;
-    --ea-tab-color: #b9b4a4;
-    --ea-sidebar-bg: #0b1626;
-    --ea-sidebar-text: #f3ecdc;
-    --ea-sidebar-border: rgba(232, 220, 190, 0.12);
-    --ea-hero-bg: #16263d;
-    --ea-hero-title: #f3ecdc;
-    --ea-hero-desc: #b9b4a4;
-    --ea-hero-badge-bg: rgba(212, 168, 75, 0.14);
-    --ea-hero-badge-color: #e6c274;
-    --ea-hero-badge-border: rgba(212, 168, 75, 0.35);
-    --ea-btn-sec-bg: #1a2c47;
-    --ea-btn-sec-border: rgba(232, 220, 190, 0.2);
-    --ea-btn-sec-color: #f3ecdc;
-    --ea-btn-sec-hover: #243a5c;
-    --ea-trap-bg: rgba(212, 168, 75, 0.10);
-    --ea-trap-color: #f6e7c1;
-    --ea-expl-bg: rgba(74, 148, 110, 0.12);
-    --ea-expl-color: #d6efe2;
-    --ea-quiz-bg: #16263d;
-    --ea-quiz-badge: #e6c274;
+    --ea-input-bg: #182130;
+    --ea-input-border: rgba(200, 196, 180, 0.18);
+    --ea-tablist-bg: #131a26;
+    --ea-tab-color: #98978c;
+    --ea-sidebar-bg: #0a1018;
+    --ea-sidebar-text: #cfcbbf;
+    --ea-sidebar-border: rgba(200, 196, 180, 0.1);
+    --ea-hero-bg: #151d2a;
+    --ea-hero-title: #dcd6c4;
+    --ea-hero-desc: #98978c;
+    --ea-hero-badge-bg: rgba(184, 150, 80, 0.12);
+    --ea-hero-badge-color: #cdb06a;
+    --ea-hero-badge-border: rgba(184, 150, 80, 0.3);
+    --ea-btn-sec-bg: #182130;
+    --ea-btn-sec-border: rgba(200, 196, 180, 0.18);
+    --ea-btn-sec-color: #cfcbbf;
+    --ea-btn-sec-hover: #202c3d;
+    --ea-trap-bg: rgba(184, 150, 80, 0.09);
+    --ea-trap-color: #dccfa8;
+    --ea-expl-bg: rgba(74, 140, 105, 0.10);
+    --ea-expl-color: #b9d6c6;
+    --ea-quiz-bg: #151d2a;
+    --ea-quiz-badge: #cdb06a;
     --ea-emerald: #4a946e;
-    --ea-amber: #d4a84b;
+    --ea-amber: #b89650;
     --ea-rose: #c45c66;
     --ea-indigo: #6f86b8;
     --ea-purple: #8e7bb0;
     --ea-cyan: #5aa0b0;
+    --ea-on-primary: #10161f;
         """
     else:
         palette_vars = """
-    --ea-bg: #f8f4e9;
-    --ea-bg-gradient: linear-gradient(180deg, #fbf8ef 0%, #f5f0e1 100%);
-    --ea-surface: #fffdf7;
+    --ea-bg: #f6f3eb;
+    --ea-bg-gradient: linear-gradient(180deg, #f9f7f1 0%, #f3efe4 100%);
+    --ea-surface: #fffefb;
     --ea-surface-hover: #f3ecda;
-    --ea-surface-card: #fffdf7;
+    --ea-surface-card: #fffefb;
     --ea-border: #e2d8bf;
     --ea-border-hover: #1e3a5f;
     --ea-primary: #1e3a5f;
@@ -498,22 +499,22 @@ def get_custom_css(theme: str = "dark") -> str:
     --ea-text: #1f2430;
     --ea-text-muted: #5b6070;
     --ea-text-dim: #8a8d98;
-    --ea-card-bg: #fffdf7;
+    --ea-card-bg: #fffefb;
     --ea-card-shadow: 0 2px 10px rgba(60, 48, 20, 0.07), 0 1px 2px rgba(60, 48, 20, 0.05);
     --ea-input-bg: #ffffff;
     --ea-input-border: #d6cba9;
     --ea-tablist-bg: #efe8d3;
     --ea-tab-color: #5b6070;
-    --ea-sidebar-bg: #f1ead7;
+    --ea-sidebar-bg: #efeadc;
     --ea-sidebar-text: #1f2430;
     --ea-sidebar-border: #ddd2b4;
-    --ea-hero-bg: #fffdf7;
+    --ea-hero-bg: #fffefb;
     --ea-hero-title: #1e3a5f;
     --ea-hero-desc: #5b6070;
     --ea-hero-badge-bg: rgba(30, 58, 95, 0.07);
     --ea-hero-badge-color: #1e3a5f;
     --ea-hero-badge-border: rgba(30, 58, 95, 0.22);
-    --ea-btn-sec-bg: #fffdf7;
+    --ea-btn-sec-bg: #fffefb;
     --ea-btn-sec-border: #cfc3a0;
     --ea-btn-sec-color: #1e3a5f;
     --ea-btn-sec-hover: #f3ecda;
@@ -521,7 +522,7 @@ def get_custom_css(theme: str = "dark") -> str:
     --ea-trap-color: #5c4310;
     --ea-expl-bg: #e8f2ea;
     --ea-expl-color: #1f4733;
-    --ea-quiz-bg: #fffdf7;
+    --ea-quiz-bg: #fffefb;
     --ea-quiz-badge: #1e3a5f;
     --ea-emerald: #2f7a54;
     --ea-amber: #a87a1c;
@@ -529,13 +530,14 @@ def get_custom_css(theme: str = "dark") -> str:
     --ea-indigo: #3b5a94;
     --ea-purple: #6a4c93;
     --ea-cyan: #2f7f8f;
+    --ea-on-primary: #ffffff;
         """
 
     return f"""
 <style>
 {font_faces}
 
-@import url('https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;500;600;700&family=Merriweather:wght@400;700;900&family=Cairo:wght@500;600;700;800;900&family=Amiri:wght@400;700&family=Tajawal:wght@500;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;500;600;700&family=Source+Serif+4:wght@600;700&family=Cairo:wght@500;600;700;800;900&family=Amiri:wght@400;700&family=Tajawal:wght@500;700;800&display=swap');
 
 :root {{
 {palette_vars}
@@ -1786,20 +1788,19 @@ div[data-testid="stRadio"] div[role="radiogroup"]:not([aria-orientation="horizon
 [data-testid="stSidebar"] .stButton button {{ min-height: 38px !important; padding: 0.3rem 0.5rem !important; font-size: 0.85rem !important; }}
 /* ---- ACADEMIC THEME LAYER ---- */
 h1, h2, h3, h4, .ea-hero-title, .ea-today-title, .sb-brand-name, .course-header-box h2 {{
-    font-family: 'Merriweather', 'Cairo', 'AdnaneSans', Georgia, serif !important;
+    font-family: 'Source Serif 4', 'Cairo', 'AdnaneSans', Georgia, serif !important;
     letter-spacing: 0 !important;
     font-weight: 700 !important;
 }}
-h1 {{ font-size: 2rem !important; color: var(--ea-hero-title) !important; border-bottom: 2px solid var(--ea-amber); padding-bottom: 0.4rem !important; }}
+h1 {{ font-size: 1.6rem !important; color: var(--ea-hero-title) !important; border-bottom: 2px solid var(--ea-amber); padding-bottom: 0.3rem !important; }}
 h2, h3 {{ color: var(--ea-hero-title) !important; }}
-html, body, .stApp {{ font-size: 16.5px; }}
 
 /* Quiet, formal controls: no glow, no floating, no gradients */
 .ea-hero-icon-box {{ animation: none !important; }}
 div[data-testid="stVerticalBlockBorderWrapper"]:hover {{ transform: none !important; }}
 button[kind="primary"], [data-testid="stBaseButton-primary"] {{
-    background: var(--ea-primary) !important; border-radius: 8px !important; box-shadow: none !important;
-    border: 1px solid var(--ea-primary) !important; letter-spacing: 0.02em !important;
+    background: var(--ea-primary) !important; color: var(--ea-on-primary) !important; border-radius: 8px !important; box-shadow: none !important;
+    border: 1px solid var(--ea-primary) !important; letter-spacing: 0.01em !important;
 }}
 button[kind="primary"]:hover, [data-testid="stBaseButton-primary"]:hover {{
     background: var(--ea-primary-hover) !important; transform: none !important; box-shadow: 0 2px 8px var(--ea-primary-glow) !important; filter: none;
@@ -1811,11 +1812,11 @@ div[role="tablist"] button {{ border-radius: 8px !important; }}
 div[role="tablist"] button[aria-selected="true"],
 [data-testid="stPills"] button[aria-pressed="true"], [data-testid="stPills"] button[data-checked="true"],
 div[data-testid="stSegmentedControl"] button[aria-checked="true"], div[data-testid="stSegmentedControl"] button[data-checked="true"] {{
-    background: var(--ea-primary) !important; box-shadow: none !important; color: #fff !important; border-color: var(--ea-primary) !important;
+    background: var(--ea-primary) !important; box-shadow: none !important; color: var(--ea-on-primary) !important; border-color: var(--ea-primary) !important;
 }}
 [data-testid="stPills"] button, div[data-testid="stSegmentedControl"] {{ border-radius: 8px !important; }}
 [data-testid="stMetric"] {{ border-radius: 10px !important; border-top: 3px solid var(--ea-amber) !important; }}
-[data-testid="stMetricValue"] {{ background: none !important; -webkit-text-fill-color: var(--ea-hero-title) !important; color: var(--ea-hero-title) !important; font-family: 'Merriweather', serif !important; }}
+[data-testid="stMetricValue"] {{ background: none !important; -webkit-text-fill-color: var(--ea-hero-title) !important; color: var(--ea-hero-title) !important; font-family: 'Source Serif 4', serif !important; }}
 div[data-testid="stVerticalBlockBorderWrapper"] {{ border-radius: 10px !important; }}
 [data-testid="stExpander"], [data-testid="stChatMessage"], [data-testid="stChatInput"], .quiz-question-card, .trap-card, .explanation-card, .course-header-box, .ea-stats-card {{ border-radius: 10px !important; }}
 .ea-dashboard-hero {{ border-radius: 12px; background: var(--ea-hero-bg); }}
@@ -1854,12 +1855,86 @@ div[data-testid="stVerticalBlockBorderWrapper"] {{ border-radius: 10px !importan
 [data-testid="stSidebar"] [data-testid="stRadioOption"]:has(input:checked) p {{ color: var(--ea-hero-title) !important; font-weight: 700 !important; }}
 .sb-profile {{ border-radius: 10px; }}
 .sb-avatar {{ background: var(--ea-primary) !important; }}
+/* ---- COMPACT + TYPOGRAPHY LAYER ---- */
+html {{ font-size: 14.5px; }}
+.stApp, [data-testid="stMarkdownContainer"] p, [data-testid="stMarkdownContainer"] li {{ font-size: 1rem; line-height: 1.55; }}
+h1 {{ font-size: 1.55rem !important; margin: 0 0 0.6rem !important; }}
+h2 {{ font-size: 1.3rem !important; }}
+h3 {{ font-size: 1.12rem !important; }}
+h4, h5 {{ font-size: 1rem !important; }}
+h1, h2, h3, h4 {{ line-height: 1.3 !important; padding-top: 0.4rem !important; }}
+[data-testid="stCaptionContainer"], small {{ font-size: 0.82rem !important; }}
+.block-container {{ padding: 1.6rem 2rem 2.5rem !important; max-width: 1100px !important; }}
+[data-testid="stVerticalBlock"] {{ gap: 0.65rem !important; }}
+[data-testid="stHorizontalBlock"] {{ gap: 0.8rem !important; }}
+hr {{ margin: 0.8rem 0 !important; }}
+button[kind="primary"], button[kind="secondary"], [data-testid="stBaseButton-primary"], [data-testid="stBaseButton-secondary"] {{
+    min-height: 38px !important; padding: 0.3rem 0.9rem !important; font-size: 0.92rem !important;
+}}
+div[data-baseweb="select"] > div, div[data-baseweb="input"] > div, div[data-baseweb="textarea"] > div {{ min-height: 38px !important; font-size: 0.95rem !important; }}
+div[role="tablist"] {{ padding: 4px !important; margin-bottom: 14px !important; gap: 4px !important; }}
+div[role="tablist"] button {{ min-height: 36px !important; padding: 6px 14px !important; }}
+div[role="tablist"] button p, [data-testid="stPills"] button, div[data-testid="stSegmentedControl"] button {{ font-size: 0.88rem !important; }}
+[data-testid="stMetric"] {{ padding: 12px 16px !important; }}
+[data-testid="stMetricValue"] {{ font-size: 1.45rem !important; }}
+[data-testid="stMetricLabel"] {{ font-size: 0.8rem !important; }}
+[data-testid="stExpander"] {{ margin-bottom: 8px !important; }}
+[data-testid="stExpander"] summary {{ padding: 0.5rem 0.8rem !important; font-size: 0.95rem !important; }}
+div[data-testid="stVerticalBlockBorderWrapper"] {{ padding: 0.2rem !important; }}
+[data-testid="stChatMessage"] {{ padding: 12px 16px !important; margin-bottom: 8px !important; }}
+.ea-dashboard-hero {{ padding: 16px 20px; margin-bottom: 14px; }}
+.course-header-box {{ padding: 16px 20px !important; margin-bottom: 14px !important; }}
+.course-header-box h2 {{ font-size: 1.4rem !important; margin-top: 8px !important; }}
+.ea-today-card {{ padding: 18px 22px 16px; }}
+.ea-today-title {{ font-size: 1.3rem; }}
+.ea-stats-card {{ padding: 14px 16px; }}
+.quiz-question-card {{ padding: 14px 18px; margin-top: 10px; font-size: 1rem; }}
+.trap-card, .explanation-card {{ padding: 12px 16px; margin: 10px 0; font-size: 0.97rem; }}
+.rtl-box, .rtl-box p, .rtl-box li {{ font-size: 1.12rem !important; line-height: 2 !important; }}
+.badge-subject {{ font-size: 0.76rem; padding: 3px 10px; }}
+.badge-lang {{ font-size: 0.74rem; padding: 3px 9px; }}
+.concept-tag {{ font-size: 0.78rem; padding: 2px 9px; }}
+[data-testid="stSidebar"][aria-expanded="true"] {{ min-width: 200px !important; max-width: 200px !important; width: 200px !important; }}
+[data-testid="stSidebar"] [data-testid="stRadioOption"], [data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] label {{ min-height: 34px !important; }}
+[data-testid="stSidebar"] [data-testid="stRadioOption"] p {{ font-size: 0.9rem !important; }}
+@media (max-width: 768px) {{ .block-container {{ padding: 2.8rem 0.8rem 3rem !important; }} }}
 </style>
 """
 
+def _read_saved_theme() -> str:
+    """Thème mémorisé : paramètre d'URL (survit au F5) puis cookie (survit aux sessions)."""
+    for getter in (
+        lambda: st.query_params.get("theme"),
+        lambda: st.context.cookies.get("ea_theme"),
+    ):
+        try:
+            val = getter()
+        except Exception:
+            val = None
+        if val in ("dark", "light"):
+            return val
+    return "light"
+
+
+def persist_theme(theme: str) -> None:
+    """Applique le thème et le mémorise (URL + cookie 1 an)."""
+    st.session_state["ea_theme"] = theme
+    try:
+        st.query_params["theme"] = theme
+    except Exception:
+        pass
+    st.session_state["_ea_theme_cookie_pending"] = theme
+
+
 if "ea_theme" not in st.session_state:
-    st.session_state["ea_theme"] = "light"
-current_theme = st.session_state.get("ea_theme", "dark")
+    st.session_state["ea_theme"] = _read_saved_theme()
+current_theme = st.session_state.get("ea_theme", "light")
+_pending_cookie = st.session_state.pop("_ea_theme_cookie_pending", None)
+if _pending_cookie:
+    st.components.v1.html(
+        f"<script>try{{window.parent.document.cookie='ea_theme={_pending_cookie}; path=/; max-age=31536000; SameSite=Lax';}}catch(e){{}}</script>",
+        height=0,
+    )
 st.markdown(get_custom_css(theme=current_theme), unsafe_allow_html=True)
 
 
@@ -2339,7 +2414,7 @@ if not st.session_state.get("is_authenticated"):
 
     top_c1, top_c2 = st.columns([7, 3])
     with top_c2:
-        cur_t = st.session_state.get("ea_theme", "dark")
+        cur_t = st.session_state.get("ea_theme", "light")
         login_t = st.radio(
             "Thème",
             options=["🌙 Sombre", "☀️ Clair"],
@@ -2350,7 +2425,7 @@ if not st.session_state.get("is_authenticated"):
         )
         t_val = "dark" if "Sombre" in login_t else "light"
         if t_val != cur_t:
-            st.session_state["ea_theme"] = t_val
+            persist_theme(t_val)
             st.rerun()
 
     col_login_c1, col_login_c2, col_login_c3 = st.columns([1, 2.2, 1])
@@ -2834,7 +2909,7 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
 
             _is_dark = current_theme == "dark"
             if st.button("☀️ Thème clair" if _is_dark else "🌙 Thème sombre", key="sidebar_theme_btn", use_container_width=True):
-                st.session_state["ea_theme"] = "light" if _is_dark else "dark"
+                persist_theme("light" if _is_dark else "dark")
                 st.rerun()
             if st.button("🚪 Déconnexion", key="sidebar_logout_btn", use_container_width=True):
                 logout_user()
