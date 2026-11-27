@@ -1576,6 +1576,9 @@ def strip_html_code_blocks(content: str) -> str:
     match = re.search(r"```(?:html)?\s*([\s\S]*?)\s*```", content)
     if match:
         return match.group(1).strip()
+    match_unclosed = re.search(r"^```(?:html)?\s*([\s\S]*)$", content)
+    if match_unclosed:
+        return match_unclosed.group(1).strip()
     return content
 
 
@@ -1619,10 +1622,10 @@ def extract_and_inject_server_tts(html_code: str, language: str = "fr") -> str:
                     if audio_uri:
                         scene_audios.append((str(scene_id), audio_uri, cleaned))
         else:
-            scenes = soup.select(".scene, .slide, .story-card, .fresco-scene, [data-scene]")
+            scenes = soup.select(".scene, .slide, .panel, .comic-panel, .comic-panel-container, .comic-content, .story-card, .fresco-scene, [data-scene]")
             for idx, sc in enumerate(scenes):
                 scene_id = sc.get("data-scene") or sc.get("data-index") or str(idx)
-                text_el = sc.select_one(".narration, .caption, .description, .bubble, p")
+                text_el = sc.select_one(".narration-script, .narration, .caption, .comic-caption, .speech-bubble, .bubble, .dialogue, .description, p")
                 if text_el:
                     cleaned = clean_text_for_speech(text_el.get_text(separator=" ", strip=True))
                     if cleaned:
@@ -1631,7 +1634,7 @@ def extract_and_inject_server_tts(html_code: str, language: str = "fr") -> str:
                             scene_audios.append((str(scene_id), audio_uri, cleaned))
 
         if not scene_audios:
-            explanation_el = soup.select_one("#explanation, .explanation, .pedagogy-text, .info-box")
+            explanation_el = soup.select_one("#explanation, .explanation, .pedagogy-text, .info-box, .comic-caption")
             if explanation_el:
                 cleaned = clean_text_for_speech(explanation_el.get_text(separator=" ", strip=True))
                 if cleaned:
@@ -1654,14 +1657,14 @@ def extract_and_inject_server_tts(html_code: str, language: str = "fr") -> str:
                     scene_audios.append((str(scene_id), audio_uri, clean_inner))
 
         if not scene_audios:
-            sc_pattern = r"<([a-zA-Z0-9]+)[^>]*class=[\"'][^\"']*(?:scene|slide|card|fresco)[^\"']*[\"'][^>]*>(.*?)</\1>"
+            sc_pattern = r"<([a-zA-Z0-9]+)[^>]*class=[\"'][^\"']*(?:scene|slide|card|panel|comic|fresco)[^\"']*[\"'][^>]*>(.*?)</\1>"
             for sc in re.finditer(sc_pattern, html_code, re.DOTALL | re.IGNORECASE):
                 sc_tag = sc.group(0)
                 sc_body = sc.group(2)
                 scene_match = re.search(r"data-scene=[\"']([^\"']+)[\"']", sc_tag, re.IGNORECASE) or \
                               re.search(r"data-index=[\"']([^\"']+)[\"']", sc_tag, re.IGNORECASE)
                 scene_id = scene_match.group(1) if scene_match else str(len(scene_audios))
-                cap = re.search(r"<([a-zA-Z0-9]+)[^>]*class=[\"'][^\"']*(?:caption|narration|desc|bubble)[^\"']*[\"'][^>]*>(.*?)</\1>", sc_body, re.DOTALL | re.IGNORECASE)
+                cap = re.search(r"<([a-zA-Z0-9]+)[^>]*class=[\"'][^\"']*(?:caption|comic-caption|narration|speech-bubble|bubble|dialog|desc)[^\"']*[\"'][^>]*>(.*?)</\1>", sc_body, re.DOTALL | re.IGNORECASE)
                 raw_cap = cap.group(2) if cap else None
                 if not raw_cap:
                     p = re.search(r"<p[^>]*>(.*?)</p>", sc_body, re.DOTALL | re.IGNORECASE)
@@ -1672,6 +1675,7 @@ def extract_and_inject_server_tts(html_code: str, language: str = "fr") -> str:
                         audio_uri = get_server_tts_audio_base64(clean_cap, language=language)
                         if audio_uri:
                             scene_audios.append((str(scene_id), audio_uri, clean_cap))
+
 
     if not scene_audios:
         return html_code
@@ -1899,7 +1903,10 @@ def extract_and_inject_server_tts(html_code: str, language: str = "fr") -> str:
     injection = "\n" + "\n".join(audio_tags_html) + "\n" + controller_script + "\n"
     if "</body>" in html_code:
         return html_code.replace("</body>", f"{injection}</body>", 1)
-    return html_code + injection
+    if "</html>" in html_code:
+        return html_code.replace("</html>", f"{injection}</html>", 1)
+    return html_code + f"\n{injection}\n</body>\n</html>"
+
 
 
 def generate_course_animation_simulation(
@@ -2037,17 +2044,19 @@ SPÉCIFICATIONS TECHNIQUES IMPÉRATIVES :
 
 RÈGLES D'EXÉCUTION :
 1. {lang_instruction}
-2. Design moderne : thème sombre prestigieux (fond #0a0f1d / #111827, cartes en verre fumé avec liserés dorés subtils, responsive pour mobile et écran large).
+2. Design moderne : thème sombre prestigieux (fond #0a0f1d / #111827, cartes de BD en verre fumé avec liserés dorés subtils, responsive pour mobile et écran large).
 3. 100% AUTONOME : tout le CSS dans une balise <style>, tout le JS dans une balise <script>. AUCUNE dépendance CDN externe obligatoire.
-4. Le code doit être PRÊT À L'EMPLOI et s'exécuter directement dans un iframe Streamlit.
-5. Ne renvoie AUCUN commentaire, AUCUN texte avant ou après. Renvoie UNIQUEMENT le document HTML complet commençant par <!DOCTYPE html> et finissant par </html>.
+4. Le code doit être PRÊT À L'EMPLOI et s'exécuter directement dans un iframe Streamlit avec support du mode plein écran (window.toggleFullscreenOrNewTab()).
+5. SVG épuré et optimisé : Les illustrations vectorielles SVG doivent être propres, structurées et concises (formes géométriques bien agencées, <rect>, <circle>, <polygon>, <path> optimisés). INTERDICTION FORMELLE de boucles répétitives infinies de coordonnées SVG.
+6. IMPÉRATIF : Le document HTML DOIT ÊTRE COMPLET et se terminer impérativement par </html> sans être tronqué. Ne renvoie AUCUN commentaire avant ou après.
 """
 
     system_instruction = (
-        "Tu es un ingénieur pédagogique d'élite, historien et développeur Web créatif de calibre international, "
-        "spécialisé en simulations scientifiques interactives, fresques documentaires historiques muséales et synthèses vocales haute fidélité. "
-        "Tu génères exclusivement du code HTML5 autonome propre, élégant et rigoureusement valide."
+        "Tu es un illustrateur de bandes dessinées pédagogiques d'élite, scénariste et développeur Web créatif de calibre international, "
+        "spécialisé en bandes dessinées animées interactives (Comic Book Storyboard), simulations Canvas/SVG et synthèses vocales haute fidélité. "
+        "Tu génères exclusivement du code HTML5 autonome propre, captivant et rigoureusement complet jusqu'à </html>."
     )
+
 
     # 3. Exécution via OpenRouter (si autorisé pour cet utilisateur) ou Gemini
     is_or_allowed = is_user_openrouter_allowed(user_id)
