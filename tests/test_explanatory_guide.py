@@ -37,14 +37,23 @@ class TestExplanatoryGuideEngine(unittest.TestCase):
         self.course_id = save_course(
             title="Théorème de Thalès",
             subject="Mathématiques",
+            language="fr",
+            file_path="/tmp/test_thales.pdf",
+            file_hash="thales_hash_1234",
+            file_name="thales.pdf",
             raw_text="Dans un triangle ABC, si M est un point de (AB) et N un point de (AC)... AM/AB = AN/AC = MN/BC.",
             summary_markdown="# Théorème de Thalès\nPropriété fondamentale des proportions.",
-            language="fr",
             user_id=self.user["id"],
         )
 
     def tearDown(self):
         shutil.rmtree(self.temp_dir, ignore_errors=True)
+        # Cleanup generated test guide files
+        base_dir = Path(__file__).parent.parent / "static" / "guides"
+        for ext in ["pdf", "html"]:
+            f = base_dir / f"guide_course_{self.course_id}.{ext}"
+            if f.exists():
+                f.unlink(missing_ok=True)
 
     def test_detect_subject_theme(self):
         """Vérifie la détection thématique des matières (couleurs, icônes, badges)."""
