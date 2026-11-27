@@ -2970,11 +2970,11 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
             course_id = current_course["id"]
             course_subj = current_course.get("subject", "")
             course_tit = current_course.get("title", "")
-            course_raw = current_course.get("raw_text") or current_course.get("summary_markdown") or ""
+            course_raw = f"{course_tit}\n\n{current_course.get('summary_markdown', '')}\n\n{current_course.get('raw_text', '')}".strip()
             course_lang = current_course.get("language") or ("ar" if is_ar else ("en" if is_en else "fr"))
 
-            theme = detect_subject_theme(course_subj)
-            is_scientific = theme["type"] in ("math", "physics_chemistry", "biology", "geography")
+            theme = detect_subject_theme(course_subj, course_tit)
+            is_guide_recommended = theme["type"] in ("math", "physics_chemistry", "biology", "geography", "history")
 
             # Guide Explicatif Assets
             guide_deck = get_course_explanatory_guide(course_id)
@@ -2995,16 +2995,16 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
             mode_options = ["guide", "story"]
             if is_ar:
                 mode_labels = {
-                    "guide": "📐 دليل مرئي وشرح تفاعلي (رياضيات، علوم، جغرافيا...)",
+                    "guide": "📐 دليل مرئي وشرح تفاعلي (رياضيات، علوم، جغرافيا، تاريخ...)",
                     "story": "🎨 ألبوم قصة مصورة للأطفال (حكايات، تاريخ، أدب...)",
                 }
             else:
                 mode_labels = {
-                    "guide": "📐 Guide Visuel Explicatif & PDF (Maths, Sciences, Géo...)",
+                    "guide": "📐 Guide Visuel Explicatif & PDF (Maths, Sciences, Géo, Histoire...)",
                     "story": "🎨 Album Histoire Illustré & PDF (Conte, Récit narratif)",
                 }
 
-            default_idx = 0 if is_scientific else 1
+            default_idx = 0 if is_guide_recommended else 1
             selected_mode = st.radio(
                 "Format visuel :",
                 options=mode_options,
@@ -3055,6 +3055,7 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                                             course_title=course_tit,
                                             language=course_lang,
                                             user_id=active_user_id,
+                                            force_images=True,
                                         )
                                         status_box.update(label="✅ Guide explicatif mis à jour !" if not is_ar else "✅ تم تحديث الدليل بنجاح!", state="complete", expanded=False)
                                         st.success("Guide mis à jour avec succès !" if not is_ar else "تم تحديث الدليل بنجاح!")

@@ -24,48 +24,30 @@ from services.voice_manager import clean_text_for_speech, get_server_tts_audio_b
 logger = logging.getLogger(__name__)
 
 
-def detect_subject_theme(subject: str) -> Dict[str, str]:
+def detect_subject_theme(subject: str, course_title: str = "") -> Dict[str, str]:
     """
     Retourne la palette de couleurs et les attributs visuels adaptés à la matière.
+    Détecte précisément l'Histoire, la Géographie, les Mathématiques, la Physique-Chimie, les SVT,
+    l'Éducation Islamique et les Langues.
     """
-    s = (subject or "").lower()
-    if any(k in s for k in ("math", "رياضيات", "géométrie", "algèbre", "calcul")):
+    combined = f"{subject or ''} {course_title or ''}".lower()
+
+    # 1. Histoire & Sciences Humaines
+    if any(k in combined for k in ("histoire", "تاريخ", "نازي", "فاشي", "ديكتاتور", "حرب", "فرساي", "استعمار", "حماية", "مغرب", "ثورة", "حركة وطنية", "فيمار", "رايخ", "هتلر")):
         return {
-            "type": "math",
-            "primary": "#2563eb",       # Bleu Roi
-            "primary_dark": "#1d4ed8",
-            "secondary": "#4f46e5",     # Indigo
-            "accent": "#0ea5e9",        # Cyan
-            "bg_card": "#eff6ff",
-            "border_card": "#bfdbfe",
-            "icon": "📐",
-            "badge_default": "MATHÉMATIQUES 3AC",
+            "type": "history",
+            "primary": "#b91c1c",       # Rouge impérial
+            "primary_dark": "#991b1b",
+            "secondary": "#d97706",     # Ocre / Ambre doré
+            "accent": "#ef4444",
+            "bg_card": "#fef2f2",
+            "border_card": "#fecaca",
+            "icon": "🏛️",
+            "badge_default": "تاريخ 3AC" if any('\u0600' <= c <= '\u06ff' for c in combined) else "HISTOIRE 3AC",
         }
-    elif any(k in s for k in ("physique", "chimie", "فيزياء", "كيمياء", "pc")):
-        return {
-            "type": "physics_chemistry",
-            "primary": "#059669",       # Émeraude
-            "primary_dark": "#047857",
-            "secondary": "#0891b2",     # Cyan foncé
-            "accent": "#10b981",
-            "bg_card": "#ecfdf5",
-            "border_card": "#a7f3d0",
-            "icon": "🧪",
-            "badge_default": "PHYSIQUE - CHIMIE 3AC",
-        }
-    elif any(k in s for k in ("svt", "vie", "terre", "علوم الحياة", "biologie")):
-        return {
-            "type": "biology",
-            "primary": "#16a34a",       # Vert forêt
-            "primary_dark": "#15803d",
-            "secondary": "#65a30d",     # Tilleul
-            "accent": "#84cc16",
-            "bg_card": "#f0fdf4",
-            "border_card": "#bbf7d0",
-            "icon": "🌱",
-            "badge_default": "SCIENCES DE LA VIE & TERRE",
-        }
-    elif any(k in s for k in ("géo", "جغرافيا", "géographie", "société", "espace")):
+
+    # 2. Géographie & Espace
+    elif any(k in combined for k in ("géo", "جغرافيا", "géographie", "تضاريس", "مناخ", "سكان", "اقتصاد عالمي", "اتحاد أوروبي", "قوة اقتصادية", "مجال مغربي", "عولمة")):
         return {
             "type": "geography",
             "primary": "#d97706",       # Ambre / Ocre
@@ -75,20 +57,139 @@ def detect_subject_theme(subject: str) -> Dict[str, str]:
             "bg_card": "#fffbeb",
             "border_card": "#fde68a",
             "icon": "🌍",
-            "badge_default": "GÉOGRAPHIE & ESPACE",
+            "badge_default": "جغرافيا 3AC" if any('\u0600' <= c <= '\u06ff' for c in combined) else "GÉOGRAPHIE 3AC",
         }
-    else:
+
+    # 3. Mathématiques
+    elif any(k in combined for k in ("math", "رياضيات", "géométrie", "algèbre", "calcul", "théorème", "pythagore", "thalès", "trigonométrie", "vecteur", "équation")):
         return {
-            "type": "general",
+            "type": "math",
+            "primary": "#2563eb",       # Bleu Roi
+            "primary_dark": "#1d4ed8",
+            "secondary": "#4f46e5",     # Indigo
+            "accent": "#0ea5e9",        # Cyan
+            "bg_card": "#eff6ff",
+            "border_card": "#bfdbfe",
+            "icon": "📐",
+            "badge_default": "رياضيات 3AC" if any('\u0600' <= c <= '\u06ff' for c in combined) else "MATHÉMATIQUES 3AC",
+        }
+
+    # 4. Physique - Chimie
+    elif any(k in combined for k in ("physique", "chimie", "فيزياء", "كيمياء", "pc", "électricité", "mécanique", "atome", "ion", "acide", "base", "oxydation")):
+        return {
+            "type": "physics_chemistry",
+            "primary": "#059669",       # Émeraude
+            "primary_dark": "#047857",
+            "secondary": "#0891b2",     # Cyan foncé
+            "accent": "#10b981",
+            "bg_card": "#ecfdf5",
+            "border_card": "#a7f3d0",
+            "icon": "🧪",
+            "badge_default": "فيزياء وكيمياء 3AC" if any('\u0600' <= c <= '\u06ff' for c in combined) else "PHYSIQUE - CHIMIE 3AC",
+        }
+
+    # 5. SVT
+    elif any(k in combined for k in ("svt", "vie", "terre", "علوم الحياة", "biologie", "immunité", "digestion", "nerveux", "respiration", "sang", "microbe")):
+        return {
+            "type": "biology",
+            "primary": "#16a34a",       # Vert forêt
+            "primary_dark": "#15803d",
+            "secondary": "#65a30d",     # Tilleul
+            "accent": "#84cc16",
+            "bg_card": "#f0fdf4",
+            "border_card": "#bbf7d0",
+            "icon": "🌱",
+            "badge_default": "علوم الحياة والأرض 3AC" if any('\u0600' <= c <= '\u06ff' for c in combined) else "SVT 3AC",
+        }
+
+    # 6. Éducation Islamique
+    elif any(k in combined for k in ("islam", "إسلامية", "قرآن", "سورة", "عقيدة", "تزكية", "اقتداء", "استجابة", "قسط", "حكمة")):
+        return {
+            "type": "islamic",
+            "primary": "#0f766e",       # Sarcelle profond
+            "primary_dark": "#115e59",
+            "secondary": "#059669",     # Émeraude
+            "accent": "#14b8a6",
+            "bg_card": "#f0fdfa",
+            "border_card": "#99f6e4",
+            "icon": "🕌",
+            "badge_default": "التربية الإسلامية 3AC" if any('\u0600' <= c <= '\u06ff' for c in combined) else "ÉDUCATION ISLAMIQUE 3AC",
+        }
+
+    # 7. Langues & Communication
+    elif any(k in combined for k in ("français", "anglais", "arabic", "عربية", "langue", "grammaire", "conjugaison", "قواعد", "نصوص")):
+        return {
+            "type": "languages",
             "primary": "#7c3aed",       # Violet électrique
             "primary_dark": "#6d28d9",
             "secondary": "#db2777",     # Rose dynamique
             "accent": "#a855f7",
             "bg_card": "#faf5ff",
             "border_card": "#e9d5ff",
-            "icon": "💡",
-            "badge_default": "GUIDE PÉDAGOGIQUE",
+            "icon": "📖",
+            "badge_default": "لغة وتواصل 3AC" if any('\u0600' <= c <= '\u06ff' for c in combined) else "LANGUE & COMMUNICATION",
         }
+
+    # 8. Défaut général
+    else:
+        return {
+            "type": "general",
+            "primary": "#7c3aed",
+            "primary_dark": "#6d28d9",
+            "secondary": "#db2777",
+            "accent": "#a855f7",
+            "bg_card": "#faf5ff",
+            "border_card": "#e9d5ff",
+            "icon": "💡",
+            "badge_default": "دليل تربوي 3AC" if any('\u0600' <= c <= '\u06ff' for c in combined) else "GUIDE PÉDAGOGIQUE",
+        }
+
+
+def extract_and_parse_deck_json(raw_text: str) -> Optional[Dict[str, Any]]:
+    """
+    Extrait et décode de façon tolérante et robuste un JSON de présentation pédagogique.
+    Gère les blocs markdown, guillemets mal échappés et utilise json_repair si disponible.
+    """
+    if not raw_text or not raw_text.strip():
+        return None
+
+    clean = raw_text.strip()
+    if "```json" in clean:
+        clean = clean.split("```json", 1)[1].split("```", 1)[0].strip()
+    elif "```" in clean:
+        clean = clean.split("```", 1)[1].split("```", 1)[0].strip()
+
+    # Nettoyage des caractères de contrôle invalides
+    clean = re.sub(r'[\x00-\x1f\x7f-\x9f]', lambda m: ' ' if m.group(0) in ('\n', '\r', '\t') else '', clean)
+
+    # 1. Tentative avec json.loads natif
+    try:
+        data = json.loads(clean)
+        if isinstance(data, dict) and "slides" in data and len(data["slides"]) > 0:
+            return data
+    except Exception:
+        pass
+
+    # 2. Tentative avec json_repair
+    try:
+        import json_repair
+        data = json_repair.loads(clean)
+        if isinstance(data, dict) and "slides" in data and len(data["slides"]) > 0:
+            return data
+    except Exception:
+        pass
+
+    # 3. Réparation manuelle d'urgence (guillemets non échappés dans les chaînes)
+    try:
+        # Corriger les guillemets internes dans les chaînes JSON
+        repaired = re.sub(r'(?<=:\s*)"([^"]*)"(?=[\s,}])', r'"\1"', clean)
+        data = json.loads(repaired)
+        if isinstance(data, dict) and "slides" in data and len(data["slides"]) > 0:
+            return data
+    except Exception:
+        pass
+
+    return None
 
 
 def generate_course_explanatory_guide_deck(
@@ -100,17 +201,16 @@ def generate_course_explanatory_guide_deck(
 ) -> Dict[str, Any]:
     """
     Étape 1 : Conception didactique du guide visuel explicatif par l'IA.
-    Découpe le cours en 4 à 5 diapositives 16:9 structurées :
-    - Maths : concept intuitif, formule mathématique, méthode pas-à-pas, exemple résolu, pièges et astuce.
-    - Sciences : phénomène réel, expérience de labo, explication microscopique, lois et calculs, synthèse d'examen.
-    - Géographie : repères et carte, atouts, défis, étude de cas, schéma de synthèse.
+    Découpe le cours en 5 à 6 diapositives 16:9 structurées et complètes pour
+    expliquer toute la leçon en profondeur (causes, mécanismes, concepts, résolutions,
+    définitions officielles et pièges d'examen).
     """
     from services.ai_engine import call_llm, call_openrouter_chat_completion, is_user_openrouter_allowed
 
-    truncated_text = (course_text or "")[:6500].strip()
+    truncated_text = (course_text or "")[:8500].strip()
     is_ar = language == "ar"
     is_en = language == "en"
-    theme = detect_subject_theme(subject)
+    theme = detect_subject_theme(subject, course_title)
 
     lang_instr = (
         "Tout le contenu ('title', 'overview', 'slides.badge', 'slides.title', 'slides.key_points', "
@@ -126,23 +226,14 @@ def generate_course_explanatory_guide_deck(
     )
 
     subject_guidelines = ""
-    if theme["type"] == "math":
+    if theme["type"] == "history":
         subject_guidelines = """
-SPÉCIFICITÉ MATHÉMATIQUES :
-- Diapositive 1 : Le Concept dans la vraie vie & Intuition concrète (À quoi ça sert ? Carte d'identité du théorème/notion).
-- Diapositive 2 : La Définition Formelle & Formule Magique (mise en valeur de la formule, signification de chaque variable, conditions requises comme triangle rectangle, etc.).
-- Diapositive 3 : Méthode de Résolution Pas-à-Pas (Étape 1 : Données, Étape 2 : Propriété clé, Étape 3 : Calcul & Conclusion).
-- Diapositive 4 : Exemple Type d'Examen Résolu (énoncé type brevet/collège, calcul détaillé étape par étape, rédaction parfaite).
-- Diapositive 5 : Les 3 Pièges d'Examen Fréquents & Règle d'or mnémotechnique (ce qu'il ne faut JAMAIS confondre).
-"""
-    elif theme["type"] in ("physics_chemistry", "biology"):
-        subject_guidelines = """
-SPÉCIFICITÉ SCIENCES (PHYSIQUE-CHIMIE / SVT) :
-- Diapositive 1 : Le Phénomène dans la Nature ou au Quotidien (problématique réelle, observation familière).
-- Diapositive 2 : L'Expérience Fondamentale de Laboratoire (matériel, protocole simple, ce qu'on observe directement).
-- Diapositive 3 : L'Explication Scientifique au niveau atomique/moléculaire ou cellulaire (lois, équation de réaction ou schéma biologique).
-- Diapositive 4 : Lois Physiques / Équations & Calculs d'Application Concrets.
-- Diapositive 5 : Ce qu'il faut absolument retenir pour le Contrôle & Pièges classiques à éviter.
+SPÉCIFICITÉ HISTOIRE (التاريخ / الاجتماعيات) :
+- Diapositive 1 : السياق التاريخي وعوامل الظهور / Contexte et Facteurs Déclencheurs (ex: مخلفات الحرب العالمية، معاهدة فرساي وشروطها القاسية، الأزمة الاقتصادية 1929، ضعف النظام السياسي السابق).
+- Diapositive 2 : الشخصية المركزية والوصول إلى الحكم / Acteurs Clés et Prise du Pouvoir (ex: الحزب، المراحل والتواريخ الفاصلة كالمستشارية 1933، حريق البرلمان، تصفية المعارضة، الجمع بين السلطات 1934).
+- Diapositive 3 : أسس الإيديولوجية والخصائص الشمولية / Idéologie et Totalitarisme (ex: كتاب كفاحي، نقاء العرق، معاداة السامية وقوانين نورمبرغ 1935، جهاز البوليس السري، قمع الحريات وتأطير المجتمع).
+- Diapositive 4 : الاقتصاد الموجه والسياسة التوسعية نحو الحرب / Économie de Guerre et Expansionnisme (ex: التسلح، التخلص من القيود الدولية، نظرية المجال الحيوي Lebensraum والتحالفات).
+- Diapositive 5 : بطاقة مراجعة الامتحان الموحد : مفاهيم للحفظ، تواريخ مفصلية وفخاخ شائعة / Bilan d'Examen et Pièges Fréquents (ex: تعاريف رسمية يجب حفظها حرفياً، التواريخ التي تتكرر في الامتحان، وفخاخ الخلط الشائعة بين الأسباب والخصائص).
 """
     elif theme["type"] == "geography":
         subject_guidelines = """
@@ -153,16 +244,43 @@ SPÉCIFICITÉ GÉOGRAPHIE & ÉCONOMIE :
 - Diapositive 4 : Étude de Cas Concrète et Analyse Comparée (ex: Maroc, Maghreb, Union Européenne).
 - Diapositive 5 : Schéma Bilan d'Examen : Synthèse Visuelle des Flux & Vocabulaire Clé.
 """
+    elif theme["type"] == "math":
+        subject_guidelines = """
+SPÉCIFICITÉ MATHÉMATIQUES :
+- Diapositive 1 : Le Concept dans la vraie vie & Intuition concrète (À quoi ça sert ? Carte d'identité du théorème/notion).
+- Diapositive 2 : La Définition Formelle & Formule Magique (mise en valeur de la formule, signification de chaque variable, conditions requises comme triangle rectangle, etc.).
+- Diapositive 3 : Méthode de Résolution Pas-à-Pas (Étape 1 : Données, Étape 2 : Propriété clé, Étape 3 : Calcul & Conclusion).
+- Diapositive 4 : Exemple Type d'Examen Résolu (énoncé type brevet/collège, calcul détaillé étape par étape, rédaction parfaite).
+- Diapositive 5 : Les Pièges d'Examen Fréquents & Règle d'or mnémotechnique (ce qu'il ne faut JAMAIS confondre).
+"""
+    elif theme["type"] in ("physics_chemistry", "biology"):
+        subject_guidelines = """
+SPÉCIFICITÉ SCIENCES (PHYSIQUE-CHIMIE / SVT) :
+- Diapositive 1 : Le Phénomène dans la Nature ou au Quotidien (problématique réelle, observation familière).
+- Diapositive 2 : L'Expérience Fondamentale de Laboratoire (matériel, protocole simple, ce qu'on observe directement).
+- Diapositive 3 : L'Explication Scientifique au niveau atomique/moléculaire ou cellulaire (lois, équation de réaction ou schéma biologique).
+- Diapositive 4 : Lois Physiques / Équations & Calculs d'Application Concrets.
+- Diapositive 5 : Ce qu'il faut absolument retenir pour le Contrôle & Pièges classiques à éviter.
+"""
+    elif theme["type"] == "islamic":
+        subject_guidelines = """
+SPÉCIFICITÉ ÉDUCATION ISLAMIQUE :
+- Diapositive 1 : مدخل وبناء الإشكال / Problématique et Textes Fondateurs (سند قرآني أو حديث شريف).
+- Diapositive 2 : المعاني والحقائق الإيمانية / Notions et Valeurs Clés.
+- Diapositive 3 : الأحكام والدروس والتحليل الفقهي / Règles et Enseignements.
+- Diapositive 4 : التمثل القيمي والتمثل في الحياة اليومية / Application Pratique et Comportement.
+- Diapositive 5 : خلاصة الامتحان الموحد والأسئلة النموذجية / Bilan pour l'Examen Normalisé.
+"""
     else:
         subject_guidelines = """
 SPÉCIFICITÉ GÉNÉRALE :
-- Découpe la leçon en 4 à 5 diapositives de révision progressive : Le Concept Clé, La Règle / Théorie, La Méthode Pas-à-Pas, L'Exemple d'Application Pratique, Les Pièges et Bilan d'Examen.
+- Découpe la leçon en 5 diapositives de révision progressive : Le Concept Clé, La Règle / Théorie, La Méthode Pas-à-Pas, L'Exemple d'Application Pratique, Les Pièges et Bilan d'Examen.
 """
 
-    prompt = f"""Tu es un concepteur pédagogique d'élite, expert dans la création de présentations visuelles ultra-claires, inspirées du style NotebookLM, pour collégiens (élèves de 14 ans / 3AC).
+    prompt = f"""Tu es un professeur émérite et un concepteur pédagogique d'élite, expert dans la création de présentations visuelles ultra-claires, inspirées du style NotebookLM, pour collégiens (élèves de 14 ans / 3AC).
 
 OBJECTIF :
-Transformer le cours suivant en un GUIDE VISUEL EXPLICATIF de 4 à 5 diapositives 16:9 haute définition, très structuré, pédagogique et coloré :
+Transformer le cours suivant en un GUIDE VISUEL EXPLICATIF de 5 diapositives 16:9 haute définition, très structuré, exhaustif, didactique et coloré :
 - Matière : {subject}
 - Titre du cours : {course_title}
 - Langue : {language}
@@ -175,16 +293,16 @@ CONTENU DU COURS :
 CONSIGNES PÉDAGOGIQUES :
 1. {lang_instr}
 {subject_guidelines}
-2. Découpe impérativement le cours en exactement 4 à 5 diapositives progressives.
+2. Découpe impérativement le cours en exactement 4 à 5 diapositives progressives qui EXPLIQUENT COMPLÈTEMENT la leçon, sans omettre les dates, mécanismes, causes et conséquences essentiels.
 3. Pour chaque diapositive :
    - "slide_num" : entier (1, 2, 3...)
-   - "badge" : étiquette de catégorie (ex: "📐 LE CONCEPT INTUITIF", "⚡ LA FORMULE CLÉ", "📝 MÉTHODE PAS-À-PAS", "🔬 L'EXPÉRIENCE DE LABO", "⚠️ PIÈGES D'EXAMEN", "💡 RÈGLE D'OR")
+   - "badge" : étiquette de catégorie (ex: "🏛️ السِّياقُ التَّارِيخِيُّ", "⚡ الْفِكْرَةُ الْمَرْكَزِيَّةُ", "📝 مَنْهَجِيَّةُ التَّحْلِيلِ", "⚠️ فَخُّ الاِمْتِحَانِ", "💡 قَاعِدَةٌ ذَهَبِيَّةٌ")
    - "title" : titre court, percutant et élégant de la diapositive
-   - "key_points" : liste de 2 à 4 phrases claires avec des mots clés bien mis en valeur
-   - "highlight_box" : objet contenant {{"title": "titre encadré", "content": "formule mathématique, loi physique, équation ou règle fondamentale"}}
-   - "example_or_trap" : objet contenant {{"type": "example" ou "trap" ou "tip", "title": "Exemple type / Piège classique", "content": "explication concrète en 2-3 phrases"}}
-   - "image_prompt" : prompt en ANGLAIS précis et descriptif pour générer une infographie didactique ou illustration éducative moderne (16:9 widescreen, clean educational infographics diagram, vibrant colors, clear scientific / mathematical visualization, high modern aesthetic, highly detailed).
-4. RÈGLE CRITIQUE POUR LES PROMPTS D'IMAGES : Ne mentionne AUCUN nom de personne politique controversée ou de symbole sensible. Privilégie les schémas géométriques, infographies de laboratoire, diagrammes moléculaires, cartes thématiques 3D, cadrans scientifiques et illustrations éducatives modernes.
+   - "key_points" : liste de 3 à 4 phrases TRÈS RICHES et EXPLICATIVES (chaque phrase doit expliquer le détail du concept, la cause, l'effet, la date ou la règle. Interdiction formelle des phrases creuses ou des résumés d'une seule ligne !).
+   - "highlight_box" : objet contenant {{"title": "titre encadré", "content": "définition officielle, date clé capitale, loi physique ou formule fondamentale"}}
+   - "example_or_trap" : objet contenant {{"type": "example" ou "trap" ou "tip", "title": "Exemple type / Piège classique", "content": "explication concrète en 2-3 phrases sur une question d'examen régional"}}
+   - "image_prompt" : prompt en ANGLAIS précis et descriptif pour générer une infographie didactique ou illustration éducative moderne (16:9 widescreen, clean museum-grade educational infographics diagram, vibrant colors, clear historical or scientific visualization, high modern aesthetic, highly detailed).
+4. RÈGLE CRITIQUE POUR LES PROMPTS D'IMAGES : Ne mentionne AUCUN nom de personne politique controversée ou de symbole sensible. Privilégie les cartes géographiques historiques d'Europe des années 1930, schémas de chronologie stylisés, parchemins d'archives, cadrans scientifiques, diagrammes et illustrations éducatives modernes.
 5. RÈGLE STRICTE SUR LES GUILLEMETS : Dans les chaînes de texte, n'utilise JAMAIS de guillemets doubles (") à l'intérieur du texte ! Utilise exclusivement des guillemets français « » ou des apostrophes '.
 
 RÉPONDS STRICTEMENT SOUS FORME D'UN OBJET JSON VALIDE SANS TEXTE AVANT NI APRÈS :
@@ -195,20 +313,21 @@ RÉPONDS STRICTEMENT SOUS FORME D'UN OBJET JSON VALIDE SANS TEXTE AVANT NI APRÈ
   "slides": [
     {{
       "slide_num": 1,
-      "badge": "🎯 LE CONCEPT INTUITIF",
+      "badge": "🎯 الفكرة الأساسية",
       "title": "titre de la slide 1",
       "key_points": [
-        "point clé 1...",
-        "point clé 2..."
+        "point explicatif détaillé 1...",
+        "point explicatif détaillé 2...",
+        "point explicatif détaillé 3..."
       ],
       "highlight_box": {{
-        "title": "LA FORMULE / RÈGLE CLÉ",
-        "content": "formule ou définition indispensable..."
+        "title": "التعريف الرسمي / القاعدة",
+        "content": "définition ou règle indispensable..."
       }},
       "example_or_trap": {{
         "type": "tip",
-        "title": "Astuce pour le contrôle",
-        "content": "conseil pratique..."
+        "title": "نصيحة للامتحان",
+        "content": "conseil pratique d'examen..."
       }},
       "image_prompt": "A modern colorful educational infographics illustration explaining ... 16:9 widescreen, clean scientific diagram, vibrant modern aesthetic, highly detailed."
     }}
@@ -218,7 +337,7 @@ RÉPONDS STRICTEMENT SOUS FORME D'UN OBJET JSON VALIDE SANS TEXTE AVANT NI APRÈ
 
     system_instruction = (
         "Tu es un professeur chevronné et un expert en vulgarisation pédagogique visuelle. "
-        "Tu conçois des présentations claires, structurées et visuellement stimulantes pour aider les collégiens à exceller."
+        "Tu conçois des présentations claires, hautement instructives, complètes et visuellement stimulantes pour aider les collégiens à exceller."
     )
 
     # 1. Tentative via OpenRouter si configuré
@@ -233,7 +352,7 @@ RÉPONDS STRICTEMENT SOUS FORME D'UN OBJET JSON VALIDE SANS TEXTE AVANT NI APRÈ
             raw_response = call_openrouter_chat_completion(
                 messages=messages,
                 model="google/gemini-2.5-flash",
-                temperature=0.4,
+                temperature=0.3,
                 json_mode=True,
             )
         except Exception as e_or:
@@ -244,28 +363,38 @@ RÉPONDS STRICTEMENT SOUS FORME D'UN OBJET JSON VALIDE SANS TEXTE AVANT NI APRÈ
         raw_response = call_llm(
             prompt=prompt,
             system_instruction=system_instruction,
-            temperature=0.4,
+            temperature=0.3,
             user_id=user_id,
         )
 
     # 3. Extraction et nettoyage JSON
-    try:
-        clean = (raw_response or "").strip()
-        if "```json" in clean:
-            clean = clean.split("```json", 1)[1].split("```", 1)[0].strip()
-        elif "```" in clean:
-            clean = clean.split("```", 1)[1].split("```", 1)[0].strip()
+    guide_deck = extract_and_parse_deck_json(raw_response or "")
 
-        clean = re.sub(r'[\x00-\x1f\x7f-\x9f]', lambda m: ' ' if m.group(0) in ('\n', '\r', '\t') else '', clean)
-        guide_deck = json.loads(clean)
+    # 4. Auto-réparation LLM si le parsing a échoué
+    if not guide_deck or not guide_deck.get("slides"):
+        logger.warning("Échec du parsing JSON initial, tentative d'auto-réparation LLM...")
+        try:
+            fix_prompt = (
+                "Le JSON suivant comporte une erreur de syntaxe. Corrige-le et renvoie UNIQUEMENT le JSON valide complet, "
+                "sans aucun texte ni balise markdown avant ou après. Remplace tous les guillemets internes par des apostrophes ' :\n\n"
+                + (raw_response or "")[:5000]
+            )
+            repair_resp = call_openrouter_chat_completion(
+                messages=[{"role": "user", "content": fix_prompt}],
+                model="google/gemini-2.5-flash",
+                temperature=0.1,
+                json_mode=True,
+            )
+            guide_deck = extract_and_parse_deck_json(repair_resp or "")
+        except Exception as e_repair:
+            logger.warning(f"Échec réparation LLM: {e_repair}")
 
-        if "slides" in guide_deck and len(guide_deck["slides"]) > 0:
-            logger.info(f"Deck explicatif généré avec succès ({len(guide_deck['slides'])} diapositives)")
-            return guide_deck
-    except Exception as e_json:
-        logger.error(f"Erreur parsing JSON deck explicatif : {e_json}\nRéponse brute : {raw_response[:300]}")
+    if guide_deck and guide_deck.get("slides"):
+        logger.info(f"Deck explicatif généré avec succès ({len(guide_deck['slides'])} diapositives)")
+        return guide_deck
 
-    # Fallback par défaut robuste
+    # Fallback par défaut contextuel et adapté à la matière (au lieu d'un faux texte mathématique)
+    logger.warning("Activation du fallback contextuel pour le guide explicatif...")
     return {
         "title": course_title,
         "subject_badge": theme["badge_default"],
@@ -276,19 +405,20 @@ RÉPONDS STRICTEMENT SOUS FORME D'UN OBJET JSON VALIDE SANS TEXTE AVANT NI APRÈ
                 "badge": "🎯 الفكرة الأساسية" if is_ar else "🎯 Le Concept Fondamental",
                 "title": course_title,
                 "key_points": [
-                    "فهم المبادئ الأساسية وتطبيقها في الحياة اليومية." if is_ar else "Comprendre les principes fondamentaux et leurs applications.",
-                    "استيعاب القواعد الرياضية والفيزيائية المعتمدة." if is_ar else "Maîtriser les propriétés mathématiques et scientifiques clés."
+                    f"الاستيعاب المنهجي لمحتويات درس {course_title}." if is_ar else f"Comprendre les éléments structurants du cours : {course_title}.",
+                    "التركيز على المفاهيم والمصطلحات المركزية المعتمدة في الامتحان الجهوي." if is_ar else "Maîtriser les notions clés exigées aux épreuves régionales.",
+                    "الربط المنطقي بين الأسباب والنتائج لفهم شامل." if is_ar else "Établir les liens de cause à effet pour une mémorisation durable."
                 ],
                 "highlight_box": {
                     "title": "القاعدة الأساسية" if is_ar else "La Règle Fondamentale",
-                    "content": "التركيز على المعطيات والبرهان المنهجي الدقيق." if is_ar else "Bien identifier les hypothèses et rédiger avec rigueur."
+                    "content": "التركيز على المعطيات والتحليل المنهجي الدقيق." if is_ar else "Bien identifier les concepts et rédiger avec rigueur."
                 },
                 "example_or_trap": {
                     "type": "tip",
                     "title": "نصيحة للامتحان" if is_ar else "Conseil d'Examen",
-                    "content": "تأكد دائماً من صحة الوحدات والرموز قبل الإجابة." if is_ar else "Vérifiez toujours les unités et la cohérence de vos résultats."
+                    "content": "احرص على تنظيم إجابتك في أبعاد متكاملة لضمان النقطة الكاملة." if is_ar else "Structurez toujours votre réponse avec clarté et précision."
                 },
-                "image_prompt": f"A clean vibrant educational infographics illustration for {course_title}, modern scientific diagram, 16:9 widescreen, highly detailed."
+                "image_prompt": f"A clean vibrant educational infographics illustration for {course_title}, modern museum diagram, 16:9 widescreen, highly detailed."
             }
         ],
     }
@@ -399,6 +529,7 @@ def build_explanatory_guide_pdf_and_viewer(
     course_title: str,
     language: str = "ar",
     user_id: Optional[int] = None,
+    force_images: bool = False,
 ) -> Tuple[str, str]:
     """
     Étape 2 : Compile le Guide Visuel Explicatif complet :
@@ -415,7 +546,7 @@ def build_explanatory_guide_pdf_and_viewer(
     slides = guide_deck.get("slides", [])
     deck_title = guide_deck.get("title", course_title)
     is_ar = language == "ar"
-    theme = detect_subject_theme(subject)
+    theme = detect_subject_theme(subject, course_title)
 
     slide_data: List[Dict[str, Any]] = []
 
@@ -430,7 +561,7 @@ def build_explanatory_guide_pdf_and_viewer(
         s_prompt = sl.get("image_prompt", f"Educational diagram explaining {s_title}")
 
         img_path = guide_dir / f"slide_{s_num}.png"
-        if not img_path.exists() or img_path.stat().st_size < 10000:
+        if force_images or not img_path.exists() or img_path.stat().st_size < 10000:
             generate_guide_slide_image(s_prompt, str(img_path), user_id=user_id)
 
         # Synthèse vocale de la slide
@@ -736,8 +867,8 @@ html[dir="rtl"] .keypoints-card {{
 </body>
 </html>"""
 
-    html_file_path = base_static_dir / f"guide_course_{course_id}.html"
-    html_file_path.write_text(print_html_content, encoding="utf-8")
+    print_html_file_path = base_static_dir / f"guide_course_{course_id}_print.html"
+    print_html_file_path.write_text(print_html_content, encoding="utf-8")
 
     pdf_file_path = base_static_dir / f"guide_course_{course_id}.pdf"
     compiled_pdf = False
@@ -751,7 +882,7 @@ html[dir="rtl"] .keypoints-card {{
             "--no-sandbox",
             "--print-to-pdf-no-header",
             f"--print-to-pdf=/root/guide_course_{course_id}.pdf",
-            f"https://ecole.code-xpert.net/static/guides/guide_course_{course_id}.html",
+            f"https://ecole.code-xpert.net/static/guides/guide_course_{course_id}_print.html",
         ]
         res = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
         if res.returncode == 0 and os.path.exists(f"/root/guide_course_{course_id}.pdf"):
@@ -1364,6 +1495,7 @@ def generate_complete_explanatory_guide(
     course_title: str,
     language: str = "ar",
     user_id: Optional[int] = None,
+    force_images: bool = False,
 ) -> Tuple[str, str]:
     """
     Exécute en 1 clic le pipeline complet du Guide Visuel Explicatif :
@@ -1392,6 +1524,7 @@ def generate_complete_explanatory_guide(
         course_title=course_title,
         language=language,
         user_id=user_id,
+        force_images=force_images,
     )
     save_course_explanatory_guide_pdf(course_id, pdf_url)
 
