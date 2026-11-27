@@ -104,6 +104,7 @@ try:
         save_course_story_scenario,
         get_course_story_pdf,
         save_course_story_pdf,
+        ensure_course_pdf_on_disk,
         is_user_openrouter_allowed,
         set_user_openrouter_access,
     )
@@ -172,6 +173,7 @@ except ImportError:
         save_course_story_scenario,
         get_course_story_pdf,
         save_course_story_pdf,
+        ensure_course_pdf_on_disk,
         is_user_openrouter_allowed,
         set_user_openrouter_access,
     )
@@ -2481,6 +2483,9 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                 file_hash=current_course.get("file_hash"),
                 user_id=current_course.get("user_id"),
             )
+            if not file_path or not os.path.exists(file_path):
+                file_path = ensure_course_pdf_on_disk(current_course)
+
             if file_path and os.path.exists(file_path):
                 with open(file_path, "rb") as f:
                     pdf_data = f.read()

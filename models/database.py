@@ -1535,6 +1535,125 @@ def resolve_course_file_path(
     return file_path
 
 
+def ensure_course_pdf_on_disk(course: Dict[str, Any]) -> Optional[str]:
+    """
+    Garantit la présence physique d'un fichier PDF valide pour le cours.
+    Si le fichier original d'import n'est plus sur le disque, génère automatiquement
+    un document PDF propre, structuré et mis en page à partir du texte extrait et du résumé.
+    """
+    if not course:
+        return None
+
+    cid = course.get("id")
+    raw_fp = course.get("file_path")
+    fn = course.get("file_name") or f"cours_{cid}.pdf"
+    if not fn.lower().endswith(".pdf"):
+        fn = f"{fn}.pdf"
+    fh = course.get("file_hash") or f"hash_{cid}"
+    uid = course.get("user_id")
+
+    resolved = resolve_course_file_path(raw_fp, file_name=fn, file_hash=fh, user_id=uid)
+    if resolved and os.path.exists(resolved):
+        return resolved
+
+    try:
+        storage_root = get_db_path().parent.resolve()
+    except Exception:
+        storage_root = Path(DEFAULT_DB_DIR).resolve()
+
+    if uid:
+        target_dir = storage_root / "users" / str(uid) / "cours"
+    else:
+        target_dir = storage_root / "cours"
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    safe_name = "".join(ch for ch in fn if ch.isalnum() or ch in ("-", "_", ".", " ")).strip()
+    if not safe_name.lower().endswith(".pdf"):
+        safe_name = f"{safe_name}.pdf"
+    target_path = target_dir / f"{fh[:10]}_{safe_name}"
+
+    if target_path.exists():
+        return str(target_path)
+
+    lang = course.get("language") or "ar"
+    is_ar = lang == "ar"
+    import html as pyhtml
+    title = pyhtml.escape(course.get("title") or "Cours")
+    subject = pyhtml.escape(course.get("subject") or "Général")
+    raw_text = pyhtml.escape(course.get("raw_text") or course.get("summary_markdown") or "Contenu du cours.")
+
+    # 1. Tentative Chromium headless
+    try:
+        static_docs = storage_root.parent / "static" / "docs"
+        static_docs.mkdir(parents=True, exist_ok=True)
+        html_file = static_docs / f"course_{cid}.html"
+        html_content = f"""<!DOCTYPE html>
+<html lang="{lang}" dir="{"rtl" if is_ar else "ltr"}">
+<head>
+<meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+@page {{ size: A4; margin: 25mm 20mm 20mm 20mm; }}
+* {{ box-sizing: border-box; margin: 0; padding: 0; }}
+body {{ font-family: "Cairo", system-ui, sans-serif; color: #1e293b; line-height: 1.8; padding: 10px; }}
+.header {{ border-bottom: 2px solid #2563eb; padding-bottom: 14px; margin-bottom: 24px; display: flex; justify-content: space-between; align-items: center; }}
+.title {{ font-size: 20px; font-weight: 800; color: #1e3a8a; }}
+.badge {{ background: #eff6ff; border: 1px solid #bfdbfe; color: #1e40af; padding: 4px 14px; border-radius: 12px; font-weight: 700; font-size: 13px; }}
+.content {{ font-size: 14.5px; white-space: pre-wrap; text-align: justify; color: #334155; line-height: 1.8; }}
+</style>
+</head>
+<body>
+<div class="header">
+  <h1 class="title">{title}</h1>
+  <span class="badge">📖 {subject} • #3AC</span>
+</div>
+<div class="content">{raw_text}</div>
+</body>
+</html>"""
+        html_file.write_text(html_content, encoding="utf-8")
+        out_root = f"/root/doc_{cid}.pdf"
+        cmd = [
+            "chromium-browser",
+            "--headless",
+            "--disable-gpu",
+            "--no-sandbox",
+            "--print-to-pdf-no-header",
+            f"--print-to-pdf={out_root}",
+            f"https://ecole.code-xpert.net/static/docs/course_{cid}.html"
+        ]
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=25)
+        if os.path.exists(out_root):
+            os.system(f"cp {out_root} \"{target_path}\" && rm -f {out_root}")
+            update_course_metadata(cid, file_path=str(target_path))
+            return str(target_path)
+    except Exception as e_chrom:
+        logger.debug(f"Chromium PDF fallback: {e_chrom}")
+
+    # 2. Secours ReportLab
+    try:
+        from reportlab.lib.pagesizes import A4
+        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+        from reportlab.lib.styles import getSampleStyleSheet
+        import arabic_reshaper
+        from bidi.algorithm import get_display
+
+        doc = SimpleDocTemplate(str(target_path), pagesize=A4)
+        styles = getSampleStyleSheet()
+        story = []
+        clean_tit = get_display(arabic_reshaper.reshape(course.get("title") or "Cours"))
+        story.append(Paragraph(f"<b>{clean_tit}</b>", styles["Heading1"]))
+        story.append(Spacer(1, 12))
+        clean_body = get_display(arabic_reshaper.reshape(course.get("raw_text", "")[:3000]))
+        story.append(Paragraph(clean_body, styles["Normal"]))
+        doc.build(story)
+        update_course_metadata(cid, file_path=str(target_path))
+        return str(target_path)
+    except Exception as e_rl:
+        logger.debug(f"ReportLab fallback: {e_rl}")
+
+    return None
+
+
 def get_mindmap_disk_paths(
     course_id: Optional[int] = None,
     file_path: Optional[str] = None,
