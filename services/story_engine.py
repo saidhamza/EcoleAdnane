@@ -100,7 +100,7 @@ RÉPONDS STRICTEMENT SOUS FORME D'UN OBJET JSON VALIDE SANS TEXTE AVANT NI APRÈ
         "Tu réponds EXCLUSIVEMENT en JSON RFC 8259 valide sans texte avant ni après, et sans guillemets doubles internes non échappés."
     )
 
-    is_or_allowed = is_user_openrouter_allowed(user_id)
+    is_or_allowed = True if user_id is None else is_user_openrouter_allowed(user_id)
     openrouter_key = get_openrouter_api_key() if is_or_allowed else None
 
     raw_json = ""
@@ -181,7 +181,7 @@ def generate_scene_illustration(image_prompt: str, output_path: str, user_id: Op
     """
     from services.ai_engine import is_user_openrouter_allowed
 
-    is_allowed = is_user_openrouter_allowed(user_id)
+    is_allowed = True if user_id is None else is_user_openrouter_allowed(user_id)
     key = get_openrouter_api_key() if is_allowed else None
 
     target = Path(output_path)
@@ -287,7 +287,7 @@ def build_story_pdf_and_viewer(
         s_prompt = sc.get("image_prompt", f"Watercolor illustration for {s_title}")
 
         img_path = story_dir / f"scene_{s_num}.png"
-        if not img_path.exists():
+        if not img_path.exists() or img_path.stat().st_size < 10000:
             generate_scene_illustration(s_prompt, str(img_path), user_id=user_id)
 
         clean_narr = clean_text_for_speech(s_narr)
