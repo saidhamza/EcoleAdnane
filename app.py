@@ -533,6 +533,12 @@ def get_custom_css(theme: str = "dark") -> str:
     --ea-on-primary: #ffffff;
         """
 
+    dark_extra = ""
+    if is_dark:
+        dark_extra = """
+/* Dark mode: native canvas widgets (dataframes) follow the dark palette */
+[data-testid="stDataFrame"], [data-testid="stTable"] { filter: invert(0.92) hue-rotate(180deg) brightness(0.92) contrast(0.95); border-radius: 10px; }
+"""
     return f"""
 <style>
 {font_faces}
@@ -1855,6 +1861,50 @@ div[data-testid="stVerticalBlockBorderWrapper"] {{ border-radius: 10px !importan
 [data-testid="stSidebar"] [data-testid="stRadioOption"]:has(input:checked) p {{ color: var(--ea-hero-title) !important; font-weight: 700 !important; }}
 .sb-profile {{ border-radius: 10px; }}
 .sb-avatar {{ background: var(--ea-primary) !important; }}
+/* ---- THEME FIDELITY: native widgets must follow the active palette ---- */
+[data-testid="stWidgetLabel"], [data-testid="stWidgetLabel"] p, [data-testid="stWidgetLabel"] span,
+[data-testid="stCheckbox"] label, [data-testid="stCheckbox"] label p,
+[data-testid="stRadio"] label p, [data-testid="stToggle"] label p,
+[data-testid="stFileUploader"] label, [data-testid="stCaptionContainer"] {{
+    color: var(--ea-text-muted) !important;
+}}
+div[data-baseweb="input"], div[data-baseweb="input"] > div, div[data-baseweb="base-input"],
+div[data-baseweb="textarea"], div[data-baseweb="textarea"] > div,
+input, textarea {{
+    background-color: var(--ea-input-bg) !important;
+    color: var(--ea-text) !important;
+    -webkit-text-fill-color: var(--ea-text) !important;
+    caret-color: var(--ea-primary) !important;
+}}
+input::placeholder, textarea::placeholder {{ color: var(--ea-text-dim) !important; -webkit-text-fill-color: var(--ea-text-dim) !important; opacity: 1; }}
+div[data-baseweb="select"] > div {{ background-color: var(--ea-input-bg) !important; color: var(--ea-text) !important; }}
+div[data-baseweb="select"] div, div[data-baseweb="select"] span, div[data-baseweb="select"] input {{
+    color: var(--ea-text) !important; -webkit-text-fill-color: var(--ea-text) !important;
+}}
+div[data-baseweb="select"] svg, div[data-baseweb="input"] svg {{ fill: var(--ea-text-muted) !important; color: var(--ea-text-muted) !important; }}
+div[data-baseweb="popover"] > div, div[data-baseweb="popover"] ul, ul[data-baseweb="menu"], [role="listbox"],
+[data-testid="stPopoverBody"], [data-testid="stSelectboxVirtualDropdown"] {{
+    background: var(--ea-surface) !important; color: var(--ea-text) !important; border: 1px solid var(--ea-border);
+}}
+li[role="option"], ul[data-baseweb="menu"] li {{ background: transparent !important; color: var(--ea-text) !important; }}
+li[role="option"]:hover, li[role="option"][aria-selected="true"], ul[data-baseweb="menu"] li:hover {{ background: var(--ea-surface-hover) !important; }}
+code, [data-testid="stMarkdownContainer"] code {{
+    background: var(--ea-surface-hover) !important; color: var(--ea-hero-badge-color) !important;
+    border: 1px solid var(--ea-border); border-radius: 5px; padding: 1px 6px; font-size: 0.85em;
+}}
+pre, [data-testid="stCode"], [data-testid="stCode"] pre {{ background: var(--ea-surface-hover) !important; color: var(--ea-text) !important; }}
+div[data-testid="stAlert"] > div {{ background: var(--ea-surface-hover) !important; color: var(--ea-text) !important; border: 1px solid var(--ea-border); border-left: 4px solid var(--ea-amber); }}
+div[data-testid="stAlert"] p, div[data-testid="stAlert"] span {{ color: var(--ea-text) !important; }}
+[data-testid="stFileUploaderDropzone"] {{ background: var(--ea-input-bg) !important; border: 1px dashed var(--ea-border-hover) !important; color: var(--ea-text) !important; }}
+[data-testid="stFileUploaderDropzone"] * {{ color: var(--ea-text-muted) !important; }}
+[data-testid="stExpander"] details, [data-testid="stExpander"] summary {{ background: transparent !important; color: var(--ea-text) !important; }}
+[data-testid="stChatInput"] > div, [data-testid="stChatInput"] textarea {{ background: var(--ea-input-bg) !important; color: var(--ea-text) !important; }}
+[data-testid="stTooltipContent"], div[data-baseweb="tooltip"] > div {{ background: var(--ea-surface-hover) !important; color: var(--ea-text) !important; }}
+[data-testid="stBaseButton-secondary"] p, [data-testid="stBaseButton-secondary"] span {{ color: var(--ea-btn-sec-color) !important; }}
+[data-testid="stBaseButton-primary"] p, [data-testid="stBaseButton-primary"] span {{ color: var(--ea-on-primary) !important; }}
+[data-testid="stSidebar"] div[data-baseweb="select"] > div {{ background-color: var(--ea-input-bg) !important; }}
+{dark_extra}
+
 /* ---- COMPACT + TYPOGRAPHY LAYER ---- */
 html {{ font-size: 14.5px; }}
 .stApp, [data-testid="stMarkdownContainer"] p, [data-testid="stMarkdownContainer"] li {{ font-size: 1rem; line-height: 1.55; }}
