@@ -3293,6 +3293,76 @@ RANK_TIERS: List[Dict[str, Any]] = [
 ]
 
 
+def get_student_study_overview(user_id: int) -> Dict[str, Any]:
+    """
+    Vue d'ensemble « Aujourd'hui » pour l'élève : XP, niveau, série de jours,
+    objectif du jour et progression par cours (basés sur quiz_attempts).
+    """
+    from datetime import date, timedelta
+
+    xp_per_correct, xp_per_attempt, xp_per_level = 10, 20, 200
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT course_id, score, total_questions, completed_at FROM quiz_attempts "
+            "WHERE user_id = ? ORDER BY completed_at DESC, id DESC",
+            (user_id,),
+        )
+        rows = [dict(r) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+    xp = 0
+    days = set()
+    today = date.today()
+    today_attempts = 0
+    courses: Dict[int, Dict[str, Any]] = {}
+    for r in rows:
+        score = int(r.get("score") or 0)
+        total = int(r.get("total_questions") or 0)
+        xp += score * xp_per_correct + xp_per_attempt
+        d = None
+        try:
+            d = datetime.fromisoformat(str(r.get("completed_at"))[:19]).date()
+        except Exception:
+            pass
+        if d:
+            days.add(d)
+            if d == today:
+                today_attempts += 1
+        pct = round(score / total * 100) if total > 0 else 0
+        c = courses.setdefault(r["course_id"], {"attempts": 0, "best": 0, "last_pct": pct})
+        c["attempts"] += 1
+        c["best"] = max(c["best"], pct)
+
+    streak = 0
+    cursor_day = today if today in days else (today - timedelta(days=1))
+    while cursor_day in days:
+        streak += 1
+        cursor_day -= timedelta(days=1)
+
+    for c in courses.values():
+        c["status"] = "mastered" if c["best"] >= 70 else "learning"
+
+    level = xp // xp_per_level + 1
+    return {
+        "xp": xp,
+        "level": level,
+        "xp_in_level": xp % xp_per_level,
+        "xp_per_level": xp_per_level,
+        "streak": streak,
+        "today_attempts": today_attempts,
+        "daily_goal": 1,
+        "courses": courses,
+        "last_course_id": rows[0]["course_id"] if rows else None,
+        "weak_course_id": next(
+            (cid for cid, c in sorted(courses.items(), key=lambda kv: kv[1]["best"]) if c["best"] < 70),
+            None,
+        ),
+    }
+
+
 def rank_from_badge_count(count: int, success_rate: Optional[float] = None) -> Dict[str, Any]:
     """
     Retourne le palier de médaille correspondant à un nombre de trophées.

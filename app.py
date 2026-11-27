@@ -376,12 +376,14 @@ try:
 except Exception as _e_init_heal:
     logger.debug(f"Auto-heal initial check: {_e_init_heal}")
 
+from models.database import get_student_study_overview
+
 # Configuration de la page Streamlit
 st.set_page_config(
     page_title="Ecole Adnane - Soutien & Révision Scolaire Maroc",
     page_icon="🎓",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="collapsed",
 )
 
 # Redirection automatique si l'application s'exécute sur Streamlit Cloud vers le serveur dédié officiel
@@ -436,16 +438,16 @@ def get_custom_css(theme: str = "dark") -> str:
 
     if is_dark:
         palette_vars = """
-    --ea-bg: #090d16;
-    --ea-bg-gradient: radial-gradient(circle at 50% 0%, #131b2e 0%, #090d16 100%);
-    --ea-surface: #0f172a;
-    --ea-surface-hover: #1e293b;
+    --ea-bg: #0e1020;
+    --ea-bg-gradient: radial-gradient(circle at 15% 0%, #1d1b4b 0%, #0e1020 55%);
+    --ea-surface: #171a33;
+    --ea-surface-hover: #23274a;
     --ea-surface-card: rgba(15, 23, 42, 0.78);
     --ea-border: rgba(255, 255, 255, 0.08);
-    --ea-border-hover: rgba(59, 130, 246, 0.5);
-    --ea-primary: #3b82f6;
-    --ea-primary-hover: #2563eb;
-    --ea-primary-glow: rgba(59, 130, 246, 0.28);
+    --ea-border-hover: rgba(124, 131, 255, 0.6);
+    --ea-primary: #7c83ff;
+    --ea-primary-hover: #6366f1;
+    --ea-primary-glow: rgba(124, 131, 255, 0.30);
     --ea-text: #f8fafc;
     --ea-text-muted: #94a3b8;
     --ea-text-dim: #64748b;
@@ -455,7 +457,7 @@ def get_custom_css(theme: str = "dark") -> str:
     --ea-input-border: rgba(255, 255, 255, 0.1);
     --ea-tablist-bg: rgba(15, 23, 42, 0.85);
     --ea-tab-color: #94a3b8;
-    --ea-sidebar-bg: #0b0f19;
+    --ea-sidebar-bg: #12142a;
     --ea-sidebar-text: #f8fafc;
     --ea-sidebar-border: rgba(255, 255, 255, 0.07);
     --ea-hero-bg: linear-gradient(145deg, rgba(19, 27, 46, 0.95) 0%, rgba(11, 16, 29, 0.98) 100%);
@@ -483,15 +485,15 @@ def get_custom_css(theme: str = "dark") -> str:
         """
     else:
         palette_vars = """
-    --ea-bg: #f8fafc;
-    --ea-bg-gradient: radial-gradient(circle at 50% 0%, #edf2f7 0%, #f8fafc 100%);
+    --ea-bg: #f6f7ff;
+    --ea-bg-gradient: radial-gradient(circle at 15% 0%, #e8eaff 0%, #f6f7ff 55%);
     --ea-surface: #ffffff;
     --ea-surface-hover: #f1f5f9;
     --ea-surface-card: #ffffff;
     --ea-border: #e2e8f0;
     --ea-border-hover: #3b82f6;
-    --ea-primary: #2563eb;
-    --ea-primary-hover: #1d4ed8;
+    --ea-primary: #4f46e5;
+    --ea-primary-hover: #4338ca;
     --ea-primary-glow: rgba(37, 99, 235, 0.15);
     --ea-text: #0f172a;
     --ea-text-muted: #64748b;
@@ -1577,6 +1579,241 @@ div[data-testid="stSegmentedControl"] button[data-checked="true"] {{
     box-shadow: 0 2px 8px rgba(37, 99, 235, 0.35) !important;
     font-weight: 700 !important;
 }}
+/* =====================================================================
+   ERGONOMIC OVERHAUL v2 — student-friendly layer (overrides above)
+   ===================================================================== */
+:root {{
+    --ea-grad: linear-gradient(135deg, #6366f1 0%, #8b5cf6 55%, #ec4899 100%);
+    --ea-grad-soft: linear-gradient(135deg, rgba(99,102,241,0.16) 0%, rgba(236,72,153,0.10) 100%);
+    --ea-touch: 46px;
+    --ea-focus: 0 0 0 3px rgba(124, 131, 255, 0.45);
+}}
+
+html {{ scroll-behavior: smooth; }}
+.block-container {{ padding-top: 2.5rem !important; max-width: 1200px !important; }}
+p, li {{ line-height: 1.7; }}
+
+/* Visible keyboard focus everywhere */
+button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible,
+[role="tab"]:focus-visible, [data-baseweb="select"]:focus-within {{
+    outline: none !important;
+    box-shadow: var(--ea-focus) !important;
+}}
+
+/* Bigger, friendlier touch targets */
+button[kind="primary"], button[kind="secondary"],
+[data-testid="stBaseButton-primary"], [data-testid="stBaseButton-secondary"] {{
+    min-height: var(--ea-touch) !important;
+    padding: 0.55rem 1.1rem !important;
+    font-size: 0.97rem !important;
+}}
+button[kind="primary"], [data-testid="stBaseButton-primary"] {{
+    background: var(--ea-grad) !important;
+    box-shadow: 0 6px 18px rgba(99, 102, 241, 0.40) !important;
+}}
+button[kind="primary"]:hover, [data-testid="stBaseButton-primary"]:hover {{
+    box-shadow: 0 10px 26px rgba(139, 92, 246, 0.55) !important;
+    filter: brightness(1.06);
+}}
+button:active {{ transform: scale(0.98) !important; }}
+button:disabled {{ opacity: 0.45 !important; }}
+
+div[data-baseweb="select"] > div, div[data-baseweb="input"] > div, div[data-baseweb="textarea"] > div {{
+    min-height: var(--ea-touch) !important;
+}}
+
+/* Gradient brand accents replace flat blue */
+div[role="tablist"] button[aria-selected="true"],
+[data-testid="stPills"] button[aria-pressed="true"],
+[data-testid="stPills"] button[data-checked="true"],
+div[data-testid="stSegmentedControl"] button[aria-checked="true"],
+div[data-testid="stSegmentedControl"] button[data-checked="true"],
+div[data-testid="stRadio"] [data-testid="stRadioGroup"][aria-orientation="horizontal"] [data-testid="stRadioOption"][data-selected="true"],
+div[data-testid="stRadio"] [data-testid="stRadioGroup"][aria-orientation="horizontal"] [data-testid="stRadioOption"]:has(input:checked) {{
+    background: var(--ea-grad) !important;
+    box-shadow: 0 4px 14px rgba(99, 102, 241, 0.40) !important;
+    color: #fff !important;
+}}
+[data-testid="stSidebar"] [data-testid="stRadioOption"][data-selected="true"],
+[data-testid="stSidebar"] [data-testid="stRadioOption"]:has(input:checked),
+[data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] label:has(input:checked) {{
+    background: var(--ea-grad-soft) !important;
+    border-color: var(--ea-primary) !important;
+}}
+[data-testid="stSidebar"] [data-testid="stRadioOption"],
+[data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] label {{
+    min-height: var(--ea-touch) !important;
+    border-radius: 14px !important;
+}}
+[data-testid="stSidebar"] [data-testid="stRadioOption"] p {{ font-size: 0.97rem !important; }}
+
+/* Tabs: scrollable on small screens, bigger labels */
+div[role="tablist"] {{ scrollbar-width: thin; -webkit-overflow-scrolling: touch; }}
+div[role="tablist"] button {{ min-height: 44px !important; }}
+
+/* Hero: more welcoming */
+.ea-dashboard-hero {{
+    background: var(--ea-grad-soft), var(--ea-hero-bg);
+    border-radius: 24px;
+    padding: 28px 32px;
+}}
+.ea-dashboard-hero::before {{ background: var(--ea-grad); height: 5px; }}
+.ea-hero-icon-box {{ background: var(--ea-grad); box-shadow: 0 10px 26px rgba(139, 92, 246, 0.40); animation: eaFloat 4s ease-in-out infinite; }}
+.ea-hero-title {{ font-size: 1.75rem; }}
+.ea-hero-desc {{ font-size: 1rem; }}
+.course-header-box::before {{ background: var(--ea-grad); }}
+@keyframes eaFloat {{ 0%,100% {{ transform: translateY(0); }} 50% {{ transform: translateY(-5px); }} }}
+
+/* Cards: clear affordance, lift on hover */
+div[data-testid="stVerticalBlockBorderWrapper"] {{ border-radius: 20px !important; }}
+div[data-testid="stVerticalBlockBorderWrapper"]:hover {{ transform: translateY(-3px); }}
+[data-testid="stMetric"] {{ border-radius: 18px !important; border-top: 3px solid var(--ea-primary) !important; }}
+[data-testid="stMetricValue"] {{ background: var(--ea-grad); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }}
+
+.badge-subject, .badge-lang {{ font-size: 0.82rem; }}
+.concept-tag {{ color: var(--ea-primary) !important; background: var(--ea-grad-soft) !important; border-color: var(--ea-hero-badge-border) !important; }}
+
+/* Progress bars: motivating gradient */
+[data-testid="stProgress"] > div > div {{ background-color: var(--ea-border) !important; border-radius: 9999px !important; height: 10px !important; }}
+[data-testid="stProgress"] > div > div > div {{ background: linear-gradient(90deg, #10b981, #06b6d4, #6366f1) !important; border-radius: 9999px !important; }}
+
+/* Quiz readability */
+.quiz-question-card {{ border-left: 5px solid var(--ea-primary); font-size: 1.05rem; }}
+div[data-testid="stRadio"] div[role="radiogroup"]:not([aria-orientation="horizontal"]) label {{
+    border-radius: 14px !important;
+    transition: all .18s ease !important;
+}}
+.trap-card, .explanation-card, .trap-card-rtl, .explanation-card-rtl {{ border-radius: 14px; font-size: 1.02rem; }}
+
+/* Chat */
+[data-testid="stChatInput"] {{ border-radius: 20px !important; }}
+[data-testid="stChatMessage"] {{ border-radius: 20px !important; }}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {{ width: 10px; height: 10px; }}
+::-webkit-scrollbar-thumb {{ background: var(--ea-border-hover); border-radius: 9999px; }}
+
+/* Mobile (phones: main student device) */
+@media (max-width: 768px) {{
+    .block-container {{ padding: 3.2rem 0.9rem 4rem !important; }}
+    .ea-dashboard-hero {{ flex-direction: column; align-items: flex-start; padding: 20px; gap: 14px; }}
+    .ea-hero-icon-box {{ width: 52px; height: 52px; font-size: 1.8rem; }}
+    .ea-hero-title {{ font-size: 1.4rem; }}
+    .course-header-box {{ padding: 18px !important; }}
+    .course-header-box h2 {{ font-size: 1.45rem !important; }}
+    div[role="tablist"] {{ border-radius: 14px !important; padding: 4px !important; }}
+    div[role="tablist"] button {{ padding: 8px 14px !important; }}
+    [data-testid="stMetricValue"] {{ font-size: 1.5rem !important; }}
+    .rtl-box, .rtl-box p, .rtl-box li {{ font-size: 1.12rem !important; }}
+}}
+
+/* Respect reduced-motion preferences */
+@media (prefers-reduced-motion: reduce) {{
+    *, *::before, *::after {{ animation: none !important; transition: none !important; scroll-behavior: auto !important; }}
+}}
+/* ---- "Aujourd'hui" dashboard ---- */
+.ea-today-card {{
+    background: var(--ea-grad); color: #fff; border-radius: 24px; padding: 26px 28px 22px; margin-bottom: 10px;
+    box-shadow: 0 16px 40px rgba(99,102,241,0.35); position: relative; overflow: hidden;
+}}
+.ea-today-card::after {{ content: '📚'; position: absolute; right: 18px; bottom: -14px; font-size: 7rem; opacity: 0.14; }}
+.ea-today-hello {{ font-size: 0.95rem; font-weight: 600; opacity: 0.9; }}
+.ea-today-kicker {{ margin-top: 10px; font-size: 0.78rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; opacity: 0.85; }}
+.ea-today-title {{ font-size: 1.55rem; font-weight: 800; line-height: 1.3; margin: 4px 0; color: #fff; }}
+.ea-today-sub {{ font-size: 0.9rem; opacity: 0.9; margin-bottom: 14px; }}
+.ea-today-card .ea-bar {{ background: rgba(255,255,255,0.25); }}
+.ea-today-card .ea-bar span {{ background: #fff; }}
+.ea-bar {{ height: 10px; border-radius: 9999px; background: var(--ea-border); overflow: hidden; }}
+.ea-bar span {{ display: block; height: 100%; border-radius: 9999px; background: linear-gradient(90deg,#10b981,#06b6d4,#6366f1); transition: width .6s ease; }}
+.ea-bar.small {{ height: 6px; margin: 4px 0 4px; }}
+.ea-stats-card {{ background: var(--ea-surface); border: 1px solid var(--ea-border); border-radius: 24px; padding: 20px 22px; box-shadow: var(--ea-card-shadow); margin-bottom: 10px; }}
+.ea-stat-row {{ display: flex; gap: 14px; margin-bottom: 14px; }}
+.ea-stat {{ flex: 1; display: flex; align-items: center; gap: 10px; background: var(--ea-grad-soft); border-radius: 16px; padding: 10px 12px; }}
+.ea-stat-ico {{ font-size: 1.7rem; }}
+.ea-stat b {{ display: block; font-size: 1.05rem; color: var(--ea-text); }}
+.ea-stat small {{ color: var(--ea-text-muted); font-size: 0.75rem; }}
+.ea-stat-label {{ font-size: 0.8rem; color: var(--ea-text-muted); margin-bottom: 6px; font-weight: 600; }}
+.ea-goal {{ margin-top: 14px; padding: 10px 14px; border-radius: 14px; font-size: 0.9rem; font-weight: 700; background: rgba(245,158,11,0.14); color: var(--ea-amber); }}
+.ea-goal.done {{ background: rgba(16,185,129,0.14); color: var(--ea-emerald); }}
+
+/* ---- Course cards: color by subject + status ---- */
+.ea-card-stripe {{ height: 6px; border-radius: 9999px; margin: -4px 0 12px; }}
+.ea-card-status {{ display: inline-block; font-size: 0.74rem; font-weight: 800; padding: 3px 10px; border-radius: 9999px; margin-bottom: 8px; }}
+.ea-card-status.new {{ background: var(--ea-border); color: var(--ea-text-muted); }}
+.ea-card-status.learning {{ background: rgba(245,158,11,0.16); color: var(--ea-amber); }}
+.ea-card-status.mastered {{ background: rgba(16,185,129,0.16); color: var(--ea-emerald); }}
+.ea-card-score {{ font-size: 0.78rem; color: var(--ea-text-muted); margin-bottom: 10px; }}
+/* ---- Compact sidebar ---- */
+[data-testid="stSidebar"][aria-expanded="true"] {{ min-width: 236px !important; max-width: 236px !important; width: 236px !important; }}
+[data-testid="stSidebarUserContent"], [data-testid="stSidebar"] > div > div {{ padding-top: 0.6rem !important; }}
+[data-testid="stSidebar"] [data-testid="stSidebarContent"] {{ padding: 0 0.7rem 0.8rem !important; }}
+[data-testid="stSidebar"] [data-testid="stVerticalBlock"] {{ gap: 0.45rem !important; }}
+[data-testid="stSidebar"] hr {{ margin: 0.4rem 0 !important; }}
+
+.sb-brand {{ display: flex; align-items: center; gap: 9px; margin: 2px 0 10px; }}
+.sb-logo {{ width: 32px; height: 32px; border-radius: 10px; background: var(--ea-grad); display: flex; align-items: center; justify-content: center; font-size: 1.1rem; box-shadow: 0 4px 12px rgba(99,102,241,0.4); }}
+.sb-brand-name {{ font-size: 1.1rem; font-weight: 800; letter-spacing: -0.02em; color: var(--ea-sidebar-text); }}
+.sb-profile {{ display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 14px; background: var(--ea-surface); border: 1px solid var(--ea-border); }}
+.sb-avatar {{ width: 34px; height: 34px; flex-shrink: 0; border-radius: 50%; background: var(--ea-grad); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 800; }}
+.sb-profile-txt {{ min-width: 0; }}
+.sb-name {{ font-size: 0.9rem; font-weight: 700; color: var(--ea-sidebar-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
+.sb-meta {{ font-size: 0.72rem; color: var(--ea-text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
+.sb-xp {{ display: flex; justify-content: space-between; margin: 8px 4px 2px; font-size: 0.78rem; font-weight: 700; color: var(--ea-sidebar-text); }}
+.sb-spacer {{ height: 6px; }}
+
+/* Flat compact nav list */
+[data-testid="stSidebar"] [data-testid="stRadioOption"],
+[data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] label {{
+    min-height: 40px !important; padding: 6px 12px !important; margin: 0 0 2px 0 !important;
+    background: transparent !important; border: 1px solid transparent !important; border-radius: 12px !important;
+    box-shadow: none !important;
+}}
+[data-testid="stSidebar"] [data-testid="stRadioOption"]:hover,
+[data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] label:hover {{
+    background: var(--ea-surface-hover) !important; transform: none !important;
+}}
+[data-testid="stSidebar"] [data-testid="stRadioOption"][data-selected="true"],
+[data-testid="stSidebar"] [data-testid="stRadioOption"]:has(input:checked),
+[data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] label:has(input:checked) {{
+    background: var(--ea-grad-soft) !important; border: 1px solid var(--ea-hero-badge-border) !important;
+    border-left: 4px solid var(--ea-primary) !important; transform: none !important; box-shadow: none !important;
+}}
+[data-testid="stSidebar"] [data-testid="stRadioOption"] p {{ font-size: 0.92rem !important; }}
+
+/* Compact status pill + small buttons */
+.ai-status-pill {{ padding: 5px 10px; font-size: 0.74rem; margin-bottom: 6px; border-radius: 12px; }}
+.ai-status-pill.warn {{ background: rgba(245,158,11,0.14); border-color: rgba(245,158,11,0.3); color: var(--ea-amber); }}
+[data-testid="stSidebar"] .stButton button {{ min-height: 38px !important; padding: 0.3rem 0.5rem !important; font-size: 0.85rem !important; }}
+/* ---- Top navigation bar (sidebar removed) ---- */
+[data-testid="stSidebar"], [data-testid="stSidebarCollapsedControl"],
+[data-testid="stExpandSidebarButton"], [data-testid="collapsedControl"] {{ display: none !important; }}
+.block-container {{ padding-top: 1rem !important; }}
+
+.st-key-topbar {{
+    position: sticky; top: 0; z-index: 100; padding: 8px 12px; margin-bottom: 14px;
+    background: var(--ea-surface-card); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    border: 1px solid var(--ea-border); border-radius: 18px; box-shadow: var(--ea-card-shadow);
+}}
+.st-key-topbar .sb-brand {{ margin: 0; }}
+.st-key-topbar [data-testid="stRadio"] {{ margin: 0 !important; }}
+.st-key-topbar div[data-testid="stRadio"] [data-testid="stRadioGroup"],
+.st-key-topbar div[data-testid="stRadio"] div[role="radiogroup"] {{
+    background: transparent !important; border: none !important; box-shadow: none !important;
+    padding: 0 !important; gap: 4px !important; flex-wrap: nowrap !important; overflow-x: auto; scrollbar-width: none;
+    justify-content: center;
+}}
+.st-key-topbar div[data-testid="stRadio"] [data-testid="stRadioOption"],
+.st-key-topbar div[data-testid="stRadio"] div[role="radiogroup"] > label {{
+    flex: 0 0 auto !important; white-space: nowrap; padding: 8px 14px !important; border-radius: 12px !important;
+    min-height: 40px;
+}}
+.st-key-topbar [data-testid="stPopover"] button {{ min-height: 40px !important; border-radius: 12px !important; }}
+
+@media (max-width: 900px) {{
+    .sb-brand-name {{ display: none; }}
+    .st-key-topbar div[data-testid="stRadio"] [data-testid="stRadioOption"] p {{ font-size: 0.8rem !important; }}
+    .st-key-topbar div[data-testid="stRadio"] [data-testid="stRadioOption"] {{ padding: 8px 10px !important; }}
+}}
 </style>
 """
 
@@ -1584,6 +1821,25 @@ if "ea_theme" not in st.session_state:
     st.session_state["ea_theme"] = "dark"
 current_theme = st.session_state.get("ea_theme", "dark")
 st.markdown(get_custom_css(theme=current_theme), unsafe_allow_html=True)
+
+
+NAV_SHORT_LABELS = {
+    "📚 Mes Cours (Révisions)": "📚 Mes cours",
+    "➕ Ajouter un Cours": "➕ Ajouter un cours",
+    "📊 Mes Progrès": "📊 Progrès",
+    "🏆 Mes Trophées": "🏆 Trophées",
+    "🏆 Trophées & Badges": "🏆 Trophées",
+    "⚙️ Paramètres & Sauvegardes": "⚙️ Réglages",
+    "⚙️ Sauvegardes & Paramètres de l'élève": "⚙️ Réglages",
+    "📊 Supervision Globale": "📊 Supervision",
+    "👥 Gestion des Utilisateurs": "👥 Utilisateurs",
+    "➕ Gestion & Ajout des Cours": "➕ Cours",
+    "⚙️ Configuration Système & Sauvegardes": "⚙️ Système",
+}
+
+
+def nav_label(option: str) -> str:
+    return NAV_SHORT_LABELS.get(option, option)
 
 
 def render_html(html_str: str, sidebar: bool = False) -> None:
@@ -2386,61 +2642,25 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
             height=0,
         )
 
-    # Barre Latérale : En-tête & Profil Élève Élégant
-    sidebar_header_html = (
-        '<div style="display: flex; align-items: center; gap: 10px; margin-bottom: 14px;">'
-        '<div style="width: 36px; height: 36px; border-radius: 10px; background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); display: flex; align-items: center; justify-content: center; font-size: 1.3rem; box-shadow: 0 4px 12px rgba(37,99,235,0.35);">'
-        '🎓'
-        '</div>'
-        '<div>'
-        '<div style="font-size: 1.25rem; font-weight: 800; color: #ffffff; letter-spacing: -0.02em; line-height: 1.1;">Ecole Adnane</div>'
-        '<div style="font-size: 0.75rem; color: #94a3b8; font-weight: 500;">Plateforme de Révision</div>'
-        '</div>'
-        '</div>'
-    )
-    render_html(sidebar_header_html, sidebar=True)
-
+    # ------------------------------------------------------------------
+    # Barre de navigation supérieure (remplace le menu latéral)
+    # ------------------------------------------------------------------
     user_cycle = get_pedagogical_cycle(current_user.get("age"), level=current_user.get("level"))
-    role_badge = "👑 Administrateur" if is_admin else user_cycle["badge_text"]
     _my_rank = None if is_admin else get_student_rank(logged_in_user_id)
     initial_letter = html.escape((current_user.get("name") or "A")[0].upper())
     user_name_esc = html.escape(str(current_user.get("name") or ""))
     user_email_esc = html.escape(str(current_user.get("email") or ""))
-
-    rank_html = f"<span class='profile-pill-rank'>{_my_rank['emoji']} {_my_rank['label']}</span>" if _my_rank else ""
-    cycle_html = f"<span class='profile-pill-cycle'>{role_badge}</span>"
-    trophies_caption = f"<div style='font-size: 0.75rem; color: #94a3b8; margin-top: 6px;'>🏆 {_my_rank['badge_count']} trophée(s) remportés</div>" if _my_rank else ""
-
-    profile_card_html = (
-        '<div class="sidebar-profile-card">'
-        '<div class="profile-avatar-row">'
-        f'<div class="profile-avatar-circle">{initial_letter}</div>'
-        '<div>'
-        f'<div class="profile-name-text">{user_name_esc}</div>'
-        f'<div class="profile-email-text">{user_email_esc}</div>'
-        '</div>'
-        '</div>'
-        f'<div class="profile-badges-row">{cycle_html}{rank_html}</div>'
-        f'{trophies_caption}'
-        '</div>'
-    )
-    render_html(profile_card_html, sidebar=True)
-
+    role_txt = "👑 Admin" if is_admin else html.escape(str(user_cycle["badge_text"]))
+    rank_txt = f"{_my_rank['emoji']} {html.escape(str(_my_rank['label']))} · " if _my_rank else ""
     current_theme = st.session_state.get("ea_theme", "dark")
-    sidebar_theme_choice = st.sidebar.radio(
-        "Thème d'affichage",
-        options=["🌙 Sombre", "☀️ Clair"],
-        index=0 if current_theme == "dark" else 1,
-        horizontal=True,
-        label_visibility="collapsed",
-        key="sidebar_theme_toggle",
-    )
-    new_theme = "dark" if "Sombre" in sidebar_theme_choice else "light"
-    if new_theme != current_theme:
-        st.session_state["ea_theme"] = new_theme
-        st.rerun()
 
-    # Configuration de la navigation selon le rôle
+    with st.container(key="topbar"):
+        c_brand, c_nav, c_user = st.columns([1.15, 5.2, 1.0], vertical_alignment="center")
+    space_row = st.container()
+
+    with c_brand:
+        render_html('<div class="sb-brand"><span class="sb-logo">🎓</span><span class="sb-brand-name">Ecole Adnane</span></div>')
+
     is_global_admin_view = False
     active_user_id = logged_in_user_id
     active_student_info = None
@@ -2459,28 +2679,34 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
             if pending_space in student_options:
                 st.session_state["admin_space_selector"] = pending_space
 
-        chosen_space = st.sidebar.selectbox(
-            "Espace de travail :",
-            options=list(student_options.keys()),
-            format_func=lambda x: student_options[x],
-            key="admin_space_selector",
-        )
+        with space_row:
+            chosen_space = st.selectbox(
+                "Espace de travail :",
+                options=list(student_options.keys()),
+                format_func=lambda x: "👁️ Espace : " + student_options[x],
+                key="admin_space_selector",
+                label_visibility="collapsed",
+            )
 
         if chosen_space == "global":
             is_global_admin_view = True
             active_user_id = logged_in_user_id
-            menu = st.sidebar.radio(
-                "Supervision Globale",
-                [
-                    "📊 Supervision Globale",
-                    "👥 Gestion des Utilisateurs",
-                    "➕ Gestion & Ajout des Cours",
-                    "⚙️ Configuration Système & Sauvegardes",
-                ],
-                index=0,
-            )
+            with c_nav:
+                menu = st.radio(
+                    "Supervision Globale",
+                    [
+                        "📊 Supervision Globale",
+                        "👥 Gestion des Utilisateurs",
+                        "➕ Gestion & Ajout des Cours",
+                        "⚙️ Configuration Système & Sauvegardes",
+                    ],
+                    index=0,
+                    horizontal=True,
+                    format_func=nav_label,
+                    label_visibility="collapsed",
+                    key="topnav_admin",
+                )
         else:
-            is_global_admin_view = False
             active_user_id = int(chosen_space)
             active_student_info = get_user_by_id(active_user_id)
             student_menu_items = [
@@ -2496,55 +2722,84 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                 if choice in student_menu_items:
                     default_menu_idx = student_menu_items.index(choice)
 
-            menu = st.sidebar.radio(
-                f"Espace de {active_student_info['name']}",
-                student_menu_items,
-                index=default_menu_idx,
-                key=f"admin_student_menu_{active_user_id}",
-            )
+            with c_nav:
+                menu = st.radio(
+                    f"Espace de {active_student_info['name']}",
+                    student_menu_items,
+                    index=default_menu_idx,
+                    horizontal=True,
+                    key=f"admin_student_menu_{active_user_id}",
+                    format_func=nav_label,
+                    label_visibility="collapsed",
+                )
     else:
-        # ÉLÈVE : Navigation complète d'apprentissage personnel
-        is_global_admin_view = False
-        active_user_id = logged_in_user_id
-        active_student_info = None
-        menu = st.sidebar.radio(
-            "Mon Espace d'Apprentissage",
-            ["📚 Mes Cours (Révisions)", "➕ Ajouter un Cours", "📊 Mes Progrès", "🏆 Mes Trophées", "⚙️ Paramètres & Sauvegardes"],
-            index=0,
-        )
+        with c_nav:
+            menu = st.radio(
+                "Mon Espace d'Apprentissage",
+                ["📚 Mes Cours (Révisions)", "➕ Ajouter un Cours", "📊 Mes Progrès", "🏆 Mes Trophées", "⚙️ Paramètres & Sauvegardes"],
+                index=0,
+                horizontal=True,
+                format_func=nav_label,
+                label_visibility="collapsed",
+                key="topnav_student",
+            )
 
     # Indicateur IA pour l'utilisateur actif
     user_api_key = get_user_gemini_api_key(active_user_id)
     if is_global_admin_view and not user_api_key:
         user_api_key = get_gemini_api_key()
-
     has_openrouter_access = is_user_openrouter_allowed(active_user_id) and bool(get_openrouter_api_key())
+    ai_ok = bool(user_api_key or has_openrouter_access)
 
-    if user_api_key or has_openrouter_access:
-        ai_provider_name = "Clé Gemini" if user_api_key else "OpenRouter École"
-        ai_status_html = (
-            '<div class="ai-status-pill">'
-            '<span class="ai-pulse-dot"></span>'
-            f'<span>Tuteur IA connecté ({ai_provider_name})</span>'
-            '</div>'
-        )
-        render_html(ai_status_html, sidebar=True)
-    else:
-        st.sidebar.warning("⚠️ Clé IA non configurée", icon="🔑")
-        if not is_admin:
-            with st.sidebar.expander("🔑 Saisir ma clé Gemini (Optionnel)", expanded=False):
-                st.caption("👉 Obtenez votre clé gratuite en 1 minute sur [Google AI Studio](https://aistudio.google.com/api-keys).")
-                new_st_key = st.text_input("Clé Gemini :", type="password", key="sidebar_student_gemini_key", placeholder="AIzaSy...")
-                if st.button("Enregistrer ma clé", key="sidebar_save_gemini_btn"):
-                    if new_st_key:
-                        save_user_gemini_api_key(active_user_id, new_st_key)
-                        st.success("Clé enregistrée !")
-                        st.rerun()
+    # Menu profil (popover) : tout le secondaire y est rangé
+    with c_user:
+        with st.popover(f"👤 {user_name_esc.split(' ')[0] if user_name_esc else 'Moi'}", use_container_width=True):
+            render_html(
+                f'<div class="sb-profile" title="{user_email_esc}">'
+                f'<div class="sb-avatar">{initial_letter}</div>'
+                '<div class="sb-profile-txt">'
+                f'<div class="sb-name">{user_name_esc}</div>'
+                f'<div class="sb-meta">{rank_txt}{role_txt}</div>'
+                '</div></div>'
+            )
+            if not is_admin:
+                try:
+                    _sb_study = get_student_study_overview(logged_in_user_id)
+                    _sb_pct = int(_sb_study["xp_in_level"] / _sb_study["xp_per_level"] * 100)
+                    render_html(
+                        '<div class="sb-xp">'
+                        f'<span>🔥 {_sb_study["streak"]} j</span>'
+                        f'<span>⭐ Niv. {_sb_study["level"]}</span>'
+                        f'<span>🏆 {_my_rank["badge_count"]}</span>'
+                        '</div>'
+                        f'<div class="ea-bar small"><span style="width:{_sb_pct}%"></span></div>'
+                    )
+                except Exception:
+                    pass
 
-    st.sidebar.divider()
-    if st.sidebar.button("🚪 Déconnexion", use_container_width=True):
-        logout_user()
-        st.rerun()
+            if ai_ok:
+                render_html(
+                    '<div class="ai-status-pill"><span class="ai-pulse-dot"></span>'
+                    f'<span>Tuteur IA actif · {"Gemini" if user_api_key else "OpenRouter"}</span></div>'
+                )
+            else:
+                render_html('<div class="ai-status-pill warn"><span>🔑 Clé IA non configurée</span></div>')
+                if not is_admin:
+                    st.caption("👉 Clé gratuite sur [Google AI Studio](https://aistudio.google.com/api-keys).")
+                    new_st_key = st.text_input("Clé Gemini :", type="password", key="sidebar_student_gemini_key", placeholder="AIzaSy...")
+                    if st.button("Enregistrer ma clé", key="sidebar_save_gemini_btn", use_container_width=True):
+                        if new_st_key:
+                            save_user_gemini_api_key(active_user_id, new_st_key)
+                            st.success("Clé enregistrée !")
+                            st.rerun()
+
+            _is_dark = current_theme == "dark"
+            if st.button("☀️ Thème clair" if _is_dark else "🌙 Thème sombre", key="sidebar_theme_btn", use_container_width=True):
+                st.session_state["ea_theme"] = "light" if _is_dark else "dark"
+                st.rerun()
+            if st.button("🚪 Déconnexion", key="sidebar_logout_btn", use_container_width=True):
+                logout_user()
+                st.rerun()
 
     # -----------------------------------------------------------------------
     # VUE ADMIN 1 : TABLEAU DE BORD DE SUPERVISION GLOBALE
@@ -3144,21 +3399,73 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
         all_user_courses = list_courses(user_id=active_user_id)
         total_courses_count = len(all_user_courses)
 
-        hero_banner_html = (
-            '<div class="ea-dashboard-hero">'
-            '<div class="ea-hero-icon-box">🎓</div>'
-            '<div class="ea-hero-content">'
-            f'<div class="ea-hero-title">Espace d\'Apprentissage & Révision — {html.escape(str(active_u_cycle.get("level", "Collège")))}</div>'
-            f'<div class="ea-hero-desc">Bienvenue, <b>{student_name_disp}</b> ! Votre parcours interactif enrichi avec synthèse vocale naturelle, quiz stimulants, fiches de révision et tuteur IA.</div>'
-            '<div class="ea-hero-badges">'
-            f'<span class="ea-hero-badge-pill">🎒 {cycle_badge_disp}</span>'
-            f'<span class="ea-hero-badge-pill">📚 {total_courses_count} cours au total</span>'
-            '<span class="ea-hero-badge-pill">⚡ Entraînement interactif</span>'
-            '</div>'
-            '</div>'
-            '</div>'
-        )
-        render_html(hero_banner_html)
+        study = get_student_study_overview(active_user_id)
+        _courses_by_id = {c["id"]: c for c in all_user_courses}
+        _prog = study["courses"]
+
+        def _cb_today_open(c_id: int) -> None:
+            st.session_state["student_selected_course_id"] = c_id
+            st.session_state["revision_view_segmented"] = "📖 Espace d'Étude Immergé"
+
+        _in_catalog = st.session_state.get("revision_view_segmented", "🗂️ Catalogue des Cours") != "📖 Espace d'Étude Immergé"
+        if _in_catalog:
+            _hour = datetime.now().hour
+            _greet = "Bonne soirée" if (_hour >= 18 or _hour < 5) else ("Bon après-midi" if _hour >= 12 else "Bonjour")
+            _first_name = html.escape(str(active_u_dict.get("name") or "Élève").split()[0])
+            _goal_done = study["today_attempts"] >= study["daily_goal"]
+            _xp_pct = int(study["xp_in_level"] / study["xp_per_level"] * 100)
+
+            # Prochaine action recommandée
+            _next_id, _next_label, _next_cta = None, "", ""
+            _weak = study["weak_course_id"]
+            _last = study["last_course_id"]
+            _untouched = next((c for c in all_user_courses if c["id"] not in _prog), None)
+            if _weak in _courses_by_id:
+                _next_id, _next_label, _next_cta = _weak, "À revoir pour progresser", "💪 Réviser maintenant"
+            elif _untouched:
+                _next_id, _next_label, _next_cta = _untouched["id"], "Nouveau cours à découvrir", "🚀 Commencer"
+            elif _last in _courses_by_id:
+                _next_id, _next_label, _next_cta = _last, "Continue où tu t'es arrêté", "▶️ Continuer"
+
+            _streak_txt = f"{study['streak']} jour{'s' if study['streak'] > 1 else ''}" if study["streak"] else "à lancer !"
+            tcol1, tcol2 = st.columns([1.6, 1])
+            with tcol1:
+                if _next_id:
+                    _nc = _courses_by_id[_next_id]
+                    _nbest = _prog.get(_next_id, {}).get("best", 0)
+                    render_html(
+                        '<div class="ea-today-card">'
+                        f'<div class="ea-today-hello">{_greet} {_first_name} 👋</div>'
+                        f'<div class="ea-today-kicker">{html.escape(_next_label)}</div>'
+                        f'<div class="ea-today-title">{html.escape(_nc["title"])}</div>'
+                        f'<div class="ea-today-sub">{html.escape(_nc["subject"])} · meilleur score {_nbest}%</div>'
+                        f'<div class="ea-bar"><span style="width:{_nbest}%"></span></div>'
+                        '</div>'
+                    )
+                    st.button(_next_cta, key="today_main_cta", type="primary", use_container_width=True,
+                              on_click=_cb_today_open, args=(_next_id,))
+                else:
+                    render_html(
+                        '<div class="ea-today-card">'
+                        f'<div class="ea-today-hello">{_greet} {_first_name} 👋</div>'
+                        '<div class="ea-today-title">Ajoute ton premier cours</div>'
+                        '<div class="ea-today-sub">Va dans « ➕ Ajouter un Cours » pour téléverser un PDF.</div>'
+                        '</div>'
+                    )
+            with tcol2:
+                render_html(
+                    '<div class="ea-stats-card">'
+                    '<div class="ea-stat-row">'
+                    f'<div class="ea-stat"><div class="ea-stat-ico">🔥</div><div><b>{_streak_txt}</b><small>Série</small></div></div>'
+                    f'<div class="ea-stat"><div class="ea-stat-ico">⭐</div><div><b>{study["xp"]} XP</b><small>Niveau {study["level"]}</small></div></div>'
+                    '</div>'
+                    f'<div class="ea-stat-label">Vers le niveau {study["level"] + 1} · {study["xp_in_level"]}/{study["xp_per_level"]} XP</div>'
+                    f'<div class="ea-bar"><span style="width:{_xp_pct}%"></span></div>'
+                    f'<div class="ea-goal {"done" if _goal_done else ""}">'
+                    f'{"✅ Objectif du jour atteint, bravo !" if _goal_done else "🎯 Objectif du jour : fais 1 quiz"}'
+                    '</div>'
+                    '</div>'
+                )
 
         # Sujets rapides avec icônes
         pill_subject_map = {
@@ -3289,6 +3596,17 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                             c_title = html.escape(c["title"])
                             c_subj = html.escape(c["subject"])
 
+                            _cp = _prog.get(c["id"])
+                            _best = _cp["best"] if _cp else 0
+                            _stat_cls, _stat_txt = (
+                                ("mastered", "✅ Maîtrisé") if _cp and _cp["status"] == "mastered"
+                                else (("learning", "📈 En cours") if _cp else ("new", "🆕 À commencer"))
+                            )
+                            st.markdown(
+                                f'<div class="ea-card-stripe {b_cls}"></div>'
+                                f'<div class="ea-card-status {_stat_cls}">{_stat_txt}</div>',
+                                unsafe_allow_html=True,
+                            )
                             st.markdown(
                                 f'<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">'
                                 f'<span class="badge-subject {b_cls}">{c_subj}</span>'
@@ -3318,6 +3636,11 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                             ft_html += '</div>'
                             st.markdown(ft_html, unsafe_allow_html=True)
 
+                            st.markdown(
+                                f'<div class="ea-bar small"><span style="width:{_best}%"></span></div>'
+                                f'<div class="ea-card-score">{("Meilleur score : " + str(_best) + "%") if _cp else "Pas encore de quiz"}</div>',
+                                unsafe_allow_html=True,
+                            )
                             st.button(
                                 "🚀 Étudier ce cours",
                                 key=f"btn_open_card_{c['id']}",
