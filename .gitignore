@@ -15,6 +15,12 @@ storage/token.json
 *credentials*.json
 ecole.code-xpert.net_Google-OAuth.json
 .streamlit/secrets.toml
+*openrouter*key*
+*openrouter*.txt
+*openrouter*.json
+*.key
+*API*.txt
+*api_key*
 
 # Base de données locale & Documents stockés
 storage/*.db

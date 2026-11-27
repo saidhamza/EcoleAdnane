@@ -81,6 +81,11 @@ __all__ = [
     "get_course_trophies_overview",
     "get_student_trophies_by_course",
     "resolve_course_file_path",
+    "get_course_animation",
+    "save_course_animation",
+    "set_user_openrouter_access",
+    "is_user_openrouter_allowed",
+    "get_openrouter_authorized_user_ids",
 ]
 
 DEFAULT_DB_DIR = Path(__file__).parent.parent / "storage"
@@ -148,6 +153,7 @@ def init_db(db_path: Optional[Path] = None) -> None:
                     summary_markdown TEXT,
                     key_concepts_json TEXT,
                     mindmap_code TEXT,
+                    animation_simulation_html TEXT,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
@@ -348,6 +354,8 @@ def init_db(db_path: Optional[Path] = None) -> None:
             course_cols = [row["name"] for row in cur.fetchall()]
             if "mindmap_code" not in course_cols:
                 cur.execute("ALTER TABLE courses ADD COLUMN mindmap_code TEXT")
+            if "animation_simulation_html" not in course_cols:
+                cur.execute("ALTER TABLE courses ADD COLUMN animation_simulation_html TEXT")
 
             for tbl in ["courses", "quizzes", "quiz_attempts", "chat_messages"]:
                 cur.execute(f"PRAGMA table_info({tbl})")
@@ -411,11 +419,13 @@ def init_db(db_path: Optional[Path] = None) -> None:
                 conn.execute("ALTER TABLE courses_temp_migration RENAME TO courses")
                 conn.execute("PRAGMA foreign_keys = ON")
 
-            # Vérification finale post-migration : garantir la présence de mindmap_code
+            # Vérification finale post-migration : garantir la présence de mindmap_code et animation_simulation_html
             cur.execute("PRAGMA table_info(courses)")
             final_course_cols = [row["name"] for row in cur.fetchall()]
             if "mindmap_code" not in final_course_cols:
                 cur.execute("ALTER TABLE courses ADD COLUMN mindmap_code TEXT")
+            if "animation_simulation_html" not in final_course_cols:
+                cur.execute("ALTER TABLE courses ADD COLUMN animation_simulation_html TEXT")
 
             # 3. Index et vues dépendant de user_id
             conn.executescript("""
@@ -1209,6 +1219,37 @@ def set_user_setting(user_id: int, key: str, value: str) -> None:
                 """,
                 (user_id, key, value),
             )
+    finally:
+        conn.close()
+
+
+def set_user_openrouter_access(user_id: int, allowed: bool) -> None:
+    """Accorde ou révoque l'accès à la clé OpenRouter globale de l'école pour un utilisateur spécifique."""
+    set_user_setting(user_id, "ALLOW_OPENROUTER", "true" if allowed else "false")
+
+
+def is_user_openrouter_allowed(user_id: Optional[int]) -> bool:
+    """
+    Vérifie si un utilisateur est expressément autorisé par l'administrateur
+    à bénéficier de la clé OpenRouter globale de l'école.
+    Les administrateurs ont toujours accès par défaut.
+    """
+    if not user_id:
+        return False
+    user = get_user_by_id(user_id)
+    if user and user.get("role") == "admin":
+        return True
+    val = get_user_setting(user_id, "ALLOW_OPENROUTER")
+    return val == "true"
+
+
+def get_openrouter_authorized_user_ids() -> List[int]:
+    """Retourne la liste des IDs utilisateurs autorisés à utiliser la clé OpenRouter globale."""
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT user_id FROM user_settings WHERE key = 'ALLOW_OPENROUTER' AND value = 'true'")
+        return [row["user_id"] for row in cur.fetchall()]
     finally:
         conn.close()
 
@@ -2427,6 +2468,45 @@ def save_course_mindmap(course_id: int, mindmap_code: str) -> None:
                     p.write_text(mindmap_code, encoding="utf-8")
                 except Exception as e:
                     logger.warning(f"Impossible d'écrire la carte mentale sur disque à {p}: {e}")
+    finally:
+        conn.close()
+
+
+def get_course_animation(course_id: int) -> Optional[str]:
+    """Récupère le code HTML autonome de l'animation ou simulation interactive du cours."""
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        try:
+            cur.execute("SELECT animation_simulation_html FROM courses WHERE id = ?", (course_id,))
+        except sqlite3.OperationalError:
+            with conn:
+                conn.execute("ALTER TABLE courses ADD COLUMN animation_simulation_html TEXT")
+            cur.execute("SELECT animation_simulation_html FROM courses WHERE id = ?", (course_id,))
+        row = cur.fetchone()
+        if row and row["animation_simulation_html"] and row["animation_simulation_html"].strip():
+            return row["animation_simulation_html"]
+        return None
+    finally:
+        conn.close()
+
+
+def save_course_animation(course_id: int, animation_html: str) -> None:
+    """Sauvegarde le code HTML de l'animation ou simulation interactive pour un cours."""
+    conn = get_connection()
+    try:
+        with conn:
+            try:
+                conn.execute(
+                    "UPDATE courses SET animation_simulation_html = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                    (animation_html, course_id),
+                )
+            except sqlite3.OperationalError:
+                conn.execute("ALTER TABLE courses ADD COLUMN animation_simulation_html TEXT")
+                conn.execute(
+                    "UPDATE courses SET animation_simulation_html = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                    (animation_html, course_id),
+                )
     finally:
         conn.close()
 

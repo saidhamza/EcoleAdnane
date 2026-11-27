@@ -98,6 +98,10 @@ try:
         update_user_name,
         update_user_role,
         resolve_course_file_path,
+        get_course_animation,
+        save_course_animation,
+        is_user_openrouter_allowed,
+        set_user_openrouter_access,
     )
 except ImportError:
     import models.database
@@ -158,6 +162,10 @@ except ImportError:
         update_user_name,
         update_user_role,
         resolve_course_file_path,
+        get_course_animation,
+        save_course_animation,
+        is_user_openrouter_allowed,
+        set_user_openrouter_access,
     )
     if hasattr(models.database, "get_pedagogical_cycle"):
         get_pedagogical_cycle = models.database.get_pedagogical_cycle
@@ -211,6 +219,7 @@ try:
         get_arabic_tashkeel_ratio,
         socratic_tutor_response,
         transcribe_audio_with_ai,
+        generate_course_animation_simulation,
     )
 except ImportError:
     import services.ai_engine
@@ -227,6 +236,7 @@ except ImportError:
         get_arabic_tashkeel_ratio,
         socratic_tutor_response,
         transcribe_audio_with_ai,
+        generate_course_animation_simulation,
     )
 from services.auth_manager import (
     check_active_user_session,
@@ -269,6 +279,11 @@ from services.config_manager import (
     save_user_gemini_api_key,
     save_user_openai_api_key,
     test_user_gemini_connection,
+    get_openrouter_api_key,
+    save_openrouter_api_key,
+    get_openrouter_model,
+    save_openrouter_model,
+    test_openrouter_connection,
 )
 from services.downloader import (
     ingest_pdf_bytes,
@@ -1402,8 +1417,12 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
     if is_global_admin_view and not user_api_key:
         user_api_key = get_gemini_api_key()
 
+    has_openrouter_access = is_user_openrouter_allowed(active_user_id) and bool(get_openrouter_api_key())
+
     if user_api_key:
-        st.sidebar.success("🟢 IA active & prête", icon="✅")
+        st.sidebar.success("🟢 IA active (Clé Gemini)", icon="✅")
+    elif has_openrouter_access:
+        st.sidebar.success("🟢 IA active (Clé OpenRouter École)", icon="🌐")
     else:
         st.sidebar.warning("⚠️ Clé IA non configurée", icon="🔑")
         if not is_admin:
@@ -1591,13 +1610,15 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
             is_u_blocked = (u.get("is_blocked", 0) == 1)
             is_u_admin = (u["role"] == "admin")
 
+            is_u_or_allowed = is_user_openrouter_allowed(u_id)
+            or_badge = " | 🌐 OpenRouter" if is_u_or_allowed else ""
             status_badge = "🔴 Suspendu" if is_u_blocked else "🟢 Actif"
             u_cycle = get_pedagogical_cycle(u.get("age"), level=u.get("level"))
             role_badge = "👑 Administrateur" if is_u_admin else u_cycle["badge_text"]
             self_tag = " *(Votre compte)*" if is_self else ""
 
             u_medal = "" if is_u_admin else f"{_ranks_map.get(u_id, {}).get('emoji', '🌱')} "
-            expander_title = f"{role_badge} — {u_medal}**{u['name']}** (`{u['email']}`) | {status_badge}{self_tag}"
+            expander_title = f"{role_badge} — {u_medal}**{u['name']}** (`{u['email']}`) | {status_badge}{or_badge}{self_tag}"
             with st.expander(expander_title, expanded=False):
                 col_u0, col_u1, col_u2, col_u3 = st.columns([2.5, 2, 2, 2.5])
 
@@ -1690,6 +1711,29 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                                 else:
                                     st.error(msg)
 
+                # 4. Attribution de la clé OpenRouter globale
+                st.markdown("---")
+                col_u_or1, col_u_or2 = st.columns([3, 1])
+                with col_u_or1:
+                    st.markdown("##### 🌐 Accès à la Clé OpenRouter de l'École (Simulations & BD Animées)")
+                    st.caption(
+                        "Autorise cet utilisateur à bénéficier de la clé OpenRouter globale de l'administrateur sans qu'il ait besoin "
+                        "de renseigner sa propre clé personnelle."
+                    )
+                with col_u_or2:
+                    current_or_status = is_user_openrouter_allowed(u_id)
+                    label_or = "🌐 Accès accordé" if current_or_status else "🔒 Accès refusé"
+                    new_or_status = st.checkbox(
+                        label_or,
+                        value=current_or_status,
+                        key=f"cb_or_access_{u_id}",
+                        help="Cochez pour faire bénéficier cet élève de la clé OpenRouter de l'école.",
+                    )
+                    if new_or_status != current_or_status:
+                        set_user_openrouter_access(u_id, new_or_status)
+                        st.success(f"Accès OpenRouter mis à jour pour {u['name']} !")
+                        st.rerun()
+
                 if not is_u_admin:
                     st.divider()
                     st.markdown("##### 📊 Suivi & Progression Pédagogique")
@@ -1743,6 +1787,66 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                     st.error(f"❌ {res['error']}")
 
         render_gemini_key_instructions(expanded=not bool(current_admin_key))
+
+        st.divider()
+
+        st.markdown("### 🌐 Clé API OpenRouter Globale (Moteur Avancé & Simulations)")
+        st.caption(
+            "Cette clé est configurée exclusivement par l'administrateur. Vous pouvez l'affecter sélectivement aux élèves "
+            "de votre choix depuis **'👥 Gestion Utilisateurs'** pour leur permettre de bénéficier des simulations animées sans clé personnelle."
+        )
+
+        current_or_key = get_openrouter_api_key() or ""
+        current_or_model = get_openrouter_model()
+
+        col_or1, col_or2 = st.columns([3, 1])
+        with col_or1:
+            new_or_key = st.text_input(
+                "Clé API OpenRouter Globale :",
+                value=current_or_key,
+                type="password",
+                placeholder="sk-or-v1-...",
+                help="Clé OpenRouter globale d'administration.",
+                key="input_admin_openrouter_key",
+            )
+        with col_or2:
+            st.write("")
+            st.write("")
+            if st.button("💾 Enregistrer OpenRouter", type="primary", use_container_width=True, key="save_admin_or_btn"):
+                if new_or_key.strip():
+                    save_openrouter_api_key(new_or_key.strip())
+                    st.success("Clé OpenRouter enregistrée avec succès !")
+                    st.rerun()
+
+        col_or_mod1, col_or_mod2 = st.columns([3, 1])
+        with col_or_mod1:
+            model_options = [
+                "meta-llama/llama-3.3-70b-instruct",
+                "openai/gpt-4o-mini",
+                "google/gemini-2.5-flash",
+                "anthropic/claude-3-haiku",
+                "deepseek/deepseek-chat",
+            ]
+            default_mod_idx = model_options.index(current_or_model) if current_or_model in model_options else 0
+            selected_or_model = st.selectbox(
+                "Modèle OpenRouter par défaut :",
+                options=model_options,
+                index=default_mod_idx,
+                help="Modèle utilisé pour générer les simulations interactives et bandes dessinées animées.",
+                key="select_admin_or_model",
+            )
+            if selected_or_model != current_or_model:
+                save_openrouter_model(selected_or_model)
+        with col_or_mod2:
+            st.write("")
+            st.write("")
+            if st.button("🔍 Tester OpenRouter", key="test_admin_or_btn", use_container_width=True):
+                with st.spinner("Test OpenRouter en cours..."):
+                    res_or = test_openrouter_connection(new_or_key or current_or_key, selected_or_model)
+                    if res_or["success"]:
+                        st.success(f"✅ {res_or['message']}")
+                    else:
+                        st.error(f"❌ {res_or['error']}")
 
         st.divider()
 
@@ -2324,31 +2428,34 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
             )
 
         if is_ar:
-            tab_doc, tab_fiche, tab_schema, tab_notions, tab_quiz, tab_tuteur, tab_trophies = st.tabs([
+            tab_doc, tab_fiche, tab_schema, tab_notions, tab_simulation, tab_quiz, tab_tuteur, tab_trophies = st.tabs([
                 "📄 وثيقة الدرس",
                 "⚡ بطاقة المراجعة",
                 "🧠 خريطة ذهنية",
                 "🎯 المفاهيم والمكتسبات",
+                "🎬 رسوم متحركة ومحاكاة",
                 "📝 تدريب الامتحان",
                 "🤖 الأستاذ سند",
                 "🏆 شارات وكؤوس الدرس",
             ])
         elif is_en:
-            tab_doc, tab_fiche, tab_schema, tab_notions, tab_quiz, tab_tuteur, tab_trophies = st.tabs([
+            tab_doc, tab_fiche, tab_schema, tab_notions, tab_simulation, tab_quiz, tab_tuteur, tab_trophies = st.tabs([
                 "📄 Course Document",
                 "⚡ Revision Sheet",
                 "🧠 Mind Map",
                 "🎯 Key Concepts",
+                "🎬 Simulations & Comics",
                 "📝 Exam Quiz",
                 "🤖 AI Tutor (Sanad)",
                 "🏆 Course Trophies",
             ])
         else:
-            tab_doc, tab_fiche, tab_schema, tab_notions, tab_quiz, tab_tuteur, tab_trophies = st.tabs([
+            tab_doc, tab_fiche, tab_schema, tab_notions, tab_simulation, tab_quiz, tab_tuteur, tab_trophies = st.tabs([
                 "📄 Le Document",
                 "⚡ Fiche Express",
                 "🧠 Carte Mentale",
                 "🎯 Notions & Acquis",
+                "🎬 Simulations & BD Animée",
                 "📝 Entraînement Examen",
                 "🤖 Tuteur Virtuel (Sanad)",
                 "🏆 Trophées du Cours",
@@ -2722,6 +2829,116 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
             if st.button(refresh_label, key=f"btn_sync_mastery_{current_course['id']}"):
                 evaluate_and_sync_concept_mastery(active_user_id, current_course["id"])
                 st.rerun()
+
+        with tab_simulation:
+            course_id = current_course["id"]
+            anim_html = get_course_animation(course_id)
+            course_subj = current_course.get("subject", "")
+            course_tit = current_course.get("title", "")
+            course_raw = current_course.get("raw_text") or current_course.get("summary_markdown") or ""
+            course_lang = current_course.get("language") or ("ar" if is_ar else ("en" if is_en else "fr"))
+
+            sim_header = "🎬 الرسوم المتحركة والمحاكاة التفاعلية" if is_ar else ("🎬 Interactive Simulations & Animated Comics" if is_en else "🎬 Simulations & BD Animée Interactive")
+            st.markdown(f"### {sim_header}")
+
+            can_generate = bool(user_api_key or (is_user_openrouter_allowed(active_user_id) and get_openrouter_api_key()))
+
+            if anim_html and anim_html.strip():
+                col_top_act1, col_top_act2, col_top_act3 = st.columns([2, 1, 1])
+                with col_top_act1:
+                    st.caption("✨ Cette animation interactive dispose de commandes de lecture et de synthèse vocale (TTS) intégrées." if not is_ar else "✨ تتضمن هذه المحاكاة التفاعلية عناصر تحكم صوتية بالذكاء الاصطناعي (TTS).")
+                with col_top_act2:
+                    dl_label_sim = "📥 Télécharger (HTML)" if not is_ar else "📥 تحميل (HTML)"
+                    st.download_button(
+                        label=dl_label_sim,
+                        data=anim_html,
+                        file_name=f"simulation_cours_{course_id}.html",
+                        mime="text/html",
+                        key=f"dl_sim_btn_{course_id}",
+                        use_container_width=True,
+                    )
+                with col_top_act3:
+                    with st.popover("🔄 Régénérer..." if not is_ar else "🔄 إعادة التوليد..."):
+                        style_choice = st.selectbox(
+                            "Style :" if not is_ar else "النمط :",
+                            options=["auto", "comic", "simulation"],
+                            format_func=lambda x: {
+                                "auto": "Automatique" if not is_ar else "تلقائي",
+                                "comic": "Bande Dessinée Animée (BD)" if not is_ar else "قصة مصورة متحركة",
+                                "simulation": "Simulation Scientifique" if not is_ar else "محاكاة علمية تفاعلية",
+                            }[x],
+                            key=f"regen_style_sel_{course_id}",
+                        )
+                        if st.button("Confirmer et Régénérer" if not is_ar else "تأكيد وبدء التوليد", type="primary", key=f"btn_confirm_regen_{course_id}"):
+                            with st.spinner("Génération de l'animation en cours..." if not is_ar else "جارٍ إنشاء المحاكاة..."):
+                                try:
+                                    new_html = generate_course_animation_simulation(
+                                        course_text=course_raw,
+                                        subject=course_subj,
+                                        course_title=course_tit,
+                                        language=course_lang,
+                                        user_id=active_user_id,
+                                        force_style=None if style_choice == "auto" else style_choice,
+                                    )
+                                    if new_html and "<html" in new_html.lower():
+                                        save_course_animation(course_id, new_html)
+                                        st.success("Animation générée avec succès !" if not is_ar else "تم إنشاء المحاكاة بنجاح!")
+                                        st.rerun()
+                                    else:
+                                        st.error("Le format généré est inattendu.")
+                                except Exception as e_gen:
+                                    st.error(f"Erreur de génération : {e_gen}")
+
+                st.components.v1.html(anim_html, height=720, scrolling=True)
+            else:
+                st.info(
+                    "💡 **Donnez vie à ce cours !** Générez une bande dessinée animée par scènes ou une simulation scientifique interactive manipulant atomes, circuits, équations ou cartes historiques avec synthèse vocale TTS intégrée."
+                    if not is_ar else
+                    "💡 **اجعل هذا الدرس ينبض بالحياة!** أنشئ قصة مصورة تعليمية متحركة أو محاكاة علمية تفاعلية للمفاهيم مع قراءة صوتية بالذكاء الاصطناعي (TTS)."
+                )
+
+                col_gen1, col_gen2 = st.columns([2, 1])
+                with col_gen1:
+                    style_sel = st.selectbox(
+                        "Format de présentation souhaité :" if not is_ar else "نمط العرض المطلوب :",
+                        options=["auto", "comic", "simulation"],
+                        format_func=lambda x: {
+                            "auto": "🤖 Automatique (Recommandé selon la matière)",
+                            "comic": "🎨 Bande Dessinée Animée Narrative (Histoire, Géo, Langues)",
+                            "simulation": "🧪 Simulation Scientifique Interactive (Sciences, Physique, SVT, Maths)",
+                        }[x] if not is_ar else {
+                            "auto": "🤖 تلقائي (موصى به حسب المادة)",
+                            "comic": "🎨 قصة مصورة متحركة (تاريخ، جغرافيا، لغات)",
+                            "simulation": "🧪 محاكاة علمية تفاعلية (فيزياء، كيمياء، علوم، رياضيات)",
+                        }[x],
+                        key=f"init_style_sel_{course_id}",
+                    )
+                with col_gen2:
+                    st.write("")
+                    st.write("")
+                    btn_gen_label = "✨ Générer l'Animation / Simulation" if not is_ar else "✨ إنشاء المحاكاة التفاعلية"
+                    if st.button(btn_gen_label, type="primary", use_container_width=True, key=f"btn_init_gen_anim_{course_id}"):
+                        if not can_generate:
+                            st.warning("Veuillez configurer votre clé API dans vos paramètres ou demander l'activation OpenRouter à l'administrateur.")
+                        else:
+                            with st.spinner("Création de votre simulation interactive en cours (environ 15-30s)..." if not is_ar else "جارٍ إنشاء المحاكاة والتفاعل التوضيحي..."):
+                                try:
+                                    new_html = generate_course_animation_simulation(
+                                        course_text=course_raw,
+                                        subject=course_subj,
+                                        course_title=course_tit,
+                                        language=course_lang,
+                                        user_id=active_user_id,
+                                        force_style=None if style_sel == "auto" else style_sel,
+                                    )
+                                    if new_html and "<html" in new_html.lower():
+                                        save_course_animation(course_id, new_html)
+                                        st.success("Animation générée avec succès !" if not is_ar else "تم إنشاء المحاكاة بنجاح!")
+                                        st.rerun()
+                                    else:
+                                        st.error("Format généré inattendu. Veuillez réessayer.")
+                                except Exception as e_gen:
+                                    st.error(f"Erreur lors de la génération : {e_gen}")
 
         with tab_quiz:
             latest_quiz = get_latest_quiz(current_course["id"], user_id=active_user_id)

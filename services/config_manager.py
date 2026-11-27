@@ -116,6 +116,57 @@ def save_user_openai_api_key(user_id: int, api_key: str) -> None:
     set_user_setting(user_id, "OPENAI_API_KEY", api_key.strip())
 
 
+def get_openrouter_api_key() -> Optional[str]:
+    """
+    Récupère la clé API OpenRouter globale (réservée à l'administrateur).
+    Recherche dans l'ordre :
+    1. Variable d'environnement active / Streamlit Secrets
+    2. Fichier .env local
+    3. Table SQLite settings
+    4. Fichier externe local non suivi par Git (dossier parent Projects)
+    """
+    key = get_config_value("OPENROUTER_API_KEY")
+    if key and key.strip():
+        return key.strip()
+
+    # Recherche dans un fichier local externe non suivi par Git
+    external_candidates = [
+        Path.home() / "Projects" / "openrouter API key.txt",
+        Path(__file__).resolve().parent.parent.parent / "openrouter API key.txt",
+    ]
+    for candidate in external_candidates:
+        if candidate.exists():
+            try:
+                val = candidate.read_text(encoding="utf-8").strip()
+                if val.startswith("sk-or-"):
+                    # Mémoriser dans la base SQLite locale
+                    try:
+                        set_setting("OPENROUTER_API_KEY", val)
+                    except Exception:
+                        pass
+                    return val
+            except Exception:
+                pass
+
+    return None
+
+
+def save_openrouter_api_key(api_key: str) -> None:
+    """Enregistre la clé API OpenRouter globale dans SQLite et .env."""
+    save_config_value("OPENROUTER_API_KEY", api_key.strip())
+
+
+def get_openrouter_model() -> str:
+    """Retourne le modèle OpenRouter configuré ou le modèle recommandé par défaut."""
+    val = get_config_value("OPENROUTER_MODEL")
+    return val if val and val.strip() else "meta-llama/llama-3.3-70b-instruct"
+
+
+def save_openrouter_model(model_name: str) -> None:
+    """Enregistre le modèle OpenRouter préféré."""
+    save_config_value("OPENROUTER_MODEL", model_name.strip())
+
+
 def test_user_gemini_connection(user_id: Optional[int] = None, api_key: Optional[str] = None) -> Dict[str, Any]:
     """Teste la connexion avec la clé API Gemini spécifique d'un utilisateur."""
     key = api_key or get_user_gemini_api_key(user_id)
@@ -268,10 +319,81 @@ def test_openai_connection(api_key: Optional[str] = None) -> Dict[str, Any]:
         }
 
 
+def test_openrouter_connection(api_key: Optional[str] = None, model: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Effectue un test de connexion direct et robuste vers l'API OpenRouter.
+    Utilise urllib.request de la bibliothèque standard Python (0 dépendance externe).
+    """
+    import json
+    import urllib.error
+    import urllib.request
+
+    key = api_key or get_openrouter_api_key()
+    if not key:
+        return {
+            "success": False,
+            "error": "Aucune clé API OpenRouter renseignée. Veuillez saisir la clé administrateur.",
+            "provider": "openrouter",
+        }
+
+    target_model = model or get_openrouter_model()
+    payload = {
+        "model": target_model,
+        "messages": [{"role": "user", "content": "Ping: Réponds uniquement par OK"}],
+        "max_tokens": 10,
+    }
+
+    headers = {
+        "Authorization": f"Bearer {key.strip()}",
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://ecole.code-xpert.net",
+        "X-Title": "Ecole Adnane",
+        "User-Agent": "EcoleAdnane/1.0",
+    }
+
+    start_time = time.time()
+    req = urllib.request.Request(
+        "https://openrouter.ai/api/v1/chat/completions",
+        data=json.dumps(payload).encode("utf-8"),
+        headers=headers,
+        method="POST",
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            elapsed = round(time.time() - start_time, 2)
+            reply = ""
+            if "choices" in data and len(data["choices"]) > 0:
+                reply = data["choices"][0].get("message", {}).get("content", "").strip()
+            return {
+                "success": True,
+                "provider": "openrouter",
+                "model": target_model,
+                "latency": elapsed,
+                "message": f"Connexion OpenRouter établie en {elapsed}s avec le modèle '{target_model}' ! Réponse : {reply}",
+            }
+    except urllib.error.HTTPError as e:
+        err_msg = e.read().decode("utf-8", errors="replace")
+        return {
+            "success": False,
+            "provider": "openrouter",
+            "error": f"Erreur OpenRouter HTTP {e.code} : {err_msg}",
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "provider": "openrouter",
+            "error": f"Échec de connexion OpenRouter : {str(e)}",
+        }
+
+
 def test_active_connection() -> Dict[str, Any]:
     """Teste la connexion active."""
     if get_gemini_api_key():
         return test_gemini_connection()
+    elif get_openrouter_api_key():
+        return test_openrouter_connection()
     elif get_openai_api_key():
         return test_openai_connection()
     return {

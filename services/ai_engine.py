@@ -10,15 +10,20 @@ import re
 from typing import Any, Dict, List, Optional, Tuple
 
 from models.database import (
+    get_course_animation,
     get_pedagogical_cycle,
     get_setting,
     get_user_by_id,
     is_generic_concept,
+    is_user_openrouter_allowed,
+    save_course_animation,
     set_setting,
 )
 from services.config_manager import (
     get_gemini_api_key,
     get_openai_api_key,
+    get_openrouter_api_key,
+    get_openrouter_model,
     get_user_gemini_api_key,
     get_user_openai_api_key,
 )
@@ -82,8 +87,10 @@ def call_llm(
     """
     gemini_key = api_key or get_user_gemini_api_key(user_id)
     openai_key = get_user_openai_api_key(user_id)
+    is_or_allowed = is_user_openrouter_allowed(user_id)
+    openrouter_key = get_openrouter_api_key() if is_or_allowed else None
 
-    if not gemini_key and not openai_key:
+    if not gemini_key and not openai_key and not openrouter_key:
         raise ValueError(
             "Aucune clé API configurée pour votre compte. Veuillez ajouter votre clé Google Gemini gratuite dans vos Paramètres."
         )
@@ -135,10 +142,28 @@ def call_llm(
                     continue
         except Exception as e_genai:
             logger.warning(f"Erreur client google-genai ({e_genai})")
-            if not openai_key:
+            if not openai_key and not openrouter_key:
                 raise RuntimeError(f"Erreur avec Google Gemini : {str(e_genai)}")
 
-    # 2. Fallback OpenAI
+    # 2. Priorité OpenRouter (si utilisateur autorisé par l'administrateur)
+    if openrouter_key:
+        try:
+            messages = []
+            if system_instruction:
+                messages.append({"role": "system", "content": system_instruction})
+            messages.append({"role": "user", "content": prompt})
+            return call_openrouter_chat_completion(
+                messages=messages,
+                api_key=openrouter_key,
+                temperature=temperature,
+                json_mode=json_mode,
+            )
+        except Exception as e_or:
+            logger.warning(f"Erreur appel OpenRouter dans call_llm: {e_or}")
+            if not openai_key:
+                raise RuntimeError(f"Erreur avec OpenRouter : {str(e_or)}")
+
+    # 3. Fallback OpenAI
     if openai_key:
         try:
             from openai import OpenAI
@@ -164,6 +189,68 @@ def call_llm(
             raise RuntimeError(f"Erreur avec OpenAI : {str(e_openai)}")
 
     raise RuntimeError("Impossible de générer une réponse de l'IA.")
+
+
+def call_openrouter_chat_completion(
+    messages: List[Dict[str, str]],
+    model: Optional[str] = None,
+    api_key: Optional[str] = None,
+    temperature: float = 0.4,
+    max_tokens: int = 4000,
+    json_mode: bool = False,
+) -> str:
+    """
+    Exécute un appel direct vers OpenRouter via urllib.request (standard library).
+    Garantit 0 dépendance externe tout en accédant aux modèles de pointe (Llama 3.3, Claude, GPT-4o, etc.).
+    """
+    import json
+    import urllib.error
+    import urllib.request
+
+    key = api_key or get_openrouter_api_key()
+    if not key:
+        raise ValueError("Clé API OpenRouter non configurée.")
+
+    target_model = model or get_openrouter_model()
+    payload: Dict[str, Any] = {
+        "model": target_model,
+        "messages": messages,
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+    }
+    if json_mode:
+        payload["response_format"] = {"type": "json_object"}
+
+    headers = {
+        "Authorization": f"Bearer {key.strip()}",
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://ecole.code-xpert.net",
+        "X-Title": "Ecole Adnane",
+        "User-Agent": "EcoleAdnane/1.0",
+    }
+
+    req = urllib.request.Request(
+        "https://openrouter.ai/api/v1/chat/completions",
+        data=json.dumps(payload).encode("utf-8"),
+        headers=headers,
+        method="POST",
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=90) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            if "choices" in data and len(data["choices"]) > 0:
+                content = data["choices"][0].get("message", {}).get("content", "")
+                if content:
+                    return content.strip()
+            raise RuntimeError("Réponse OpenRouter vide ou inattendue.")
+    except urllib.error.HTTPError as e:
+        err_body = e.read().decode("utf-8", errors="replace")
+        logger.error(f"Erreur HTTP OpenRouter {e.code}: {err_body}")
+        raise RuntimeError(f"Erreur OpenRouter ({e.code}): {err_body}")
+    except Exception as e:
+        logger.error(f"Erreur OpenRouter: {e}")
+        raise RuntimeError(f"Échec appel OpenRouter: {str(e)}")
 
 
 def clean_json_output(raw_text: str) -> str:
@@ -1481,3 +1568,160 @@ def transcribe_audio_with_ai(
             logger.warning(f"Erreur transcription Whisper : {e_whisper}")
 
     return ""
+
+
+def strip_html_code_blocks(content: str) -> str:
+    """Retire les balises Markdown ```html ... ``` pour ne conserver que le code HTML pur."""
+    content = content.strip()
+    match = re.search(r"```(?:html)?\s*([\s\S]*?)\s*```", content)
+    if match:
+        return match.group(1).strip()
+    return content
+
+
+def generate_course_animation_simulation(
+    course_text: str,
+    subject: str,
+    course_title: str,
+    language: str = "fr",
+    user_id: Optional[int] = None,
+    force_style: Optional[str] = None,
+) -> str:
+    """
+    Génère une animation interactive (HTML5 / Canvas / SVG) ou une Bande Dessinée Animée
+    avec synthèse vocale Text-To-Speech (TTS) intégrée pour un cours donné.
+    - Matières narratives (Histoire, Géo, Langues, etc.) -> BD Animée par scènes
+    - Matières scientifiques (Physique, Chimie, SVT, Maths) -> Simulation interactive
+    Utilise OpenRouter (si autorisé par l'admin) ou Google Gemini.
+    """
+    # 1. Détermination du style (BD Animée vs Simulation Scientifique)
+    sci_keywords = [
+        "physique", "chimie", "svt", "sciences", "math", "techno", "atome", "circuit",
+        "cellule", "molécule", "électron", "réaction", "gravité", "vitesse", "théorème",
+        "فيزياء", "كيمياء", "رياضيات", "علوم", "بيولوجيا", "ذرة", "دائرة", "طاقة", "خلية", "تفاعل",
+    ]
+    is_scientific = any(k in (subject or "").lower() or k in (course_title or "").lower() for k in sci_keywords)
+
+    if force_style in ("comic", "simulation"):
+        style = force_style
+    else:
+        style = "simulation" if is_scientific else "comic"
+
+    is_ar = language == "ar"
+    is_en = language == "en"
+
+    # 2. Construction du prompt adapté
+    truncated_text = (course_text or "")[:8000].strip()
+
+    if style == "comic":
+        mode_desc = (
+            "BANDE DESSINÉE ANIMÉE INTERACTIVE (STORYBOARD MULTI-SCÈNES)"
+            if not is_ar
+            else "قصة مصورة تفاعلية متحركة (مشاهد تعليمية مصورة)"
+        )
+        specifications = f"""
+Tu dois générer une **{mode_desc}** autonome de 4 à 6 scènes illustrant l'histoire, la chronologie ou les concepts clés du cours.
+Chaque scène doit comporter :
+1. Une illustration visuelle remarquable réalisée UNIQUEMENT en SVG vectoriel riche (formes détaillées, personnages stylisés, décors immersifs, couleurs harmonieuses et animations CSS fluides : pulsations, mouvements subtils, apparitions progressives). Pas d'images externes !
+2. Des bulles de dialogue ou phylactères animés (.bubble) pour les personnages clés ou le narrateur.
+3. Un encart narratif pédagogique (.caption) contextualisant l'événement ou le concept.
+4. Une barre de lecture et navigation interactive :
+   - Boutons: ◀ Précédente | ▶ Suivante | 🔄 Recommencer
+   - Sélecteur de scènes (pastilles 1, 2, 3...)
+   - Bouton de lecture audio TTS : '🔊 Écouter cette scène'
+   - Bouton de lecture automatique continue : '⏯️ Lecture enchaînée' (enchaîne les scènes avec narration vocale)
+   - Sélecteur de vitesse audio (0.9x, 1x, 1.2x)
+5. Synthèse vocale (TTS) avec window.speechSynthesis :
+   - Langue de synthèse : {'"ar-SA"' if is_ar else ('"en-US"' if is_en else '"fr-FR"')}
+   - Mise en surbrillance en temps réel des textes ou bulles pendant qu'ils sont prononcés.
+   - Fallback sonore avec Web Audio API (petit jingle agréable lors des transitions de scène).
+"""
+    else:
+        mode_desc = (
+            "SIMULATION SCIENTIFIQUE INTERACTIVE HTML5 / CANVAS / SVG"
+            if not is_ar
+            else "محاكاة علمية تفاعلية حية (HTML5 Canvas / SVG)"
+        )
+        specifications = f"""
+Tu dois générer une **{mode_desc}** autonome qui permet à l'élève de manipuler en temps réel les concepts scientifiques de la leçon (ex: atomes avec électrons en orbite qui se lient en molécules lors d'un clic ou d'une hausse de température, circuit électrique avec interrupteur et ampoule, pendule/gravité, cellule et ses organites, théorème de Pythagore interactif avec curseurs, etc.).
+La simulation doit comporter :
+1. Un espace visuel dynamique (Canvas HTML5 animé avec requestAnimationFrame OU SVG interactif riche).
+2. Un panneau de contrôle interactif avec :
+   - Des curseurs (<input type="range">) pour ajuster les variables (ex: température, tension, vitesse, masse, dimensions).
+   - Des boutons d'action (ex: '▶️ Lancer / Pause', '🔄 Réinitialiser', '🧪 Provoquer la réaction / Ajouter un électron').
+   - Un tableau de bord HUD affichant les valeurs en temps réel (ex: Vitesse, Énergie, Statut, Formule chimique ou mathématique).
+3. Un volet d'explication pédagogique pas-à-pas avec :
+   - Bouton '🔊 Écouter l'explication audio' qui utilise window.speechSynthesis pour expliquer ce qui se passe sous les yeux de l'élève à chaque étape de la simulation !
+   - Langue de synthèse : {'"ar-SA"' if is_ar else ('"en-US"' if is_en else '"fr-FR"')}
+   - Texte clair, motivant et adapté au niveau scolaire.
+"""
+
+    lang_instruction = (
+        "TOUT le contenu texte, les dialogues, les boutons et les scripts audio DOIVENT être en ARABE avec TASHKEEL (diacritiques) pour une prononciation parfaite par le moteur TTS, avec dir='rtl' et typographie 'Cairo', sans-serif."
+        if is_ar
+        else (
+            "All text content, dialogues, UI buttons, and TTS scripts MUST be in ENGLISH."
+            if is_en
+            else "TOUT le contenu texte, les dialogues, les boutons de l'interface et les scripts audio DOIVENT être en FRANÇAIS soigné et stimulant."
+        )
+    )
+
+    prompt = f"""
+CONSIGNE : Génère une page HTML5 complète, moderne, responsive et 100% autonome (standalone) pour le cours suivant :
+- Matière : {subject}
+- Titre du cours : {course_title}
+- Langue : {language}
+
+CONTENU DU COURS :
+\"\"\"
+{truncated_text}
+\"\"\"
+
+SPÉCIFICATIONS TECHNIQUES IMPÉRATIVES :
+{specifications}
+
+RÈGLES D'EXÉCUTION :
+1. {lang_instruction}
+2. Design moderne : thème sombre élégant (fond #0f172a / #1e293b, cartes en verre/glassmorphism, accents néon/vifs #38bdf8, #818cf8, #34d399, responsive pour mobile et écran large).
+3. 100% AUTONOME : tout le CSS dans une balise <style>, tout le JS dans une balise <script>. AUCUNE dépendance externe CDN obligatoire (CSS et JavaScript vanilla purs).
+4. Le code doit être PRÊT À L'EMPLOI et s'exécuter directement dans un iframe Streamlit (st.components.v1.html).
+5. Ne renvoie AUCUN commentaire, AUCUN blabla avant ou après. Renvoie UNIQUEMENT le document HTML complet commençant par <!DOCTYPE html> et finissant par </html>.
+"""
+
+    system_instruction = (
+        "Tu es un ingénieur pédagogique d'élite et développeur Web créatif spécialisé en simulations Canvas/SVG éducatives "
+        "et bandes dessinées animées avec synthèse vocale (Web Speech API). Tu génères exclusivement du code HTML5 autonome propre et valide."
+    )
+
+    # 3. Exécution via OpenRouter (si autorisé pour cet utilisateur) ou Gemini
+    is_or_allowed = is_user_openrouter_allowed(user_id)
+    openrouter_key = get_openrouter_api_key() if is_or_allowed else None
+
+    raw_html = ""
+    if openrouter_key:
+        try:
+            logger.info("Génération de la simulation/BD animée via OpenRouter...")
+            messages = [
+                {"role": "system", "content": system_instruction},
+                {"role": "user", "content": prompt},
+            ]
+            raw_html = call_openrouter_chat_completion(
+                messages=messages,
+                api_key=openrouter_key,
+                temperature=0.3,
+                max_tokens=6000,
+            )
+        except Exception as e_or:
+            logger.warning(f"Échec OpenRouter pour simulation ({e_or}), essai via Gemini/LLM local...")
+
+    if not raw_html:
+        # Repli via call_llm (Gemini ou clé utilisateur)
+        raw_html = call_llm(
+            prompt=prompt,
+            system_instruction=system_instruction,
+            temperature=0.3,
+            user_id=user_id,
+        )
+
+    clean_html = strip_html_code_blocks(raw_html)
+    return clean_html

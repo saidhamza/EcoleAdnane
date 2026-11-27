@@ -3088,7 +3088,11 @@ class VoiceTranscriptionAndMicTests(unittest.TestCase):
         mock_client = MagicMock()
         mock_client.models.generate_content.return_value = mock_response
 
-        with patch("google.genai.Client", return_value=mock_client):
+        mock_genai = MagicMock()
+        mock_genai.Client.return_value = mock_client
+        mock_google = MagicMock()
+        mock_google.genai = mock_genai
+        with patch.dict("sys.modules", {"google": mock_google, "google.genai": mock_genai, "google.genai.types": mock_genai.types}):
             result = transcribe_audio_with_ai(fake_bytes, api_key="dummy_gemini_key")
             self.assertEqual(result, "Bonjour Sanad, peux-tu m'expliquer le théorème de Pythagore ?")
 
