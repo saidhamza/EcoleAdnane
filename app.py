@@ -3066,22 +3066,23 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
             st.session_state["student_selected_course_id"] = saved_course_id
 
         # Mode d'affichage : Catalogue visuel (Grille) vs Espace d'étude immersif (Workspace)
-        if "revision_view_mode" not in st.session_state:
-            st.session_state["revision_view_mode"] = "grid"
+        CATALOG_VIEW = "🗂️ Catalogue des Cours"
+        WORKSPACE_VIEW = "📖 Espace d'Étude Immergé"
+
+        if "revision_view_segmented" not in st.session_state:
+            st.session_state["revision_view_segmented"] = CATALOG_VIEW
 
         seg_col1, seg_col2 = st.columns([2, 1])
         with seg_col1:
             view_mode_choice = st.segmented_control(
                 "Mode d'affichage",
-                options=["🗂️ Catalogue des Cours", "📖 Espace d'Étude Immergé"],
-                default="🗂️ Catalogue des Cours" if st.session_state.get("revision_view_mode") != "workspace" else "📖 Espace d'Étude Immergé",
-                label_visibility="collapsed",
+                options=[CATALOG_VIEW, WORKSPACE_VIEW],
                 key="revision_view_segmented",
+                label_visibility="collapsed",
             )
-            if view_mode_choice == "📖 Espace d'Étude Immergé":
-                st.session_state["revision_view_mode"] = "workspace"
-            else:
-                st.session_state["revision_view_mode"] = "grid"
+            if not view_mode_choice:
+                view_mode_choice = st.session_state.get("revision_view_segmented") or CATALOG_VIEW
+                st.session_state["revision_view_segmented"] = view_mode_choice
 
         with seg_col2:
             st.caption(f"📚 **{len(courses_list)} cours** disponibles")
@@ -3091,7 +3092,7 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
         # -------------------------------------------------------------
         # VUE 1 : CATALOGUE DE COURS SOUS FORME DE GRILLE MODERNE
         # -------------------------------------------------------------
-        if st.session_state.get("revision_view_mode") == "grid":
+        if view_mode_choice == CATALOG_VIEW:
             num_cols = 3
             for i in range(0, len(courses_list), num_cols):
                 row_courses = courses_list[i : i + num_cols]
@@ -3135,7 +3136,7 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
 
                             if st.button("🚀 Étudier ce cours", key=f"btn_open_card_{c['id']}", type="primary", use_container_width=True):
                                 st.session_state["student_selected_course_id"] = c["id"]
-                                st.session_state["revision_view_mode"] = "workspace"
+                                st.session_state["revision_view_segmented"] = WORKSPACE_VIEW
                                 st.rerun()
             return
 
@@ -3153,7 +3154,7 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
         bar_col1, bar_col2, bar_col3 = st.columns([1.5, 2.5, 1.2])
         with bar_col1:
             if st.button("⬅️ Retour au Catalogue", key="ws_btn_back_catalog", use_container_width=True):
-                st.session_state["revision_view_mode"] = "grid"
+                st.session_state["revision_view_segmented"] = CATALOG_VIEW
                 st.rerun()
 
         with bar_col2:
