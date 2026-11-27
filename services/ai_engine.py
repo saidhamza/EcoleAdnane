@@ -1590,12 +1590,15 @@ def extract_and_inject_server_tts(html_code: str, language: str = "fr") -> str:
     if not html_code or not html_code.strip():
         return html_code
 
+    scene_audios: List[Tuple[str, str, str]] = []  # (scene_id, audio_data_uri, text)
+
+    has_bs4 = False
     try:
         from bs4 import BeautifulSoup
         soup = BeautifulSoup(html_code, "html.parser")
+        has_bs4 = True
     except Exception as e_bs4:
-        logger.warning(f"Impossible d'utiliser BeautifulSoup pour injecter le TTS ({e_bs4})")
-        return html_code
+        logger.debug(f"BeautifulSoup indisponible, utilisation du parseur regex ({e_bs4})")
 
     try:
         from services.voice_manager import clean_text_for_speech, get_server_tts_audio_base64
@@ -1603,42 +1606,72 @@ def extract_and_inject_server_tts(html_code: str, language: str = "fr") -> str:
         logger.warning(f"Impossible d'importer voice_manager pour le TTS serveur ({e_vm})")
         return html_code
 
-    # 1. Recherche des textes de narration par scène
-    # Priorité 1 : éléments avec la classe .narration-script ou attribut data-narration
-    narration_items = soup.select(".narration-script, [data-narration]")
-    scene_audios: List[Tuple[str, str, str]] = []  # (scene_id, audio_data_uri, text)
-
-    if narration_items:
-        for idx, el in enumerate(narration_items):
-            scene_id = el.get("data-scene") or el.get("data-index") or str(idx)
-            raw_text = el.get("data-narration") or el.get_text(separator=" ", strip=True)
-            cleaned = clean_text_for_speech(raw_text)
-            if cleaned:
-                audio_uri = get_server_tts_audio_base64(cleaned, language=language)
-                if audio_uri:
-                    scene_audios.append((str(scene_id), audio_uri, cleaned))
-    else:
-        # Priorité 2 : conteneurs de scènes (.scene, .slide, .card, etc.)
-        scenes = soup.select(".scene, .slide, .story-card, .fresco-scene, [data-scene]")
-        for idx, sc in enumerate(scenes):
-            scene_id = sc.get("data-scene") or sc.get("data-index") or str(idx)
-            text_el = sc.select_one(".narration, .caption, .description, .bubble, p")
-            if text_el:
-                cleaned = clean_text_for_speech(text_el.get_text(separator=" ", strip=True))
+    if has_bs4:
+        # 1. Recherche des textes de narration par scène via BeautifulSoup
+        narration_items = soup.select(".narration-script, [data-narration]")
+        if narration_items:
+            for idx, el in enumerate(narration_items):
+                scene_id = el.get("data-scene") or el.get("data-index") or str(idx)
+                raw_text = el.get("data-narration") or el.get_text(separator=" ", strip=True)
+                cleaned = clean_text_for_speech(raw_text)
                 if cleaned:
                     audio_uri = get_server_tts_audio_base64(cleaned, language=language)
                     if audio_uri:
                         scene_audios.append((str(scene_id), audio_uri, cleaned))
+        else:
+            scenes = soup.select(".scene, .slide, .story-card, .fresco-scene, [data-scene]")
+            for idx, sc in enumerate(scenes):
+                scene_id = sc.get("data-scene") or sc.get("data-index") or str(idx)
+                text_el = sc.select_one(".narration, .caption, .description, .bubble, p")
+                if text_el:
+                    cleaned = clean_text_for_speech(text_el.get_text(separator=" ", strip=True))
+                    if cleaned:
+                        audio_uri = get_server_tts_audio_base64(cleaned, language=language)
+                        if audio_uri:
+                            scene_audios.append((str(scene_id), audio_uri, cleaned))
 
-    # Priorité 3 : simulation scientifique (boîte d'explication pédagogique)
-    if not scene_audios:
-        explanation_el = soup.select_one("#explanation, .explanation, .pedagogy-text, .info-box")
-        if explanation_el:
-            cleaned = clean_text_for_speech(explanation_el.get_text(separator=" ", strip=True))
-            if cleaned:
-                audio_uri = get_server_tts_audio_base64(cleaned, language=language)
+        if not scene_audios:
+            explanation_el = soup.select_one("#explanation, .explanation, .pedagogy-text, .info-box")
+            if explanation_el:
+                cleaned = clean_text_for_speech(explanation_el.get_text(separator=" ", strip=True))
+                if cleaned:
+                    audio_uri = get_server_tts_audio_base64(cleaned, language=language)
+                    if audio_uri:
+                        scene_audios.append(("0", audio_uri, cleaned))
+    else:
+        # Fallback regex pur sans dépendance externe
+        pattern_narr = r"<([a-zA-Z0-9]+)[^>]*class=[\"'][^\"']*narration-script[^\"']*[\"'][^>]*>(.*?)</\1>"
+        for m in re.finditer(pattern_narr, html_code, re.DOTALL | re.IGNORECASE):
+            tag_content = m.group(0)
+            inner_text = m.group(2)
+            scene_match = re.search(r"data-scene=[\"']([^\"']+)[\"']", tag_content, re.IGNORECASE) or \
+                          re.search(r"data-index=[\"']([^\"']+)[\"']", tag_content, re.IGNORECASE)
+            scene_id = scene_match.group(1) if scene_match else str(len(scene_audios))
+            clean_inner = clean_text_for_speech(inner_text)
+            if clean_inner:
+                audio_uri = get_server_tts_audio_base64(clean_inner, language=language)
                 if audio_uri:
-                    scene_audios.append(("0", audio_uri, cleaned))
+                    scene_audios.append((str(scene_id), audio_uri, clean_inner))
+
+        if not scene_audios:
+            sc_pattern = r"<([a-zA-Z0-9]+)[^>]*class=[\"'][^\"']*(?:scene|slide|card|fresco)[^\"']*[\"'][^>]*>(.*?)</\1>"
+            for sc in re.finditer(sc_pattern, html_code, re.DOTALL | re.IGNORECASE):
+                sc_tag = sc.group(0)
+                sc_body = sc.group(2)
+                scene_match = re.search(r"data-scene=[\"']([^\"']+)[\"']", sc_tag, re.IGNORECASE) or \
+                              re.search(r"data-index=[\"']([^\"']+)[\"']", sc_tag, re.IGNORECASE)
+                scene_id = scene_match.group(1) if scene_match else str(len(scene_audios))
+                cap = re.search(r"<([a-zA-Z0-9]+)[^>]*class=[\"'][^\"']*(?:caption|narration|desc|bubble)[^\"']*[\"'][^>]*>(.*?)</\1>", sc_body, re.DOTALL | re.IGNORECASE)
+                raw_cap = cap.group(2) if cap else None
+                if not raw_cap:
+                    p = re.search(r"<p[^>]*>(.*?)</p>", sc_body, re.DOTALL | re.IGNORECASE)
+                    raw_cap = p.group(1) if p else None
+                if raw_cap:
+                    clean_cap = clean_text_for_speech(raw_cap)
+                    if clean_cap:
+                        audio_uri = get_server_tts_audio_base64(clean_cap, language=language)
+                        if audio_uri:
+                            scene_audios.append((str(scene_id), audio_uri, clean_cap))
 
     if not scene_audios:
         return html_code
