@@ -2763,7 +2763,8 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                     else:
                         gen_podcast_label = "🎙️ إنشاء بودكاست MP3 للتحميل" if is_ar else ("🎙️ Generate Offline MP3 Podcast" if is_en else "🎙️ Créer le podcast MP3 hors-ligne")
                         if st.button(gen_podcast_label, key=f"btn_gen_podcast_{current_course['id']}", use_container_width=True):
-                            with st.spinner("Génération du podcast MP3..." if not is_en else ("Generating MP3 podcast..." if is_en else "جاري إنشاء البودكاست الصوتي...")):
+                            spin_pod = "جاري إنشاء البودكاست الصوتي..." if is_ar else ("Generating MP3 podcast..." if is_en else "Génération du podcast MP3...")
+                            with st.spinner(spin_pod):
                                 generate_or_get_course_fiche_mp3(
                                     course_id=current_course["id"],
                                     text=fiche_md,
@@ -2788,15 +2789,15 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
             if not cached_mindmap:
                 btn_gen_map = "🧠 توليد الخريطة الذهنية بالذكاء الاصطناعي" if is_ar else ("🧠 Generate AI Mind Map" if is_en else "🧠 Générer la Carte Mentale avec l'IA")
                 st.info(
-                    "💡 Ce cours ne possède pas encore de carte mentale interactive. Cliquez sur le bouton ci-dessous pour la générer en quelques secondes."
-                    if not is_en and not is_ar else
-                    ("💡 لم يتم إنشاء خريطة ذهنية لهذا الدرس بعد. انقر على الزر أدناه لتوليدها فوراً." if is_ar else "💡 No mind map generated for this course yet. Click below to generate it instantly.")
+                    "💡 لم يتم إنشاء خريطة ذهنية لهذا الدرس بعد. انقر على الزر أدناه لتوليدها فوراً."
+                    if is_ar
+                    else ("💡 No mind map generated for this course yet. Click below to generate it instantly." if is_en else "💡 Ce cours ne possède pas encore de carte mentale interactive. Cliquez sur le bouton ci-dessous pour la générer en quelques secondes.")
                 )
                 if st.button(btn_gen_map, type="primary", key=f"btn_gen_mindmap_{current_course['id']}"):
                     if not user_api_key:
-                        st.error("⚠️ Clé API Gemini requise. Obtenez votre clé 100% gratuite sur [Google AI Studio](https://aistudio.google.com/api-keys) et activez-la dans **⚙️ Paramètres** ou la barre latérale." if not is_en else "⚠️ Gemini API key required. Get your free key on [Google AI Studio](https://aistudio.google.com/api-keys) and configure it in **⚙️ Settings** or the sidebar.")
+                        st.error("⚠️ Clé API Gemini requise." if not is_ar and not is_en else ("⚠️ يلزم مفتاح Gemini API." if is_ar else "⚠️ Gemini API key required."))
                     else:
-                        spin_msg = "Génération de la carte mentale..." if not is_en else ("Generating mind map..." if not is_ar else "جاري إنشاء الخريطة الذهنية...")
+                        spin_msg = "جاري إنشاء الخريطة الذهنية..." if is_ar else ("Generating mind map..." if is_en else "Génération de la carte mentale...")
                         with st.spinner(spin_msg):
                             course_content = current_course.get("summary_markdown") or current_course.get("raw_text") or ""
                             generated_mindmap = generate_course_mindmap(
@@ -2808,7 +2809,7 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                             )
                             save_course_mindmap(current_course["id"], generated_mindmap)
                             current_course["mindmap_code"] = generated_mindmap
-                            st.success("Carte mentale générée avec succès !" if not is_en else "Mind map generated successfully!")
+                            st.success("تم توليد الخريطة الذهنية بنجاح !" if is_ar else ("Mind map generated successfully!" if is_en else "Carte mentale générée avec succès !"))
                             st.rerun()
             else:
                 if cached_mindmap.strip().startswith("mindmap"):
@@ -3537,37 +3538,80 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                 st.caption(f"Ton Grand Frère & Mentor pour le niveau {active_cycle['cycle_name']} ({active_cycle['age']} ans) — Méthode socratique : il te guide sans faire les exercices à ta place !")
 
             # Barre de contrôle audio ergonomique (Desktop & Mobile)
-            col_v_toggle, col_v_speed = st.columns([0.62, 0.38], vertical_alignment="center")
+            toggle_label = (
+                "قراءة صوتية تلقائية للردود 🔊"
+                if is_ar
+                else ("🔊 Auto-speak Sanad answers" if is_en else "🔊 Lecture vocale automatique des réponses")
+            )
+            popover_label = "⚙️ سرعة الصوت وإعداداته" if is_ar else ("⚙️ Voice Settings" if is_en else "⚙️ Vitesse & Réglages vocaux")
+            slider_label = "سرعة النطق :" if is_ar else ("Voice Speed:" if is_en else "Vitesse de lecture :")
+            speed_format = (
+                (lambda x: f"{x}x" + (" (هادئة)" if x < 1.0 else (" (عادية)" if x == 1.0 else " (سريعة)")))
+                if is_ar
+                else (
+                    (lambda x: f"{x}x" + (" (Slow)" if x < 1.0 else (" (Normal)" if x == 1.0 else " (Fast)")))
+                    if is_en
+                    else (lambda x: f"{x}x" + (" (Douce)" if x < 1.0 else (" (Normale)" if x == 1.0 else " (Rapide)")))
+                )
+            )
+            voice_tech_caption = (
+                "💡 **جودة استوديو بدون استهلاك رصيد :** أصوات مايكروسوفت العصبية فائقة الوضوح مع تشكيل عربي دقيق وتخزين فوري."
+                if is_ar
+                else (
+                    "💡 **Studio quality with zero quota impact:** Microsoft Neural voices with instant caching."
+                    if is_en
+                    else "💡 **Qualité studio à zéro quota :** Voix neuronales Microsoft haute définition avec mise en cache instantanée."
+                )
+            )
+
+            if is_ar:
+                st.markdown(
+                    """
+                    <style>
+                    div[data-testid="stToggle"] {
+                        direction: rtl !important;
+                        text-align: right !important;
+                    }
+                    div[data-testid="stToggle"] label {
+                        flex-direction: row-reverse !important;
+                        justify-content: flex-end !important;
+                        gap: 12px !important;
+                    }
+                    div[data-testid="stToggle"] label p {
+                        font-family: 'AdnaneSans', 'Cairo', sans-serif !important;
+                        font-size: 0.95rem !important;
+                        font-weight: 700 !important;
+                        margin: 0 !important;
+                    }
+                    </style>
+                    """,
+                    unsafe_allow_html=True,
+                )
+                col_v_speed, col_v_toggle = st.columns([0.38, 0.62], vertical_alignment="center")
+            else:
+                col_v_toggle, col_v_speed = st.columns([0.62, 0.38], vertical_alignment="center")
+
             with col_v_toggle:
                 auto_speak = st.toggle(
-                    "🔊 Lecture vocale automatique des réponses" if not is_en else ("🔊 Auto-speak Sanad answers" if is_en else "🔊 قراءة صوتية تلقائية للردود"),
+                    toggle_label,
                     value=stored_auto_speak,
                     key=f"auto_speak_toggle_{current_course['id']}",
-                    help="Sanad lit automatiquement ses réponses à voix haute dès qu'il vous répond (100% gratuit, 0 quota Gemini).",
                 )
                 if auto_speak != stored_auto_speak:
                     set_user_setting(active_user_id, "auto_speak_sanad", "true" if auto_speak else "false")
 
             with col_v_speed:
-                with st.popover("⚙️ Vitesse & Réglages vocaux" if not is_en else ("⚙️ Voice Settings" if is_en else "⚙️ إعدادات الصوت"), use_container_width=True):
+                with st.popover(popover_label, use_container_width=True):
                     voice_speed = st.select_slider(
-                        "Vitesse de lecture :" if not is_en else ("Voice Speed:" if is_en else "سرعة النطق :"),
+                        slider_label,
                         options=[0.8, 0.9, 1.0, 1.1, 1.2],
                         value=stored_speed if stored_speed in [0.8, 0.9, 1.0, 1.1, 1.2] else 1.0,
-                        format_func=lambda x: f"{x}x" + (" (Douce)" if x < 1.0 else (" (Normale)" if x == 1.0 else " (Rapide)")),
+                        format_func=speed_format,
                         key=f"voice_speed_slider_{current_course['id']}",
                     )
                     if voice_speed != stored_speed:
                         set_user_setting(active_user_id, "voice_speed_sanad", str(voice_speed))
-                    st.caption(
-                        "💡 **Zéro impact sur votre forfait Gemini :** La synthèse vocale et le micro fonctionnent directement dans votre navigateur grâce à la Web Speech API HTML5."
-                        if not is_en
-                        else (
-                            "💡 **Zero impact on your Gemini quota:** Speech synthesis and voice typing run natively in your browser using the HTML5 Web Speech API."
-                            if is_en
-                            else "💡 **دون استهلاك رصيد Gemini :** قراءة النصوص وتسجيل الصوت يعملان محلياً في متصفحك عبر تقنية Web Speech API."
-                        )
-                    )
+                    st.caption(voice_tech_caption)
 
             # Suggestions de questions rapides en 1 clic adaptées à la langue et à l'âge
             sug_header = "**أسئلة سريعة بنقرة واحدة :**" if is_ar else ("**Quick 1-click questions:**" if is_en else "**Questions rapides en un clic :**")
