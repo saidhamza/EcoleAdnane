@@ -2129,6 +2129,26 @@ div[data-testid="stTabs"] div[role="tablist"] button[data-baseweb="tab"][aria-se
     -webkit-text-fill-color: var(--ea-on-primary) !important;
 }}
 
+/* ---- THEME FIDELITY 7: direct button[data-baseweb="tab"] ---- */
+button[data-baseweb="tab"],
+button[data-baseweb="tab"] * {{
+    color: var(--ea-text-muted) !important;
+    -webkit-text-fill-color: var(--ea-text-muted) !important;
+    opacity: 1 !important;
+}}
+button[data-baseweb="tab"]:hover,
+button[data-baseweb="tab"]:hover * {{
+    color: var(--ea-text) !important;
+    -webkit-text-fill-color: var(--ea-text) !important;
+}}
+button[data-baseweb="tab"][aria-selected="true"],
+button[data-baseweb="tab"][aria-selected="true"] * {{
+    background: var(--ea-primary) !important;
+    background-color: var(--ea-primary) !important;
+    color: var(--ea-on-primary) !important;
+    -webkit-text-fill-color: var(--ea-on-primary) !important;
+}}
+
 </style>
 """
 
