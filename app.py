@@ -3414,12 +3414,41 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                     f'<iframe src="{direct_url}" width="100%" height="750px" style="border: 1px solid #cbd5e1; border-radius: 10px;"></iframe>'
                 )
             else:
-                msg_warn = (
-                    "⚠️ Fichier PDF original non trouvé sur le disque. Vous pouvez réimporter le document source dans **➕ Ajouter un Cours**."
-                    if not is_ar else
-                    "⚠️ لم يتم العثور على ملف الـ PDF الأصلي في القرص. يمكنك إعادة رفع الوثيقة الأصلية في **➕ إضافة درس**."
-                )
-                st.warning(msg_warn)
+                guide_pdf = Path(__file__).parent / "static" / "guides" / f"guide_course_{current_course['id']}.pdf"
+                story_pdf = Path(__file__).parent / "static" / "stories" / f"story_course_{current_course['id']}.pdf"
+
+                alt_pdf_url = None
+                alt_title = None
+                if guide_pdf.exists() and guide_pdf.stat().st_size > 0:
+                    alt_pdf_url = f"/static/guides/guide_course_{current_course['id']}.pdf"
+                    alt_title = "Guide Visuel & Fiches de Révision PDF" if not is_ar else "دليل المراجعة البصري المصور (PDF)"
+                elif story_pdf.exists() and story_pdf.stat().st_size > 0:
+                    alt_pdf_url = f"/static/stories/story_course_{current_course['id']}.pdf"
+                    alt_title = "Livre Illustré Didactique (PDF)" if not is_ar else "كتاب القصة التعليمية المصورة (PDF)"
+
+                if alt_pdf_url:
+                    st.info(
+                        f"ℹ️ **Document PDF disponible :** Ce cours est consultable sous forme de **{alt_title}**."
+                        if not is_ar else
+                        f"ℹ️ **وثيقة PDF متوفرة :** هذا الدرس متوفر على شكل **{alt_title}**."
+                    )
+                    st.link_button(
+                        label=f"📥 Télécharger le PDF ({alt_title})" if not is_ar else f"📥 تحميل وثيقة الـ PDF ({alt_title})",
+                        url=alt_pdf_url,
+                        type="primary",
+                        use_container_width=True,
+                    )
+                    st.write("")
+                    render_html(
+                        f'<iframe src="{alt_pdf_url}" width="100%" height="750px" style="border: 1px solid #cbd5e1; border-radius: 10px;"></iframe>'
+                    )
+                else:
+                    msg_warn = (
+                        "⚠️ Fichier PDF original non trouvé sur le disque. Vous pouvez réimporter le document source dans **➕ Ajouter un Cours**."
+                        if not is_ar else
+                        "⚠️ لم يتم العثور على ملف الـ PDF الأصلي في القرص. يمكنك إعادة رفع الوثيقة الأصلية في **➕ إضافة درس**."
+                    )
+                    st.warning(msg_warn)
 
             st.write("---")
             exp_text_title = "📝 عرض النص المستخرج من الوثيقة" if is_ar else ("📝 View Extracted Text" if is_en else "📝 Voir le texte extrait du document")
