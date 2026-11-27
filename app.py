@@ -1182,22 +1182,25 @@ if not st.session_state.get("is_authenticated"):
         st.write("")
 
         # Mode Local / Démonstration repliable pour le développement et fonctionnement hors-ligne
-        with st.expander("🧪 Connexion de secours (Mode local hors-ligne)", expanded=False):
-            st.caption("Permet de se connecter directement sans passer par Google Cloud pour tester hors-ligne.")
-            col_d1, col_d2 = st.columns([2, 1])
-            with col_d1:
-                dev_email = st.text_input("Adresse email :", value="admin@ecole-adnane.ma" if total_users == 0 else "eleve@ecole-adnane.ma", key="dev_email_input")
-                dev_name = st.text_input("Nom complet :", value="Admin Adnane" if total_users == 0 else "Adnane Élève", key="dev_name_input")
-            with col_d2:
-                st.write("")
-                st.write("")
-                if st.button("🚀 Connexion Locale", type="secondary", use_container_width=True):
-                    if dev_email and dev_name:
-                        u = dev_mode_login(email=dev_email, name=dev_name)
-                        st.success(f"Connecté en tant que {u['name']} ({u['role'].upper()})")
-                        st.rerun()
-                    else:
-                        st.error("Veuillez renseigner un email et un nom.")
+        allow_dev_login = os.getenv("ALLOW_DEV_LOGIN", "").strip().lower() in ("true", "1", "yes")
+        is_dedicated = os.getenv("IS_DEDICATED_SERVER", "").strip().lower() in ("true", "1", "yes")
+        if allow_dev_login or (not is_dedicated and total_users == 0):
+            with st.expander("🧪 Connexion de secours (Mode local hors-ligne)", expanded=False):
+                st.caption("Permet de se connecter directement sans passer par Google Cloud pour tester hors-ligne.")
+                col_d1, col_d2 = st.columns([2, 1])
+                with col_d1:
+                    dev_email = st.text_input("Adresse email :", value="", placeholder="nom@exemple.com", key="dev_email_input")
+                    dev_name = st.text_input("Nom complet :", value="", placeholder="Votre nom", key="dev_name_input")
+                with col_d2:
+                    st.write("")
+                    st.write("")
+                    if st.button("🚀 Connexion Locale", type="secondary", use_container_width=True):
+                        if dev_email.strip() and dev_name.strip():
+                            u = dev_mode_login(email=dev_email.strip(), name=dev_name.strip())
+                            st.success(f"Connecté en tant que {u['name']} ({u['role'].upper()})")
+                            st.rerun()
+                        else:
+                            st.error("Veuillez renseigner un email et un nom.")
 
         st.stop()
 

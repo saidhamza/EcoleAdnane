@@ -727,6 +727,8 @@ def delete_user_account(
             cur.execute("DELETE FROM flashcards WHERE user_id = ?", (target_user_id,))
             cur.execute("DELETE FROM user_settings WHERE user_id = ?", (target_user_id,))
             cur.execute("DELETE FROM user_sessions WHERE user_id = ?", (target_user_id,))
+            cur.execute("DELETE FROM concept_mastery WHERE user_id = ?", (target_user_id,))
+            cur.execute("DELETE FROM user_badges WHERE user_id = ?", (target_user_id,))
             cur.execute("DELETE FROM users WHERE id = ?", (target_user_id,))
 
         # 2. Nettoyage physique du dossier de l'utilisateur
