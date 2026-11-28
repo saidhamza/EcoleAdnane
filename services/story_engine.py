@@ -869,6 +869,10 @@ body {{
     <button class="nav-arrow-btn" id="next-btn" onclick="changeSlide(1)">
         {'الشريحة التالية ◀' if is_ar else 'Suivant ▶'}
     </button>
+    <label class="nav-arrow-btn" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;user-select:none;">
+        <input type="checkbox" id="chk-story-autoplay" onchange="toggleStoryAutoplay(this.checked)" style="accent-color:#3b82f6;cursor:pointer;">
+        {'🔁 تشغيل تلقائي' if is_ar else '🔁 Lecture auto'}
+    </label>
 </div>
 
 <div style="display:none;" id="audio-vault">
@@ -901,7 +905,25 @@ function showSlide(n) {{
     if (nextBtn) nextBtn.disabled = (n === totalSlides - 1);
 
     stopAudio();
+    if (localStorage.getItem('ea_story_autoplay') === '1') {{
+        playSceneAudio(n);
+    }}
 }}
+
+function toggleStoryAutoplay(checked) {{
+    localStorage.setItem('ea_story_autoplay', checked ? '1' : '0');
+    if (checked && !activeAudio) {{
+        playSceneAudio(currentSlide);
+    }}
+}}
+
+(function() {{
+    var chk = document.getElementById('chk-story-autoplay');
+    if (chk) chk.checked = (localStorage.getItem('ea_story_autoplay') === '1');
+    if (localStorage.getItem('ea_story_autoplay') === '1') {{
+        setTimeout(function() {{ playSceneAudio(0); }}, 250);
+    }}
+}})();
 
 function changeSlide(step) {{
     var isRTL = document.documentElement.getAttribute('dir') === 'rtl';
