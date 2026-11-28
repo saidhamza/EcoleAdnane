@@ -5754,6 +5754,11 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
             if mic_injector_html:
                 st.components.v1.html(mic_injector_html, height=0)
 
+            if st.session_state.pop("sanad_scroll_to_bottom", False):
+                st.components.v1.html(
+                    "<script>setTimeout(function(){var el=window.parent.document.getElementById('sanad_chat_bottom_anchor');if(el){el.scrollIntoView({behavior:'smooth',block:'end'});}else{window.parent.scrollTo({top:window.parent.document.body.scrollHeight,behavior:'smooth'});}},180);</script>",
+                    height=0,
+                )
             chat_placeholder = "اطرح سؤالك على الأستاذ المساعد سند..." if is_ar else ("Ask Sanad a question about this lesson..." if is_en else "Pose ta question à Sanad...")
             user_input = st.chat_input(chat_placeholder)
             prompt_to_send = user_input or suggested_prompt
@@ -5765,6 +5770,7 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                     with st.chat_message("user", avatar="🧑‍🎓"):
                         st.markdown(prompt_to_send)
                     st.html("<div id='sanad_chat_bottom_anchor' style='height: 1px; width: 100%; margin: 8px 0;'></div>")
+                    st.session_state["sanad_scroll_to_bottom"] = True
 
                     with st.chat_message("assistant", avatar="🤖"):
                         spinner_txt = "Sanad prépare ses conseils..." if not is_en else "Sanad is thinking..."
@@ -5935,10 +5941,13 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
         )
 
         if mode == "📁 Import Manuel (PDF)":
+            if "last_ingest_summary" in st.session_state:
+                st.success(st.session_state.pop("last_ingest_summary"))
             uploaded_files = st.file_uploader(
                 "Sélectionnez un ou plusieurs fichiers PDF :",
                 type=["pdf"],
                 accept_multiple_files=True,
+                key=f"course_pdf_uploader_{st.session_state.get('pdf_uploader_nonce', 0)}",
                 help="Les fichiers seront stockés dans le dossier personnel isolé de chaque destinataire.",
             )
 
@@ -5962,7 +5971,8 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                             done += 1
                             progress_bar.progress(done / total_ops)
 
-                    st.success(f"Bilan : {success_count} cours ajouté(s), {dup_count} doublon(s).")
+                    st.session_state["last_ingest_summary"] = f"✅ Bilan : {success_count} cours ajouté(s), {dup_count} doublon(s)."
+                    st.session_state["pdf_uploader_nonce"] = st.session_state.get("pdf_uploader_nonce", 0) + 1
                     if success_count > 0:
                         try:
                             auto_backup_on_change(logged_in_user_id)
