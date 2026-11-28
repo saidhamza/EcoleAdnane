@@ -4073,9 +4073,15 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
                                 ("mastered", "✅ Maîtrisé") if _cp and _cp["status"] == "mastered"
                                 else (("learning", "📈 En cours") if _cp else ("new", "🆕 À commencer"))
                             )
+                            _raw_dt = str(c.get("created_at") or "")[:10]
+                            _dt_disp = f"{_raw_dt[8:10]}/{_raw_dt[5:7]}/{_raw_dt[0:4]}" if len(_raw_dt) == 10 and _raw_dt[4] == "-" else _raw_dt
+                            _dt_html = f'<span style="font-size:0.74rem; color:var(--ea-text-muted); font-weight:600;">📅 {_dt_disp}</span>' if _dt_disp else ""
                             st.markdown(
                                 f'<div class="ea-card-stripe {b_cls}"></div>'
-                                f'<div class="ea-card-status {_stat_cls}">{_stat_txt}</div>',
+                                f'<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">'
+                                f'<span class="ea-card-status {_stat_cls}" style="margin-bottom:0;">{_stat_txt}</span>'
+                                f'{_dt_html}'
+                                f'</div>',
                                 unsafe_allow_html=True,
                             )
                             st.markdown(

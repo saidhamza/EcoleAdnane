@@ -1998,7 +1998,7 @@ def list_courses(
             query += " AND c.language = ?"
             params.append(language)
 
-        query += " ORDER BY c.updated_at DESC, c.id DESC"
+        query += " ORDER BY c.created_at DESC, c.id DESC"
         cur.execute(query, params)
         rows = cur.fetchall()
 
