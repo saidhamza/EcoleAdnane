@@ -950,8 +950,8 @@ def build_interactive_guide_reader_html(
     pause_text = "إيقاف مؤقت" if is_ar else "Pause"
     fs_text = "ملء الشاشة" if is_ar else "Plein Écran"
     dl_pdf_text = "تحميل الـ PDF" if is_ar else "Télécharger le Guide PDF"
-    prev_text = "السابق ❯" if is_ar else "❮ Précédent"
-    next_text = "❮ التالي" if is_ar else "Suivant ❯"
+    prev_text = "❮ السابق" if is_ar else "❮ Précédent"
+    next_text = "التالي ❯" if is_ar else "Suivant ❯"
     default_trap_title = "انتبه للخطأ" if is_ar else "Attention au Piège"
     default_ex_title = "نموذج امتحان" if is_ar else "Exemple d'Examen"
     deck_title = guide_deck.get("title", course_title)
@@ -1301,7 +1301,7 @@ html[dir="rtl"] .keypoints-box {{
     </div>
 </div>
 
-<div class="bottom-controls">
+<div class="bottom-controls" style="direction:ltr;">
     <button class="btn-ctrl" id="btn-prev" onclick="changeSlide(-1)">{prev_text}</button>
     <div class="dots-indicator" id="dots-container"></div>
     <button class="btn-ctrl" id="btn-next" onclick="changeSlide(1)">{next_text}</button>
