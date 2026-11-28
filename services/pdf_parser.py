@@ -181,6 +181,54 @@ def detect_language(text: str) -> str:
     return "fr"
 
 
+
+def _is_garbled_pdf_text(text: str) -> bool:
+    """Détecte un texte PDF corrompu (ToUnicode CMap cassé / mojibake)."""
+    if not text or len(text.strip()) < 20:
+        return True
+    sample = text[:3000]
+    fr_ok = set("àâäéèêëîïôöùûüÿçÀÂÄÉÈÊËÎÏÔÖÙÛÜŸÇœŒæÆ«»°€")
+    weird = sum(
+        1 for ch in sample
+        if (0x00C0 <= ord(ch) <= 0x058F and ch not in fr_ok) or ch == "�"
+    )
+    return (weird / max(len(sample), 1)) > 0.06
+
+
+def _ocr_pdf_with_tesseract(pdf_path: str, max_pages: int = 15) -> str:
+    """Fallback OCR via PyMuPDF/pdftoppm + tesseract (ara+fra+eng) pour PDF scannés ou encodés."""
+    import shutil, subprocess, tempfile
+    if not shutil.which("tesseract"):
+        return ""
+    ocr_pages: List[str] = []
+    with tempfile.TemporaryDirectory() as tmpdir:
+        img_paths: List[str] = []
+        try:
+            import fitz  # PyMuPDF
+            doc = fitz.open(pdf_path)
+            for i in range(min(len(doc), max_pages)):
+                pix = doc[i].get_pixmap(dpi=200)
+                img_p = os.path.join(tmpdir, f"page_{i:03d}.png")
+                pix.save(img_p)
+                img_paths.append(img_p)
+        except Exception:
+            if shutil.which("pdftoppm"):
+                subprocess.run(
+                    ["pdftoppm", "-png", "-r", "200", "-l", str(max_pages), pdf_path, os.path.join(tmpdir, "page")],
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False,
+                )
+                img_paths = sorted(
+                    os.path.join(tmpdir, f) for f in os.listdir(tmpdir) if f.endswith(".png")
+                )
+        for img_p in img_paths:
+            res = subprocess.run(
+                ["tesseract", img_p, "stdout", "-l", "ara+fra+eng"],
+                capture_output=True, text=True, check=False,
+            )
+            if res.returncode == 0 and res.stdout.strip():
+                ocr_pages.append(res.stdout.strip())
+    return "\n\n".join(ocr_pages).strip()
+
 def extract_text_from_pdf(pdf_path: str, max_pages: int = 50) -> Dict[str, Any]:
     """
     Extrait le texte brut, les métadonnées et le nombre de pages d'un PDF.
@@ -214,6 +262,10 @@ def extract_text_from_pdf(pdf_path: str, max_pages: int = 50) -> Dict[str, Any]:
             raise RuntimeError(f"Impossible de lire le fichier PDF ({e})")
 
     full_text = "\n\n".join(text_pages).strip()
+    if _is_garbled_pdf_text(full_text):
+        ocr_text = _ocr_pdf_with_tesseract(pdf_path, max_pages=min(max_pages, 15))
+        if ocr_text and not _is_garbled_pdf_text(ocr_text):
+            full_text = ocr_text
     detected_lang = detect_language(full_text)
 
     return {
