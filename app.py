@@ -3938,13 +3938,28 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
             "🧠 Philosophie": "الفلسفة",
         }
 
-        # Obtenir les matières disponibles
-        available_subjects = {c.get("subject", "") for c in all_user_courses}
+        # Obtenir les matières disponibles (inclut les équivalents AR/FR comme الاجتماعيات)
+        available_subjects = {c.get("subject", "") for c in all_user_courses if c.get("subject")}
+        subject_aliases = {
+            "🌍 Histoire-Géographie": ["Histoire-Géographie", "الاجتماعيات"],
+        }
         pill_options = ["✨ Toutes"]
+        matched_subjects = set()
         for p_label, p_subj in pill_subject_map.items():
-            if p_subj is None or p_subj in available_subjects or any(p_subj in s for s in available_subjects if s):
+            if p_subj is None:
+                continue
+            candidates = subject_aliases.get(p_label, [p_subj])
+            found = next((a for a in available_subjects if any(c in a for c in candidates)), None)
+            if found:
+                pill_subject_map[p_label] = found
+                matched_subjects.add(found)
                 if p_label not in pill_options:
                     pill_options.append(p_label)
+        for extra_subj in sorted(available_subjects - matched_subjects):
+            extra_label = f"📘 {extra_subj}"
+            pill_subject_map[extra_label] = extra_subj
+            if extra_label not in pill_options:
+                pill_options.append(extra_label)
 
         selected_pill = st.pills(
             "Matières",
