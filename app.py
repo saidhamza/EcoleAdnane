@@ -538,6 +538,7 @@ def get_custom_css(theme: str = "dark") -> str:
         dark_extra = """
 /* Dark mode: native canvas widgets (dataframes) follow the dark palette */
 [data-testid="stDataFrame"], [data-testid="stTable"] { filter: invert(0.92) hue-rotate(180deg) brightness(0.92) contrast(0.95); border-radius: 10px; }
+.st-emotion-cache-nnnnl0, .st-emotion-cache-nnnnl0 * { color: #e2e8f0 !important; -webkit-text-fill-color: #e2e8f0 !important; }
 """
     return f"""
 <style>
