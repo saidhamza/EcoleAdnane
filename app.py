@@ -5756,7 +5756,22 @@ def render_authenticated_app(current_user: Dict[str, Any]) -> None:
 
             if st.session_state.pop("sanad_scroll_to_bottom", False):
                 st.components.v1.html(
-                    "<script>setTimeout(function(){var el=window.parent.document.getElementById('sanad_chat_bottom_anchor');if(el){el.scrollIntoView({behavior:'smooth',block:'end'});}else{window.parent.scrollTo({top:window.parent.document.body.scrollHeight,behavior:'smooth'});}},180);</script>",
+                    """<script>
+                    (function(){
+                        function go(){
+                            try{
+                                var doc = window.parent.document;
+                                var el = doc.getElementById('sanad_chat_bottom_anchor');
+                                if(el){ el.scrollIntoView({behavior:'auto', block:'end'}); }
+                                var main = doc.querySelector('section[data-testid="stMain"]') || doc.querySelector('[data-testid="stAppViewContainer"]');
+                                if(main){ main.scrollTop = main.scrollHeight; }
+                            }catch(e){}
+                        }
+                        setTimeout(go, 120);
+                        setTimeout(go, 450);
+                        setTimeout(go, 900);
+                    })();
+                    </script>""",
                     height=0,
                 )
             chat_placeholder = "اطرح سؤالك على الأستاذ المساعد سند..." if is_ar else ("Ask Sanad a question about this lesson..." if is_en else "Pose ta question à Sanad...")
