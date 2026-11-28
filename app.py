@@ -2233,6 +2233,13 @@ button[data-baseweb="tab"][aria-selected="true"] * {{
     font-weight: 600 !important;
 }}
 
+/* ---- THEME FIDELITY 9: st.text (extracted PDF text) ---- */
+[data-testid="stText"],
+[data-testid="stText"] * {{
+    color: var(--ea-text) !important;
+    -webkit-text-fill-color: var(--ea-text) !important;
+}}
+
 </style>
 """
 
