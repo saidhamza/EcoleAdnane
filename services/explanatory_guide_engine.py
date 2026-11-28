@@ -946,6 +946,7 @@ def build_interactive_guide_reader_html(
     slides_json = json.dumps(slide_data, ensure_ascii=False)
 
     audio_btn_text = "استمع للشرح" if is_ar else "Écouter l'explication"
+    autoplay_text = "تشغيل تلقائي" if is_ar else "Lecture auto"
     pause_text = "إيقاف مؤقت" if is_ar else "Pause"
     fs_text = "ملء الشاشة" if is_ar else "Plein Écran"
     dl_pdf_text = "تحميل الـ PDF" if is_ar else "Télécharger le Guide PDF"
@@ -1288,6 +1289,7 @@ html[dir="rtl"] .keypoints-box {{
     </div>
     <div class="actions-group">
         <button class="btn-nav" id="btn-audio" onclick="toggleAudio()">🔊 {audio_btn_text}</button>
+        <label class="btn-nav" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;user-select:none;"><input type="checkbox" id="chk-autoplay" onchange="toggleAutoplay(this.checked)" style="accent-color:#3b82f6;cursor:pointer;"> 🔁 {autoplay_text}</label>
         <button class="btn-nav" onclick="toggleFullScreen()">⛶ {fs_text}</button>
         <a href="/static/guides/guide_course_{course_id}.pdf" class="btn-nav btn-primary-nav" download>📥 {dl_pdf_text}</a>
     </div>
@@ -1386,7 +1388,31 @@ function renderSlide(index) {{
     // Arrête l'audio précédent
     audioPlayer.pause();
     isAudioPlaying = false;
-    document.getElementById("btn-audio").innerText = "🔊 " + "{audio_btn_text}";
+    const btnAudio = document.getElementById("btn-audio");
+    btnAudio.innerText = "🔊 " + "{audio_btn_text}";
+
+    // Lecture automatique si la case est cochée
+    if (localStorage.getItem("ea_guide_autoplay") === "1" && sl.audio_uri) {{
+        audioPlayer.src = sl.audio_uri;
+        audioPlayer.play().then(() => {{
+            isAudioPlaying = true;
+            btnAudio.innerText = "⏸️ " + "{pause_text}";
+        }}).catch(() => {{}});
+    }}
+}}
+
+function toggleAutoplay(checked) {{
+    localStorage.setItem("ea_guide_autoplay", checked ? "1" : "0");
+    if (checked && !isAudioPlaying) {{
+        const sl = slides[currentIndex];
+        if (sl && sl.audio_uri) {{
+            audioPlayer.src = sl.audio_uri;
+            audioPlayer.play().then(() => {{
+                isAudioPlaying = true;
+                document.getElementById("btn-audio").innerText = "⏸️ " + "{pause_text}";
+            }}).catch(() => {{}});
+        }}
+    }}
 }}
 
 function updateDots() {{
@@ -1455,6 +1481,8 @@ document.addEventListener("keydown", (e) => {{
 }});
 
 // Initialisation
+const chkAuto = document.getElementById("chk-autoplay");
+if (chkAuto) chkAuto.checked = (localStorage.getItem("ea_guide_autoplay") === "1");
 renderSlide(0);
 </script>
 
