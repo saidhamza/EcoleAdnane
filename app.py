@@ -621,7 +621,6 @@ header[data-testid="stHeader"] {{
 }}
 
 #MainMenu, footer,
-[data-testid="stToolbar"] [data-testid="stStatusWidget"],
 [data-testid="stToolbar"] [data-testid="manage-app-button"],
 [data-testid="stToolbarActionButtons"] {{
     visibility: hidden !important;
@@ -2198,6 +2197,40 @@ button[data-baseweb="tab"][aria-selected="true"] * {{
 .react-aria-ListBox [role="option"][aria-selected="true"] {{
     background-color: var(--ea-surface-hover) !important;
     background: var(--ea-surface-hover) !important;
+}}
+
+/* ---- Background work indicator (stStatusWidget & stSpinner) ---- */
+[data-testid="stStatusWidget"] {{
+    visibility: visible !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: 6px !important;
+    background: var(--ea-surface) !important;
+    color: var(--ea-text) !important;
+    border: 1px solid var(--ea-border) !important;
+    border-radius: 9999px !important;
+    padding: 4px 12px !important;
+    box-shadow: var(--ea-card-shadow) !important;
+    font-size: 0.8rem !important;
+    font-weight: 600 !important;
+}}
+[data-testid="stStatusWidget"] * {{
+    color: var(--ea-text) !important;
+}}
+[data-testid="stStatusWidget"] svg {{
+    color: var(--ea-primary) !important;
+    fill: var(--ea-primary) !important;
+}}
+[data-testid="stSpinner"] {{
+    background: var(--ea-surface) !important;
+    border: 1px solid var(--ea-border) !important;
+    border-radius: 10px !important;
+    padding: 10px 14px !important;
+    color: var(--ea-text) !important;
+}}
+[data-testid="stSpinner"] p {{
+    color: var(--ea-text) !important;
+    font-weight: 600 !important;
 }}
 
 </style>
