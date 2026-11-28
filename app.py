@@ -537,7 +537,7 @@ def get_custom_css(theme: str = "dark") -> str:
     if is_dark:
         dark_extra = """
 /* Dark mode: native canvas widgets (dataframes) follow the dark palette */
-[data-testid="stDataFrame"], [data-testid="stTable"] { filter: invert(0.92) hue-rotate(180deg) brightness(0.92) contrast(0.95); border-radius: 10px; }
+[data-testid="stDataFrame"], [data-testid="stTable"] { filter: invert(0.90) saturate(0.15) brightness(0.92) contrast(1.02); border-radius: 10px; }
 .st-emotion-cache-nnnnl0, .st-emotion-cache-nnnnl0 * { color: #e2e8f0 !important; -webkit-text-fill-color: #e2e8f0 !important; }
 """
     return f"""
@@ -2148,6 +2148,56 @@ button[data-baseweb="tab"][aria-selected="true"] * {{
     background-color: var(--ea-primary) !important;
     color: var(--ea-on-primary) !important;
     -webkit-text-fill-color: var(--ea-on-primary) !important;
+}}
+
+/* ---- THEME FIDELITY 8: react-aria-ComboBox (Streamlit 1.65 selectbox) ---- */
+.react-aria-ComboBox,
+.react-aria-ComboBox [role="group"],
+.st-emotion-cache-1dhx20m {{
+    background-color: var(--ea-input-bg) !important;
+    background: var(--ea-input-bg) !important;
+    border-color: var(--ea-input-border) !important;
+    color: var(--ea-text) !important;
+}}
+.react-aria-ComboBox input,
+.st-emotion-cache-bezep1 {{
+    background-color: transparent !important;
+    background: transparent !important;
+    color: var(--ea-text) !important;
+    -webkit-text-fill-color: var(--ea-text) !important;
+}}
+.react-aria-ComboBox button,
+.st-emotion-cache-1c009jo {{
+    background-color: var(--ea-input-bg) !important;
+    background: var(--ea-input-bg) !important;
+    color: var(--ea-text-muted) !important;
+    border: none !important;
+}}
+.react-aria-ComboBox button svg,
+.st-emotion-cache-1c009jo svg {{
+    fill: var(--ea-text-muted) !important;
+    color: var(--ea-text-muted) !important;
+}}
+.react-aria-ListBox,
+.react-aria-Popover {{
+    background-color: var(--ea-surface) !important;
+    background: var(--ea-surface) !important;
+    color: var(--ea-text) !important;
+    border: 1px solid var(--ea-border) !important;
+}}
+.react-aria-ListBoxItem,
+.react-aria-ListBox [role="option"] {{
+    background-color: transparent !important;
+    color: var(--ea-text) !important;
+    -webkit-text-fill-color: var(--ea-text) !important;
+}}
+.react-aria-ListBoxItem:hover,
+.react-aria-ListBoxItem[data-focused="true"],
+.react-aria-ListBoxItem[data-selected="true"],
+.react-aria-ListBox [role="option"]:hover,
+.react-aria-ListBox [role="option"][aria-selected="true"] {{
+    background-color: var(--ea-surface-hover) !important;
+    background: var(--ea-surface-hover) !important;
 }}
 
 </style>
